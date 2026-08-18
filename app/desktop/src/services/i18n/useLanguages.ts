@@ -4,6 +4,13 @@ export default () => {
 	const t = i18n.global.t
 	return {
 		components: {
+			titleBar: {
+				title: t("app.title"),
+			},
+			live2d: {
+				loading: t("common.live2d.loading"),
+				empty: t("common.live2d.empty"),
+			},
 			firstRun: {
 				welcome: {
 					title: t("components.firstRun.welcome.title"),
@@ -27,40 +34,64 @@ export default () => {
 						}
 					}
 				},
-				languageSelect: {
-					title: t("components.firstRun.languageSelect.title"),
-					langEmpty: t("components.firstRun.languageSelect.langEmpty"),
-				},
-				modelSelect: {
-					title: t("components.firstRun.modelSelect.title"),
-					sub: t("components.firstRun.modelSelect.sub"),
-				},
-				llmConnect: {
-					error: {
-						apiBaseUrl: t("components.firstRun.llmConnect.error.apiBaseUrl"),
-						apiKey: t("components.firstRun.llmConnect.error.apiKey"),
+				about: {
+					title: t("components.firstRun.about.title"),
+					subtitle: t("components.firstRun.about.subtitle"),
+					thanksPlaceholder: t("components.firstRun.about.thanksPlaceholder"),
+					linksTitle: t("components.firstRun.about.linksTitle"),
+					source: {
+						label: t("components.firstRun.about.source.label"),
+						sub: t("components.firstRun.about.source.sub"),
 					},
-					title: t("components.firstRun.llmConnect.title"),
-					sub: t("components.firstRun.llmConnect.sub"),
-					apiBaseUrl: t("components.firstRun.llmConnect.apiBaseUrl"),
-					apiKey: t("components.firstRun.llmConnect.apiKey"),
-					model: t("components.firstRun.llmConnect.model"),
-					modelEmpty: t("components.firstRun.llmConnect.modelEmpty"),
-					getModel: t("components.firstRun.llmConnect.getModel"),
-					getting: t("components.firstRun.llmConnect.getting"),
+					issues: {
+						label: t("components.firstRun.about.issues.label"),
+						sub: t("components.firstRun.about.issues.sub"),
+					}
 				},
-				ready: {
-					title: t("components.firstRun.ready.title"),
-					desc: t("components.firstRun.ready.desc"),
-					initDesc: t("components.firstRun.ready.initDesc"),
+				agreement: {
+					title: t("components.firstRun.agreement.title"),
+					subtitle: t("components.firstRun.agreement.subtitle"),
+					agree: t("components.firstRun.agreement.agree"),
 				}
+			},
+			main: {
+				modelSelect: {
+				},
 			}
 		},
 		views: {
 			firstRun: {
+				close: t("common.action.closeApp"),
 				back: t("views.firstRun.back"),
 				next: t("views.firstRun.next"),
 				start: t("views.firstRun.start"),
+			},
+			main: {
+				close: t("common.action.closeWin"),
+				home: t("common.label.home"),
+				talk: t("common.label.talk"),
+				model: t("common.label.model"),
+				settings: t("common.label.settings")
+			}
+		},
+		no: {
+			languageSelect: {
+				title: t("components.firstRun.languageSelect.title"),
+				langEmpty: t("components.firstRun.languageSelect.langEmpty"),
+			},
+			llmConnect: {
+				error: {
+					apiBaseUrl: t("components.firstRun.llmConnect.error.apiBaseUrl"),
+					apiKey: t("components.firstRun.llmConnect.error.apiKey"),
+				},
+				title: t("components.firstRun.llmConnect.title"),
+				sub: t("components.firstRun.llmConnect.sub"),
+				apiBaseUrl: t("components.firstRun.llmConnect.apiBaseUrl"),
+				apiKey: t("components.firstRun.llmConnect.apiKey"),
+				model: t("components.firstRun.llmConnect.model"),
+				modelEmpty: t("components.firstRun.llmConnect.modelEmpty"),
+				getModel: t("components.firstRun.llmConnect.getModel"),
+				getting: t("components.firstRun.llmConnect.getting"),
 			},
 			init: {
 				title: t("views.init.title"),

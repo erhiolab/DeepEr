@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import {ref, watch, onMounted, computed} from "vue"
 import {invoke} from "@tauri-apps/api/core"
+import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
-import Icon from "../../components/Icon.vue"
+import Icon from "../Icon.vue"
+import {useLive2DStore} from "../../services/store/live2d.ts"
 import nori from "../../assets/images/live2D/Nori.webp"
 import arNori from "../../assets/images/live2D/ARGNori.webp"
 
-const I18N = computed(() => useLanguages().components.firstRun.modelSelect)
+const I18N = computed(() => useLanguages().components.main.modelSelect)
+
+const L2D = useLive2DStore()
 
 // 可选模型列表
 interface Model {
@@ -22,47 +26,46 @@ const models: Model[] = [
 ]
 
 // 配置键名
-const CONFIG_KEY = "selected_model"
+const CONFIG_KEY_MODEL = "selected_model"
 
 // 选中的模型 id
-const selected = ref("arg-nori")
+const selected = ref()
 
 // 组件挂载时读取已保存的配置
 onMounted(async () => {
 	try {
-		const SAVED = await invoke<string | null>("get_config", {key: CONFIG_KEY})
+		const SAVED = await invoke<string | null>("get_config", {key: CONFIG_KEY_MODEL})
 		if (SAVED && models.some(m => m.id === SAVED)) {
 			selected.value = SAVED
 		}
 	} catch (error) {
-		console.error("读取模型配置失败:", error)
+		await logger.error("读取模型配置失败:", error)
 	}
 })
 
-// 监听选中的模型 id 变化, 写入配置和日志
-watch(selected, async (newVal) => {
+// 选择模型
+const handleClick = async (id: string) => {
+	if (selected.value === id) return
+	selected.value = id
 	try {
-		await invoke("set_config", {key: CONFIG_KEY, value: newVal})
-		await invoke("write_log", {level: "info", message: `切换模型: ${newVal}`})
+		await invoke("set_config", {key: CONFIG_KEY_MODEL, value: id})
+		await L2D.switchModel(id)
+		await logger.info(`保存模型配置: ${id}`)
 	} catch (error) {
-		console.error("保存模型配置失败:", error)
+		await logger.error("保存模型配置失败:", error)
 	}
-})
+}
 </script>
 
 <template>
 	<section key="model-select" class="page page-model">
-		<div class="model-head">
-			<h2 class="model-title glow-teal">{{ I18N.title }}</h2>
-			<p class="model-sub">{{ I18N.sub }}</p>
-		</div>
 		<div class="model-grid">
 			<button
 				v-for="model in models"
 				:key="model.id"
 				class="model-card"
 				:class="{active: selected === model.id}"
-				@click="selected = model.id"
+				@click="handleClick(model.id)"
 			>
 				<span class="model-thumb-wrap">
 					<img class="model-thumb" :src="model.thumb" :alt="model.name"/>
@@ -85,24 +88,6 @@ watch(selected, async (newVal) => {
 	justify-content: center;
 	gap: 1.8rem;
 	text-align: center;
-}
-
-.model-head {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.6rem;
-}
-
-.model-title {
-	font-size: 2.4rem;
-	font-weight: 700;
-	color: var(--text-primary);
-}
-
-.model-sub {
-	font-size: 1.2rem;
-	color: var(--text-faint);
 }
 
 .model-grid {

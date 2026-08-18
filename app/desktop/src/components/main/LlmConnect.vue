@@ -2,7 +2,7 @@
 import {ref, watch, onMounted, computed} from "vue"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {invoke} from "@tauri-apps/api/core"
-import Icon from "../../components/Icon.vue"
+import Icon from "../Icon.vue"
 
 const I18N = computed(() => useLanguages().components.firstRun.llmConnect)
 

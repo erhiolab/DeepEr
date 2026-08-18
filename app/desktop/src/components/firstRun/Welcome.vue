@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import {computed} from "vue"
-import {invoke} from "@tauri-apps/api/core"
 import {openUrl} from "@tauri-apps/plugin-opener"
 import {writeText} from "@tauri-apps/plugin-clipboard-manager"
+import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import Icon from "../../components/Icon.vue"
 import type {IconMode, IconName} from "../../services/icon"
@@ -57,15 +57,9 @@ const handleLink = async (link: Link) => {
 	if (link.qq) {
 		try {
 			await writeText(link.qq)
-			await invoke("write_log", {
-				level: "info",
-				message: `复制 QQ 群号 ${link.qq} 成功`
-			})
+			await logger.info(`复制 QQ 群号 ${link.qq} 成功`)
 		} catch (error) {
-			await invoke("write_log", {
-				level: "error",
-				message: `复制 QQ 群号 ${link.qq} 失败`
-			})
+			await logger.error(`复制 QQ 群号 ${link.qq} 失败`, error)
 		}
 	} else if (link.url) {
 		await openUrl(link.url)
@@ -77,8 +71,8 @@ const handleLink = async (link: Link) => {
 	<section key="welcome" class="page page-welcome">
 		<div class="hero-copy">
 			<span class="badge">✨ Desktop Pet</span>
-			<h1 class="hero-title glow-teal">{{I18N.title}}</h1>
-			<p class="hero-desc">{{I18N.subtitle}}</p>
+			<h1 class="hero-title glow-teal">{{ I18N.title }}</h1>
+			<p class="hero-desc">{{ I18N.subtitle }}</p>
 			<div class="links">
 				<button v-for="link in links" :key="link.qq || link.url" class="link-card" @click="handleLink(link)">
 					<icon :name="link.icon" :mode="link.mode" class="link-icon"/>

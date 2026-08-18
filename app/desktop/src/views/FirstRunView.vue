@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import {computed, ref} from "vue"
 import {onMounted} from "vue"
+import {useRouter} from "vue-router"
 import {invoke} from "@tauri-apps/api/core"
+import {logger} from "../services/logger"
+import {closeWindow} from "../services/window"
 import useLanguages from "../services/i18n/useLanguages.ts"
 import {getInitConfig} from "../services/initConfig"
 import Icon from "../components/Icon.vue"
 import TitleBar from "../components/TitleBar.vue"
 import Welcome from "../components/firstRun/Welcome.vue"
-import LanguageSelect from "../components/firstRun/LanguageSelect.vue"
-import ModelSelect from "../components/firstRun/ModelSelect.vue"
-import Ready from "../components/firstRun/Ready.vue"
+import About from "../components/firstRun/About.vue"
+import Agreement from "../components/firstRun/Agreement.vue"
 
 const I18N = computed(() => useLanguages().views.firstRun)
+
+const ROUTER = useRouter()
 
 // 首次初始化配置
 const initConfig = ref<Awaited<ReturnType<typeof getInitConfig>>>(null)
@@ -26,7 +30,7 @@ onMounted(async () => {
 })
 
 // 初始化步骤数量
-const STEPS_COUNT = 4
+const STEPS_COUNT = 3
 
 // 当前步骤索引
 const currentStep = ref(0)
@@ -54,11 +58,6 @@ const prev = () => {
 	currentStep.value--
 }
 
-// 关闭窗口
-const closeApp = () => {
-	invoke("exit_app")
-}
-
 // 完成初始化
 const finish = async () => {
 	try {
@@ -66,9 +65,10 @@ const finish = async () => {
 		// 记录初始化版本信息 (来自首次初始化配置快照)
 		const VERSION = initConfig.value?.appVersion ?? "unknown"
 		const MODEL = initConfig.value?.selectedModel ?? "unknown"
-		await invoke("write_log", {level: "info", message: `初始化完成 (v${VERSION}, model=${MODEL})`})
+		await logger.info(`初始化完成 (v${VERSION}, model=${MODEL})`)
+		await ROUTER.push({name: "Main"})
 	} catch (error) {
-		console.error("首次运行失败:", error)
+		await logger.error("首次运行失败:", error)
 	}
 }
 </script>
@@ -79,38 +79,34 @@ const finish = async () => {
 			<div class="titlebar-right">
 				<div class="steps-indicator">
 					<span
-						v-for="i in STEPS_COUNT"
-						:key="i"
+						v-for="item in STEPS_COUNT"
+						:key="item"
 						class="seg"
-						:class="{active: i <= currentStep + 1}"
+						:class="{active: item <= currentStep + 1}"
 					/>
 				</div>
 				<span class="step-count">{{ currentStep + 1 }} / {{ STEPS_COUNT }}</span>
-				<button class="close-btn" title="关闭" @click="closeApp">
+				<button class="close-btn" :title="I18N.close" @click="closeWindow">
 					<Icon name="close" class="close-icon"/>
 				</button>
 			</div>
 		</TitleBar>
-
-		<div class="stage">
+		<main class="stage">
 			<Transition :name="direction > 0 ? 'page-next' : 'page-prev'" mode="out-in">
 				<Welcome v-if="currentStep === 0"/>
-				<LanguageSelect v-else-if="currentStep === 1"/>
-				<ModelSelect v-else-if="currentStep === 2"/>
-				<Ready v-else/>
+				<About v-else-if="currentStep === 1"/>
+				<Agreement v-else/>
 			</Transition>
-		</div>
-
-		<!-- 底部导航 -->
+		</main>
 		<div class="footer">
 			<button v-if="!isFirst" class="btn btn-ghost" @click="prev">
-				<icon name="arrow-left" class="btn-icon"/>
+				<Icon name="arrow-left" class="btn-icon"/>
 				{{ I18N.back }}
 			</button>
 			<span v-else/>
 			<button v-if="!isLast" class="btn btn-primary" @click="next">
 				{{ I18N.next }}
-				<icon name="arrow-right" class="btn-icon"/>
+				<Icon name="arrow-right" class="btn-icon"/>
 			</button>
 			<button v-else class="btn btn-primary" @click="finish">{{ I18N.start }}</button>
 		</div>

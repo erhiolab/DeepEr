@@ -1,5 +1,6 @@
 import {createI18n} from "vue-i18n"
 import {invoke} from "@tauri-apps/api/core"
+import {logger} from "../logger"
 import useLanguages from "./useLanguages.ts"
 
 /**
@@ -68,9 +69,9 @@ const useLanguage = {
 	async setLanguage(lang: LanguageType): Promise<void> {
 		try {
 			await invoke("set_config", {key: CONFIG_KEY, value: lang})
-			await invoke("write_log", {level: "info", message: `切换语言: ${lang}`})
+			await logger.info(`切换语言: ${lang}`)
 		} catch (error) {
-			console.error("保存语言配置失败:", error)
+			await logger.error("保存语言配置失败:", error)
 		}
 		if (!i18n.global.availableLocales.includes(lang)) {
 			const LOADER = this.getLoader(lang)
@@ -88,10 +89,10 @@ const useLanguage = {
 	async getLanguages(): Promise<string[]> {
 		try {
 			const LANGUAGES = Object.keys(MESSAGES).map((key) => key.replace("./locales/", "").replace(".ts", ""))
-			await invoke("write_log", {level: "info", message: `可用语言列表: ${LANGUAGES}`})
+			await logger.info(`可用语言列表: ${LANGUAGES}`)
 			return LANGUAGES
 		} catch (error) {
-			console.error("获取可用语言列表失败:", error)
+			await logger.error("获取可用语言列表失败:", error)
 		}
 		return []
 	},

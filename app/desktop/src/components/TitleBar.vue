@@ -1,13 +1,18 @@
 <script setup lang="ts">
-// 窗口通用标题栏: 标题 + 拖拽区, 右侧内容通过 slot 注入
+import {computed} from "vue"
+import useLanguages from "../services/i18n/useLanguages"
+
+// 窗口通用标题栏
 defineSlots<{
 	default: () => unknown
 }>()
+
+const I18N = computed(() => useLanguages().components.titleBar)
 </script>
 
 <template>
 	<div class="titlebar" data-tauri-drag-region>
-		<span class="title" data-tauri-drag-region>Nori</span>
+		<span class="title" data-tauri-drag-region>{{ I18N.title }}</span>
 		<slot/>
 	</div>
 </template>

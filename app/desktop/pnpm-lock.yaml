@@ -23,6 +23,9 @@ importers:
       live2d-easy-control:
         specifier: ^1.0.3
         version: 1.0.3(patch_hash=be4b5b18cc05ab5ce8858a8005aaa57087bc5d2a44752bb5471d150aa281d418)
+      pinia:
+        specifier: ^4.0.3
+        version: 4.0.3(@vue/devtools-api@8.2.1)(typescript@5.6.3)(vue@3.5.41(typescript@5.6.3))
       vue:
         specifier: ^3.5.13
         version: 3.5.41(typescript@5.6.3)
@@ -518,6 +521,15 @@ packages:
   '@vue/devtools-api@6.6.4':
     resolution: {integrity: sha512-sGhTPMuXqZ1rVOk32RylztWkfXTRhuS7vgAKv0zjqk8gbsHkJ7xfFf+jbySxt7tWObEJwyKaHMikV/WGDiQm8g==}
 
+  '@vue/devtools-api@8.2.1':
+    resolution: {integrity: sha512-6u4vXBlIBAC1wMplIZgpyPn7uh/s4Bf6F5bMzvLv+EdJ0aHs/+4B7Ygv864EStQSjRbsRzTko/kUG1A1IejQ3A==}
+
+  '@vue/devtools-kit@8.2.1':
+    resolution: {integrity: sha512-FIGIuq3AWReEpbAHY/cRGeHDfI0qOb8OCQ3YjbEAX04uaxIDbGc9rhkbVcG7rnfHPXE3RsU5KrWOu9V/okd8AQ==}
+
+  '@vue/devtools-shared@8.2.1':
+    resolution: {integrity: sha512-Fkac7lUdGReh6pVOi3AYPRGe82LQqRmAfThW7RRligOAP0ZA/Z1z9XLHDM9dv34pV2HRc79DK8uKPeG2fLnA/g==}
+
   '@vue/language-core@2.2.12':
     resolution: {integrity: sha512-IsGljWbKGU1MZpBPN+BvPAdr55YPkj2nB/TBNGNC32Vy2qLG25DYu/NBN2vNtZqdRbTRjaoYrahLrToim2NanA==}
     peerDependencies:
@@ -546,6 +558,9 @@ packages:
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
+
+  birpc@2.9.0:
+    resolution: {integrity: sha512-KrayHS5pBi69Xi9JmvoqrIgYGDkD6mcSe/i6YKi3w5kekCLzrX4+nawcXqrj2tIp50Kw/mT/s3p+GVK0A0sKxw==}
 
   brace-expansion@2.1.4:
     resolution: {integrity: sha512-hGfVzPxthbf3+2yjg/RBs60cB0FhqBS/zvdV/4wn4/BmN0bNMMHPc4V/BbFieqf1TKAGGAHnY4eSjajCl0f2Xg==}
@@ -613,6 +628,9 @@ packages:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
 
+  hookable@5.5.3:
+    resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
+
   iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
     engines: {node: '>=0.10.0'}
@@ -676,6 +694,9 @@ packages:
     engines: {node: '>= 4.4.x'}
     hasBin: true
 
+  nostics@1.2.0:
+    resolution: {integrity: sha512-FGqEfhQjrvo1lL8KFifdTQiNwwQHJxC1jtYE1Rc54qF/jxONUNL+kC9gS1krX8Q65PgrQ5fCqH/I4NhWBvdSqg==}
+
   parse-node-version@1.0.1:
     resolution: {integrity: sha512-3YHlOa/JgH6Mnpr05jP9eDG254US9ek25LyIxZlDItp2iJtwyaXQb57lBYLdT3MowkUFYEV2XXNAYIPlESvJlA==}
     engines: {node: '>= 0.10'}
@@ -683,12 +704,25 @@ packages:
   path-browserify@1.0.1:
     resolution: {integrity: sha512-b7uo2UCUOYZcnF/3ID0lulOJi/bafxa1xPe7ZPsammBSpjSWQkjNxlt635YGS2MiR9GjvuXCtz2emr3jbsz98g==}
 
+  perfect-debounce@2.1.0:
+    resolution: {integrity: sha512-LjgdTytVFXeUgtHZr9WYViYSM/g8MkcTPYDlPa3cDqMirHjKiSZPYd6DoL7pK8AJQr+uWkQvCjHNdiMqsrJs+g==}
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
+
+  pinia@4.0.3:
+    resolution: {integrity: sha512-XMQqpvjgG7LMqVhhFUzKLT4KEbsYbfZZ0CZU9PgdFm1O2VKBmIkykL8+SfNhOaT7sR0wT6BEgKT0YNDYWgmVRA==}
+    peerDependencies:
+      '@vue/devtools-api': ^8.1.5
+      typescript: '>=5.6.0'
+      vue: ^3.5.11
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
@@ -1111,6 +1145,19 @@ snapshots:
 
   '@vue/devtools-api@6.6.4': {}
 
+  '@vue/devtools-api@8.2.1':
+    dependencies:
+      '@vue/devtools-kit': 8.2.1
+
+  '@vue/devtools-kit@8.2.1':
+    dependencies:
+      '@vue/devtools-shared': 8.2.1
+      birpc: 2.9.0
+      hookable: 5.5.3
+      perfect-debounce: 2.1.0
+
+  '@vue/devtools-shared@8.2.1': {}
+
   '@vue/language-core@2.2.12(typescript@5.6.3)':
     dependencies:
       '@volar/language-core': 2.4.15
@@ -1151,6 +1198,8 @@ snapshots:
   alien-signals@1.0.13: {}
 
   balanced-match@1.0.2: {}
+
+  birpc@2.9.0: {}
 
   brace-expansion@2.1.4:
     dependencies:
@@ -1224,6 +1273,8 @@ snapshots:
 
   he@1.2.0: {}
 
+  hookable@5.5.3: {}
+
   iconv-lite@0.4.24:
     dependencies:
       safer-buffer: 2.1.2
@@ -1295,13 +1346,25 @@ snapshots:
       sax: 1.6.1
     optional: true
 
+  nostics@1.2.0: {}
+
   parse-node-version@1.0.1: {}
 
   path-browserify@1.0.1: {}
 
+  perfect-debounce@2.1.0: {}
+
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
+
+  pinia@4.0.3(@vue/devtools-api@8.2.1)(typescript@5.6.3)(vue@3.5.41(typescript@5.6.3)):
+    dependencies:
+      '@vue/devtools-api': 8.2.1
+      nostics: 1.2.0
+      vue: 3.5.41(typescript@5.6.3)
+    optionalDependencies:
+      typescript: 5.6.3
 
   postcss@8.5.26:
     dependencies:

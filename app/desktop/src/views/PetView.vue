@@ -1,39 +1,18 @@
 <script setup lang="ts">
-import {onBeforeUnmount, onMounted, ref} from "vue"
-import {invoke} from "@tauri-apps/api/core"
-import {createLive2D} from "../services/live2d"
-import {resolveModelFileBase} from "../services/live2d/config"
+import {onBeforeUnmount} from "vue"
+import {setAngle} from "live2d-easy-control"
+import {useLive2DStore} from "../services/store/live2d.ts"
 
-const L2D = createLive2D()
-
-const modelName = ref("arg-nori")
-const canvasRef = ref<HTMLCanvasElement>()
+const L2D = useLive2DStore()
 
 const onMouseMove = (e: MouseEvent) => {
-	L2D.lookAt(e).catch(() => {
+	setAngle(e).catch(() => {
 		/* 未加载完成时忽略 */
 	})
 }
 
-onMounted(async () => {
-	try {
-		const saved = await invoke<string | null>("get_config", {key: "selected_model"})
-		if (saved) modelName.value = saved
-	} catch {
-	}
-
-	try {
-		await L2D.mount({
-			directory: modelName.value,
-			fileBase: resolveModelFileBase(modelName.value),
-		})
-	} catch (error) {
-		console.error("加载 Live2D 模型失败:", error)
-	}
-})
-
 onBeforeUnmount(() => {
-	void L2D.destroy()
+	void L2D.destroyModel()
 })
 </script>
 

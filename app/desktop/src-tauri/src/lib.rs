@@ -33,74 +33,23 @@ pub fn run() {
             let db_handle = db::init(app_handle)?;
             // 初始化资源目录 (资源和下载临时目录)
             resource::init(app_handle).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-            let _ = log::write(
+            log::write(
                 app_handle,
                 &log::LogSource::Backend,
                 "info",
                 "资源目录初始化完成",
             )?;
-            // 判断是否第一次运行
-            let first_run = {
-                let conn = db_handle.0.lock().map_err(|e| e.to_string())?;
-                config::is_first_run(&conn)?
-            };
+            app.manage(db_handle);
             log::write(
                 app_handle,
                 &log::LogSource::Backend,
                 "info",
-                if first_run {
-                    "首次启动应用"
-                } else {
-                    "应用启动完成"
-                },
+                "应用初始化完成",
             )?;
-            // 窗口调度
-            if first_run {
-                // 首次启动
-                if let Some(win) = app.get_webview_window("first-run") {
-                    win.show()?;
-                    log::write(
-                        app_handle,
-                        &log::LogSource::Backend,
-                        "info",
-                        "窗口调度: 显示 first-run",
-                    )?;
-                }
-                if let Some(win) = app.get_webview_window("init") {
-                    win.hide()?;
-                    log::write(
-                        app_handle,
-                        &log::LogSource::Backend,
-                        "info",
-                        "窗口调度: 隐藏 init",
-                    )?;
-                }
-            } else {
-                // 正常启动
-                if let Some(win) = app.get_webview_window("init") {
-                    win.show()?;
-                    log::write(
-                        app_handle,
-                        &log::LogSource::Backend,
-                        "info",
-                        "窗口调度: 显示 init",
-                    )?;
-                }
-                if let Some(win) = app.get_webview_window("first-run") {
-                    win.hide()?;
-                    log::write(
-                        app_handle,
-                        &log::LogSource::Backend,
-                        "info",
-                        "窗口调度: 隐藏 first-run",
-                    )?;
-                }
-            }
-            app.manage(db_handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::exit_app,
+            commands::is_first_run,
             commands::complete_first_run,
             commands::write_log,
             commands::get_system_language,

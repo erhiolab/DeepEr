@@ -1,43 +1,44 @@
 <script setup lang="ts">
-import {computed, onMounted, ref} from "vue"
-import {invoke} from "@tauri-apps/api/core"
-import TitleBar from "../components/TitleBar.vue"
+import {computed, ref} from "vue"
+import {closeWindow} from "../services/window"
+import useLanguages from "../services/i18n/useLanguages"
 import Icon from "../components/Icon.vue"
-import type {IconName} from "../services/icon"
-import {hideWindow, showWindow} from "../services/window"
+import {IconName} from "../services/icon"
+import TitleBar from "../components/TitleBar.vue"
+import Live2D from "../components/Live2D.vue"
+import Home from "../components/main/Home.vue"
+import ModelSelect from "../components/main/ModelSelect.vue"
 
-// ---- 侧边导航项 ----
+const I18N = computed(() => useLanguages().views.main)
+
+// 侧边导航项
 type NavKey = "home" | "talk" | "model" | "settings"
 
-const NAV_ITEMS: {key: NavKey; label: string; icon: IconName}[] = [
-	{key: "home", label: "主页", icon: "noriOS"},
-	{key: "talk", label: "对话", icon: "send"},
-	{key: "model", label: "模型", icon: "arrow-up"},
-	{key: "settings", label: "设置", icon: "loading"},
-]
+// 侧边导航项
+const NAV_ITEMS = computed(() => [
+	{key: "home", label: I18N.value.home, icon: "noriOS"},
+	{key: "talk", label: I18N.value.talk, icon: "send"},
+	{key: "model", label: I18N.value.model, icon: "cube"},
+	{key: "settings", label: I18N.value.settings, icon: "settings"},
+] as { key: NavKey; label: string; icon: IconName }[])
 
+// 当前激活的导航项
 const activeNav = ref<NavKey>("home")
-const currentNav = computed(() => NAV_ITEMS.find((item) => item.key === activeNav.value))
 
-// 窗口操作
-const closeWindow = () => {
-	invoke("exit_app")
+// 当前激活的导航项
+const currentNav = computed(() => NAV_ITEMS.value.find((item) => item.key === activeNav.value))
+
+// 切换方向: 1 = 下, -1 = 上 (决定动画方向)
+const direction = ref(1)
+
+// 切换导航项
+const switchNav = (key: NavKey) => {
+	if (key === activeNav.value) return
+	const ACTIVE_INDEX = NAV_ITEMS.value.findIndex((item) => item.key === activeNav.value)
+	const TARGET_INDEX = NAV_ITEMS.value.findIndex((item) => item.key === key)
+	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
+	activeNav.value = key
 }
-
-// 最小化: 收进桌宠, 关闭主窗口面板 (桌宠窗口仍可见)
-const minimizeToPet = async () => {
-	await hideWindow("main")
-}
-
-// 唤出桌宠: 记录日志 (桌宠窗口由 Rust 侧管理置顶)
-const summonPet = async () => {
-	await showWindow("pet")
-	await invoke("write_log", {level: "info", message: "主窗口唤出桌宠"})
-}
-
-onMounted(() => {
-	invoke("write_log", {level: "info", message: "主窗口 Main 挂载完成"})
-})
 </script>
 
 <template>
@@ -45,15 +46,11 @@ onMounted(() => {
 		<TitleBar>
 			<span class="nav-title">{{ currentNav?.label }}</span>
 			<div class="titlebar-right">
-				<button class="icon-btn" title="最小化到桌宠" @click="minimizeToPet">
-					<Icon name="arrow-down" :size="16"/>
-				</button>
-				<button class="close-btn" title="退出" @click="closeWindow">
+				<button class="close-btn" :title="I18N.close" @click="closeWindow">
 					<Icon name="close" class="close-icon"/>
 				</button>
 			</div>
 		</TitleBar>
-
 		<div class="body">
 			<aside class="sidebar">
 				<button
@@ -61,74 +58,51 @@ onMounted(() => {
 					:key="item.key"
 					class="nav-item"
 					:class="{active: item.key === activeNav}"
-					@click="activeNav = item.key"
+					@click="switchNav(item.key)"
 				>
 					<Icon :name="item.icon" :size="18"/>
 					<span>{{ item.label }}</span>
 				</button>
 			</aside>
-
 			<main class="content">
-				<h1 class="content-title glow-teal">{{ currentNav?.label }}</h1>
-				<p class="content-desc">此区域为 {{ currentNav?.label }} 页面占位, 功能将在此处实现。</p>
+				<Transition :name="direction > 0 ? 'page-next' : 'page-prev'" mode="out-in">
+					<Home v-if="activeNav === 'home'"/>
+					<ModelSelect v-else-if="activeNav === 'model'"/>
+				</Transition>
 			</main>
-		</div>
-
-		<div class="footer">
-			<button class="btn-primary" @click="summonPet">
-				<Icon name="send" :size="16"/>
-				唤出桌宠
-			</button>
+			<Live2D/>
 		</div>
 	</div>
 </template>
 
 <style scoped lang="less">
 .main-window {
-	width: 100vw;
-	height: 100vh;
+	width: 100%;
+	height: 100%;
 	background: linear-gradient(160deg, var(--bg-panel) 0%, var(--bg-abyss) 100%);
 	border-radius: var(--radius-lg);
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
 	user-select: none;
-}
 
-.titlebar-right {
-	display: flex;
-	align-items: center;
-	gap: 0.6rem;
-}
+	.nav-title {
+		font-size: 1.3rem;
+		color: var(--text-muted);
+		letter-spacing: 0.04rem;
+	}
 
-.nav-title {
-	font-size: 1.3rem;
-	color: var(--text-muted);
-	letter-spacing: 0.04rem;
-}
-
-.icon-btn {
-	width: 2.6rem;
-	height: 2.6rem;
-	border: none;
-	border-radius: 50%;
-	background-color: transparent;
-	color: var(--text-muted);
-	cursor: pointer;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-
-	&:hover {
-		background-color: rgba(255, 255, 255, 0.08);
-		color: var(--nori-teal-bright);
+	.titlebar-right {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
 	}
 }
 
 .body {
 	flex: 1;
-	display: flex;
 	min-height: 0;
+	display: flex;
 }
 
 .sidebar {
@@ -138,31 +112,31 @@ onMounted(() => {
 	flex-direction: column;
 	gap: 0.4rem;
 	border-right: 0.1rem solid var(--line-subtle);
-}
 
-.nav-item {
-	display: flex;
-	align-items: center;
-	gap: 0.9rem;
-	padding: 0.9rem 1.1rem;
-	border: none;
-	border-radius: var(--radius-sm);
-	background: transparent;
-	color: var(--text-muted);
-	font-family: inherit;
-	font-size: 1.3rem;
-	cursor: pointer;
-	transition: all 0.2s ease;
+	.nav-item {
+		display: flex;
+		align-items: center;
+		gap: 0.9rem;
+		padding: 0.9rem 1.1rem;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--text-muted);
+		font-family: inherit;
+		font-size: 1.3rem;
+		cursor: pointer;
+		transition: all 0.2s ease;
 
-	&:hover {
-		background: rgba(125, 227, 255, 0.08);
-		color: var(--text-primary);
-	}
+		&:hover {
+			background: rgba(125, 227, 255, 0.08);
+			color: var(--text-primary);
+		}
 
-	&.active {
-		background: rgba(125, 227, 255, 0.14);
-		color: var(--nori-teal-bright);
-		box-shadow: inset 0 0 0 0.1rem var(--line-strong);
+		&.active {
+			background: rgba(125, 227, 255, 0.14);
+			color: var(--nori-teal-bright);
+			box-shadow: inset 0 0 0 0.1rem var(--line-strong);
+		}
 	}
 }
 
@@ -174,24 +148,34 @@ onMounted(() => {
 	justify-content: center;
 	gap: 1rem;
 	padding: 2rem;
-	overflow: auto;
-}
+	overflow: hidden;
 
-.content-title {
-	font-size: 2.6rem;
-	font-weight: 700;
-	color: var(--text-primary);
-}
+	// 页面过渡: 下一项向下滑入, 上一项向上滑入
+	.page-next-enter-active,
+	.page-next-leave-active,
+	.page-prev-enter-active,
+	.page-prev-leave-active {
+		transition: opacity 0.32s ease, transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+	}
 
-.content-desc {
-	font-size: 1.3rem;
-	color: var(--text-faint);
-}
+	.page-next-enter-from {
+		opacity: 0;
+		transform: translateY(3.6rem);
+	}
 
-.footer {
-	padding: 1rem 1.6rem;
-	display: flex;
-	justify-content: flex-end;
-	border-top: 0.1rem solid var(--line-subtle);
+	.page-next-leave-to {
+		opacity: 0;
+		transform: translateY(-3.6rem);
+	}
+
+	.page-prev-enter-from {
+		opacity: 0;
+		transform: translateY(-3.6rem);
+	}
+
+	.page-prev-leave-to {
+		opacity: 0;
+		transform: translateY(3.6rem);
+	}
 }
 </style>

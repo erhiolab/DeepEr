@@ -180,3 +180,31 @@ html, body, #app {
 .spin {
 	animation: rotate 1s linear infinite;
 }
+
+// ---------- 全局滚动条 ----------
+// 细窄半透明滚动条, 贴合深色玻璃背景
+::-webkit-scrollbar {
+	width: 0.6rem;
+	height: 0.6rem;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	border-radius: 99.9rem;
+	background: rgba(125, 227, 255, 0.16);
+	transition: background 0.2s ease;
+
+	&:hover {
+		background: rgba(125, 227, 255, 0.32);
+	}
+}
+
+// Firefox
+* {
+	scrollbar-width: thin;
+	scrollbar-color: rgba(125, 227, 255, 0.22) transparent;
+}
+

@@ -1,13 +1,33 @@
 //! 应用命令模块
 //!
-//! 前端通过 `invoke("<command>")` 调用这里的 #[tauri::command] 函数。
-//! 命令清单与 lib.rs 中 `invoke_handler` 的注册保持同步。
+//! 前端通过 `invoke("<command>")` 调用这里的 #[tauri::command] 函数
+//! 命令清单与 lib.rs 中 `invoke_handler` 的注册保持同步
 
 use crate::db::Db;
 use crate::log;
 use crate::resource::{DownloadProgress, ResourceType};
 
 use tauri::{Emitter, Manager};
+
+/// 检查是否是首次启动应用
+#[tauri::command]
+pub fn is_first_run(state: tauri::State<'_, Db>) -> Result<bool, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    crate::config::is_first_run(&conn).map_err(|e| e.to_string())
+}
+
+/// 首次启动完成
+#[tauri::command]
+pub fn complete_first_run(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Db>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    crate::config::mark_first_run_completed(&conn).map_err(|e| e.to_string())?;
+    crate::config::mark_initialized(&conn).map_err(|e| e.to_string())?;
+    let _ = log::write(&app, &log::LogSource::Backend, "info", "首次初始化完成");
+    Ok(())
+}
 
 /// 资源下载进度事件
 /// 前端: listen("resource-download", ...)
@@ -62,73 +82,7 @@ fn emit_resource_event(
     }
 }
 
-/// 退出应用
-#[tauri::command]
-pub fn exit_app() {
-    std::process::exit(0);
-}
-
-/// 首次启动完成
-/// 只有 first-run 窗口允许调用
-#[tauri::command]
-pub fn complete_first_run(
-    app: tauri::AppHandle,
-    webview: tauri::Webview,
-    state: tauri::State<'_, Db>,
-) -> Result<(), String> {
-    // 校验调用来源
-    if webview.label() != "first-run" {
-        let _ = log::write(
-            &app,
-            &log::LogSource::Backend,
-            "warn",
-            &format!(
-                "拒绝 complete_first_run: 来源窗口 label={}",
-                webview.label()
-            ),
-        );
-        return Err("只能从首次运行窗口调用 complete_first_run".to_string());
-    }
-    // 校验 first-run 窗口可见
-    if let Some(window) = app.get_webview_window("first-run") {
-        let visible = window.is_visible().map_err(|e| e.to_string())?;
-        if !visible {
-            let _ = log::write(
-                &app,
-                &log::LogSource::Backend,
-                "warn",
-                "拒绝 complete_first_run: 首次运行窗口不可见",
-            );
-            return Err("首次运行窗口不可见".to_string());
-        }
-    }
-    // 更新数据库
-    {
-        let conn = state.0.lock().map_err(|e| e.to_string())?;
-        crate::config::mark_first_run_completed(&conn).map_err(|e| e.to_string())?;
-        crate::config::mark_initialized(&conn).map_err(|e| e.to_string())?;
-    }
-    let _ = log::write(&app, &log::LogSource::Backend, "info", "首次初始化完成");
-    // 切换窗口: 关闭首次运行窗口, 显示 init 中转窗口 (下载模型) 与桌宠窗口
-    if let Some(window) = app.get_webview_window("first-run") {
-        window.close().map_err(|e| e.to_string())?;
-    }
-    if let Some(window) = app.get_webview_window("init") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-    }
-    if let Some(window) = app.get_webview_window("pet") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_always_on_top(true).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
 /// 前端写日志
-/// invoke("write_log", {
-///   level: "info",
-///   message: "xxx"
-/// })
 #[tauri::command]
 pub fn write_log(app: tauri::AppHandle, level: String, message: String) -> Result<(), String> {
     log::write(&app, &log::LogSource::Frontend, &level, &message).map_err(|e| e.to_string())

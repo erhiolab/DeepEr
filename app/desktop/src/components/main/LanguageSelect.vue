@@ -6,7 +6,7 @@ import type {LanguageType} from "../../services/i18n"
 import zhCn from "../../assets/images/flags/cn.png"
 import enGb from "../../assets/images/flags/gb.png"
 import enUs from "../../assets/images/flags/us.png"
-import Icon from "../../components/Icon.vue"
+import Icon from "../Icon.vue"
 
 const language = useLanguage
 
