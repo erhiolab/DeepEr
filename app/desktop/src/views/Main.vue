@@ -95,7 +95,9 @@ const switchNav = (key: NavKey) => {
 					<ModelSelect v-else-if="activeNav === 'model'"/>
 				</Transition>
 			</main>
-			<Live2D/>
+			<div class="live2d-container">
+				<Live2D/>
+			</div>
 		</div>
 	</div>
 </template>
@@ -202,5 +204,12 @@ const switchNav = (key: NavKey) => {
 		opacity: 0;
 		transform: translateY(3.6rem);
 	}
+}
+
+.live2d-container {
+	width: 40rem;
+	height: 100%;
+	min-height: 0;
+	border-left: 0.1rem solid var(--line-subtle);
 }
 </style>

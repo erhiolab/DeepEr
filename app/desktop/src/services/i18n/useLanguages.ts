@@ -88,39 +88,39 @@ export default () => {
 				settings: t("common.label.settings")
 			}
 		},
-		no: {
-			languageSelect: {
-				title: t("components.firstRun.languageSelect.title"),
-				langEmpty: t("components.firstRun.languageSelect.langEmpty"),
-			},
-			llmConnect: {
-				error: {
-					apiBaseUrl: t("components.firstRun.llmConnect.error.apiBaseUrl"),
-					apiKey: t("components.firstRun.llmConnect.error.apiKey"),
-				},
-				title: t("components.firstRun.llmConnect.title"),
-				sub: t("components.firstRun.llmConnect.sub"),
-				apiBaseUrl: t("components.firstRun.llmConnect.apiBaseUrl"),
-				apiKey: t("components.firstRun.llmConnect.apiKey"),
-				model: t("components.firstRun.llmConnect.model"),
-				modelEmpty: t("components.firstRun.llmConnect.modelEmpty"),
-				getModel: t("components.firstRun.llmConnect.getModel"),
-				getting: t("components.firstRun.llmConnect.getting"),
-			},
-			init: {
-				title: t("views.init.title"),
-				live2d: t("views.init.live2d"),
-				downloading: t("download.downloading"),
-				downloadDone: t("download.downloadDone"),
-				extracting: t("download.extracting"),
-				ready: t("download.ready"),
-				installed: t("download.installed"),
-				downloadFailed: t("download.downloadFailed"),
-				check: t("download.check"),
-			},
-			pet: {
-				hint: t("views.pet.hint"),
-			}
-		}
+		// no: {
+		// 	languageSelect: {
+		// 		title: t("components.firstRun.languageSelect.title"),
+		// 		langEmpty: t("components.firstRun.languageSelect.langEmpty"),
+		// 	},
+		// 	llmConnect: {
+		// 		error: {
+		// 			apiBaseUrl: t("components.firstRun.llmConnect.error.apiBaseUrl"),
+		// 			apiKey: t("components.firstRun.llmConnect.error.apiKey"),
+		// 		},
+		// 		title: t("components.firstRun.llmConnect.title"),
+		// 		sub: t("components.firstRun.llmConnect.sub"),
+		// 		apiBaseUrl: t("components.firstRun.llmConnect.apiBaseUrl"),
+		// 		apiKey: t("components.firstRun.llmConnect.apiKey"),
+		// 		model: t("components.firstRun.llmConnect.model"),
+		// 		modelEmpty: t("components.firstRun.llmConnect.modelEmpty"),
+		// 		getModel: t("components.firstRun.llmConnect.getModel"),
+		// 		getting: t("components.firstRun.llmConnect.getting"),
+		// 	},
+		// 	init: {
+		// 		title: t("views.init.title"),
+		// 		live2d: t("views.init.live2d"),
+		// 		downloading: t("download.downloading"),
+		// 		downloadDone: t("download.downloadDone"),
+		// 		extracting: t("download.extracting"),
+		// 		ready: t("download.ready"),
+		// 		installed: t("download.installed"),
+		// 		downloadFailed: t("download.downloadFailed"),
+		// 		check: t("download.check"),
+		// 	},
+		// 	pet: {
+		// 		hint: t("views.pet.hint"),
+		// 	}
+		// }
 	}
 }

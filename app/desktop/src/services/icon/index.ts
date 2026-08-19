@@ -130,6 +130,12 @@ export const icon = {
 			"M12 3v12"
 		]
 	},
+	// 错误
+	error: {
+		stroke: [
+			"M12 2v4m0 12v4m-7.07-3.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4m-3.93 7.07l-2.83-2.83M6.34 6.34L3.51 3.51"
+		]
+	}
 } satisfies Record<string, IconData>
 
 /**

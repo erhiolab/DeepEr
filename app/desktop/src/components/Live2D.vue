@@ -9,82 +9,94 @@ const I18N = computed(() => useLanguages().components.live2d)
 
 const L2D = useLive2DStore()
 
-const containerRef = ref<HTMLCanvasElement | null>(null)
+// 容器引用
+const containerRef = ref<HTMLDivElement | null>(null)
 
+// 配置键
 const CONFIG_KEY_MODEL = "selected_model"
 
 onMounted(async () => {
 	if (!containerRef.value) return
-	const MODEL = await invoke<string | null>("get_config", {key: CONFIG_KEY_MODEL})
-	if (!MODEL) return
-	const APP_READY = await L2D.initApp(containerRef.value)
-	if (!APP_READY) return
-	await L2D.initModel(MODEL)
+	if (!L2D.l2dInstance) {
+		await L2D.initApp()
+		const MODEL = await invoke<string | null>("get_config", {key: CONFIG_KEY_MODEL})
+		if (MODEL) await L2D.loadModel(MODEL)
+	}
+	await L2D.mountCanvas(containerRef.value)
 })
 
-onBeforeUnmount(async () => {
-	await L2D.destroyApp()
+onBeforeUnmount(() => {
+	L2D.detachCanvas()
 })
 </script>
 
 <template>
-	<div class="live2d">
-		<div ref="containerRef" class="live2d-canvas"/>
-		<div v-if="L2D.isLoading" class="live2d-loading">
-			<Icon name="loading"/>
-			{{ I18N.loading }}
+	<div class="live2d-container">
+		<div ref="containerRef" class="live2d-canvas-target"></div>
+		<div v-if="L2D.isLoading" class="live2d-overlay live2d-loading">
+			<Icon name="loading" class="animate-spin"/>
+			<p>
+				<span>{{ I18N.loading }}</span>
+				<span v-if="L2D.totalFiles > 0" class="text-sm">({{ L2D.loadedFiles }} / {{ L2D.totalFiles }})</span>
+			</p>
 		</div>
-		<div v-else-if="L2D.error" class="live2d-error">{{ L2D.error }}</div>
-		<div v-else-if="!L2D.isInitialized" class="live2d-empty">{{ I18N.empty }}</div>
+		<div v-else-if="L2D.error" class="live2d-overlay live2d-error">
+			<Icon name="error"/>
+			<span>{{ L2D.error }}</span>
+		</div>
+		<div v-else-if="L2D.l2dInstance && !L2D.isInitialized" class="live2d-overlay live2d-empty">
+			<span>{{ I18N.empty }}</span>
+		</div>
 	</div>
 </template>
 
 <style scoped lang="less">
-.live2d {
+.live2d-container {
 	position: relative;
-	padding: 1.2rem 0.8rem;
-	width: 40rem;
+	width: 100%;
 	height: 100%;
-	min-height: 30rem;
+	overflow: hidden;
+}
+
+.live2d-canvas-target {
+	width: 100%;
+	height: 100%;
+	position: relative;
+	z-index: 1;
+}
+
+.live2d-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 10;
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	border-left: 0.1rem solid var(--line-subtle);
+	gap: 0.8rem;
+	// backdrop-filter: blur(4px);
+	// background: rgba(0, 0, 0, 0.1);
+}
+
+.live2d-loading {
 	color: var(--text-muted);
 	font-size: 1.2rem;
-	overflow: hidden;
 
-	.live2d-canvas {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
+	.text-sm {
+		font-size: 0.9rem;
+		opacity: 0.8;
 	}
+}
 
-	.live2d-canvas :deep(canvas) {
-		display: block;
-		width: 100%;
-		height: 100%;
-	}
+.live2d-error {
+	color: var(--danger);
+	font-size: 1.2rem;
+	text-align: center;
+	padding: 1rem;
+}
 
-	.live2d-loading {
-		position: relative;
-		z-index: 1;
-		display: flex;
-		align-items: center;
-		flex-direction: column;
-		gap: 0.6rem;
-	}
-
-	.live2d-error {
-		position: relative;
-		z-index: 1;
-		color: var(--danger);
-	}
-
-	.live2d-empty {
-		position: relative;
-		z-index: 1;
-	}
+.live2d-empty {
+	color: var(--text-muted);
+	font-size: 1.2rem;
 }
 </style>

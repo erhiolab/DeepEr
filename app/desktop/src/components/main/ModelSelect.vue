@@ -100,7 +100,7 @@ const handleApply = async (): Promise<void> => {
 	if (!selected.value) return
 	const ID = selected.value
 	try {
-		const SUCCESS = await L2D.switchModel(ID)
+		const SUCCESS = await L2D.loadModel(ID)
 		if (!SUCCESS) {
 			await logger.error(`应用模型失败: ${ID}`)
 			return
@@ -129,7 +129,6 @@ const handleDelete = async (): Promise<void> => {
 				await logger.error("删除配置失败:", error)
 			}
 			applied.value = null
-			await L2D.destroyModel()
 		}
 		selected.value = null
 		await loadInstalled()
@@ -260,7 +259,7 @@ onBeforeUnmount(() => {
 		<footer class="action-bar" :class="{raised: !!selected || showProgress}" @click.stop>
 			<template v-if="showProgress">
 				<div class="bar-download">
-					<ProgressBar :percent="DOWNLOAD.state.percent" :text="progressText || downloadStatusText"/>
+					<ProgressBar :percent="DOWNLOAD.state.percent" :text="progressText || ''"/>
 					<span class="download-status">{{ downloadStatusText }}</span>
 				</div>
 			</template>
