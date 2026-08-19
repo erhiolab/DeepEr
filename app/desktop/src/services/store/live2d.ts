@@ -19,6 +19,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 	// Live2D Canvas 元素
 	const canvasElement = ref<HTMLCanvasElement | null>(null)
 
+	// 记录当前 Canvas 实际挂载的容器
+	let currentContainer: HTMLElement | null = null
+
 	// 当前模型名称
 	const currentModel = ref<string | null>(null)
 
@@ -121,7 +124,6 @@ export const useLive2DStore = defineStore("live2d", () => {
 			return
 		}
 		if (canvasElement.value.parentElement === container) {
-			// 已经在目标容器中, 只只需确保 ResizeObserver 正常工作
 			setupResizeObserver(container)
 			return
 		}
@@ -141,6 +143,8 @@ export const useLive2DStore = defineStore("live2d", () => {
 		canvasElement.value.style.pointerEvents = "auto"
 		// 添加到新容器
 		container.appendChild(canvasElement.value)
+		// 记录当前容器
+		currentContainer = container
 		// 设置 ResizeObserver 监听容器尺寸变化
 		setupResizeObserver(container)
 	}
@@ -158,24 +162,29 @@ export const useLive2DStore = defineStore("live2d", () => {
 	/**
 	 * 将 canvas 从当前容器卸载
 	 * 移动到 document.body 并隐藏
+	 *
+	 * @param container 当前试图卸载的组件容器引用
 	 */
-	const detachCanvas = () => {
+	const detachCanvas = (container: HTMLElement) => {
 		if (!canvasElement.value) return
-		// 清理 ResizeObserver
-		resizeObserver?.disconnect()
-		resizeObserver = null
-		if (canvasElement.value.parentElement) {
+		if (canvasElement.value.parentElement === container) {
+			// 清理 ResizeObserver
+			resizeObserver?.disconnect()
+			resizeObserver = null
+			// 从当前容器移除
 			canvasElement.value.parentElement.removeChild(canvasElement.value)
+			// 添加临时隐藏样式, 避免影响布局
+			canvasElement.value.style.position = "fixed"
+			canvasElement.value.style.left = "-9999px"
+			canvasElement.value.style.top = "-9999px"
+			canvasElement.value.style.width = "1px"
+			canvasElement.value.style.height = "1px"
+			canvasElement.value.style.opacity = "0"
+			canvasElement.value.style.pointerEvents = "none"
+			document.body.appendChild(canvasElement.value)
+			// 清空当前容器记录
+			currentContainer = null
 		}
-		// 添加临时样式
-		canvasElement.value.style.position = "fixed"
-		canvasElement.value.style.left = "-9999px"
-		canvasElement.value.style.top = "-9999px"
-		canvasElement.value.style.width = "1px"
-		canvasElement.value.style.height = "1px"
-		canvasElement.value.style.opacity = "0"
-		canvasElement.value.style.pointerEvents = "none"
-		document.body.appendChild(canvasElement.value)
 	}
 
 	/**
@@ -236,7 +245,6 @@ export const useLive2DStore = defineStore("live2d", () => {
 
 	/**
 	 * 设置模型缩放比例
-	 * @param scale 缩放比例
 	 */
 	const setModelScale = async (scale: number) => {
 		if (!l2dInstance.value) return
@@ -247,8 +255,6 @@ export const useLive2DStore = defineStore("live2d", () => {
 
 	/**
 	 * 设置模型 X, Y 轴位置并保存配置
-	 * X 范围: -2 ~ 2 (0 为水平居中)
-	 * Y 范围: -2 ~ 2 (1.0 为偏下)
 	 */
 	const setModelPosition = async (x: number, y: number) => {
 		if (!l2dInstance.value) return
@@ -282,6 +288,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		}
 		l2dInstance.value = null
 		canvasElement.value = null
+		currentContainer = null
 		currentModel.value = null
 		isInitialized.value = false
 		loadedFiles.value = 0
@@ -299,6 +306,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 	return {
 		// 状态
 		canvas: canvasElement,
+		currentContainer,
 		l2dInstance,
 		currentModel,
 		isInitialized,
