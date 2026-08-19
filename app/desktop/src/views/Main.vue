@@ -16,25 +16,22 @@ const I18N = computed(() => useLanguages().views.main)
 // 侧边导航项
 type NavKey = "home" | "talk" | "model" | "settings"
 
-// 配置键: 记住当前导航页, 刷新后恢复
 const CONFIG_KEY_ACTIVE_NAV = "main_active_nav"
 
 // 侧边导航项
-const NAV_ITEMS = computed(() => [
-	{key: "home", label: I18N.value.home, icon: "noriOS"},
-	{key: "talk", label: I18N.value.talk, icon: "send"},
-	{key: "model", label: I18N.value.model, icon: "cube"},
-	{key: "settings", label: I18N.value.settings, icon: "settings"},
-] as { key: NavKey; label: string; icon: IconName }[])
+const NAV_ITEMS: { key: NavKey; icon: IconName }[] = [
+	{key: "home", icon: "noriOS"},
+	{key: "talk", icon: "send"},
+	{key: "model", icon: "cube"},
+	{key: "settings", icon: "settings"}
+]
 
 // 当前激活的导航项
 const activeNav = ref<NavKey>("home")
 
 // 判断是否为合法导航键
-const isNavKey = (value: string): value is NavKey =>
-	NAV_ITEMS.value.some((item) => item.key === value)
+const isNavKey = (value: string): value is NavKey => NAV_ITEMS.some((item) => item.key === value)
 
-// 恢复上次的导航页
 onMounted(async () => {
 	try {
 		const SAVED = await invoke<string | null>("get_config", {key: CONFIG_KEY_ACTIVE_NAV})
@@ -46,20 +43,16 @@ onMounted(async () => {
 	}
 })
 
-// 当前激活的导航项
-const currentNav = computed(() => NAV_ITEMS.value.find((item) => item.key === activeNav.value))
-
 // 切换方向: 1 = 下, -1 = 上 (决定动画方向)
 const direction = ref(1)
 
 // 切换导航项
 const switchNav = (key: NavKey) => {
 	if (key === activeNav.value) return
-	const ACTIVE_INDEX = NAV_ITEMS.value.findIndex((item) => item.key === activeNav.value)
-	const TARGET_INDEX = NAV_ITEMS.value.findIndex((item) => item.key === key)
+	const ACTIVE_INDEX = NAV_ITEMS.findIndex((item) => item.key === activeNav.value)
+	const TARGET_INDEX = NAV_ITEMS.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
 	activeNav.value = key
-	// 记住当前导航页
 	invoke("set_config", {key: CONFIG_KEY_ACTIVE_NAV, value: key}).catch(async (error) => {
 		await logger.error("保存导航页配置失败:", error)
 	})
@@ -69,7 +62,7 @@ const switchNav = (key: NavKey) => {
 <template>
 	<div class="main-window">
 		<TitleBar>
-			<span class="nav-title">{{ currentNav?.label }}</span>
+			<span class="nav-title">{{ I18N[activeNav] }}</span>
 			<div class="titlebar-right">
 				<button class="close-btn" :title="I18N.close" @click="closeWindow">
 					<Icon name="close" class="close-icon"/>
@@ -86,7 +79,7 @@ const switchNav = (key: NavKey) => {
 					@click="switchNav(item.key)"
 				>
 					<Icon :name="item.icon" :size="18"/>
-					<span>{{ item.label }}</span>
+					<span>{{ I18N[item.key] }}</span>
 				</button>
 			</aside>
 			<main class="content">

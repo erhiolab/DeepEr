@@ -5,6 +5,7 @@ import {init} from "l2d"
 import {logger} from "../logger"
 import {assetUrl} from "../config.ts"
 
+// Live2D 实例类型
 type L2DInstance = ReturnType<typeof init>
 
 /**
@@ -40,6 +41,15 @@ export const useLive2DStore = defineStore("live2d", () => {
 
 	// ResizeObserver 实例, 用于监听容器尺寸变化
 	let resizeObserver: ResizeObserver | null = null
+
+	// 模型缩放比例
+	const modelScale = ref<number>(1.0)
+
+	// 模型 X 轴位置 -2 ~ 2
+	const modelX = ref<number>(0.0)
+
+	// 模型 Y 轴位置 -2 ~ 2
+	const modelY = ref<number>(0.0)
 
 	// 获取模型文件路径
 	const getModelPath = (modelName: string) => {
@@ -139,6 +149,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 	 */
 	const setupResizeObserver = (container: HTMLElement) => {
 		resizeObserver = new ResizeObserver(() => {
+			// 自动响应 canvas CSS 尺寸的变化并进行重绘
 		})
 		resizeObserver.observe(container)
 	}
@@ -167,6 +178,28 @@ export const useLive2DStore = defineStore("live2d", () => {
 	}
 
 	/**
+	 * 应用模型渲染配置
+	 */
+	const applyModelTransform = async () => {
+		if (!l2dInstance.value) return
+		try {
+			const [savedScale, savedX, savedY] = await Promise.all([
+				invoke<number | string | null>("get_config", {key: "live2d_scale"}),
+				invoke<number | string | null>("get_config", {key: "live2d_pos_x"}),
+				invoke<number | string | null>("get_config", {key: "live2d_pos_y"}),
+			])
+			// 兼容 Tauri 可能返回字符串类型的数字
+			modelScale.value = savedScale !== null ? Number(savedScale) : 1.0
+			modelX.value = savedX !== null ? Number(savedX) : 0.0
+			modelY.value = savedY !== null ? Number(savedY) : 0.0
+			l2dInstance.value.setScale(modelScale.value)
+			l2dInstance.value.setPosition(modelX.value, modelY.value)
+		} catch (err) {
+			await logger.error("应用模型渲染配置失败:", err)
+		}
+	}
+
+	/**
 	 * 加载或切换 Live2D 模型
 	 */
 	const loadModel = async (modelName: string): Promise<boolean> => {
@@ -188,6 +221,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 			})
 			currentModel.value = modelName
 			isInitialized.value = true
+			await applyModelTransform()
 			await logger.info(`Live2D 模型 ${modelName} 加载成功`)
 			return true
 		} catch (err) {
@@ -196,6 +230,41 @@ export const useLive2DStore = defineStore("live2d", () => {
 			return false
 		} finally {
 			isLoading.value = false
+		}
+	}
+
+	/**
+	 * 设置模型缩放比例
+	 * @param scale 缩放比例
+	 */
+	const setModelScale = async (scale: number) => {
+		if (!l2dInstance.value) return
+		modelScale.value = scale
+		l2dInstance.value.setScale(scale)
+		try {
+			await invoke("set_config", {key: "live2d_scale", value: scale})
+		} catch (err) {
+			await logger.error("保存模型缩放配置失败:", err)
+		}
+	}
+
+	/**
+	 * 设置模型 X, Y 轴位置并保存配置
+	 * X 范围: -2 ~ 2 (0 为水平居中)
+	 * Y 范围: -2 ~ 2 (1.0 为偏下)
+	 */
+	const setModelPosition = async (x: number, y: number) => {
+		if (!l2dInstance.value) return
+		modelX.value = x
+		modelY.value = y
+		l2dInstance.value.setPosition(x, y)
+		try {
+			await Promise.all([
+				invoke("set_config", {key: "live2d_pos_x", value: x}),
+				invoke("set_config", {key: "live2d_pos_y", value: y}),
+			])
+		} catch (err) {
+			await logger.error("保存模型位置配置失败:", err)
 		}
 	}
 
@@ -241,6 +310,11 @@ export const useLive2DStore = defineStore("live2d", () => {
 		totalFiles,
 		error,
 
+		// 渲染配置状态
+		modelScale,
+		modelX,
+		modelY,
+
 		// 核心方法
 		initApp,
 		loadModel,
@@ -248,5 +322,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 		detachCanvas,
 		destroyApp,
 		clearError,
+
+		// 渲染控制方法
+		setModelScale,
+		setModelPosition,
 	}
 })
