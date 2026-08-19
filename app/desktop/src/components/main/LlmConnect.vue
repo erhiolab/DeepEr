@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import {ref, watch, onMounted, computed} from "vue"
 import useLanguages from "../../services/i18n/useLanguages.ts"
+import {config, ConfigKey} from "../../services/config"
 import {invoke} from "@tauri-apps/api/core"
 import Icon from "../Icon.vue"
 
 const I18N = computed(() => useLanguages().components.firstRun.llmConnect)
-
-// 配置键名
-const KEY_BASE = "llm_api_base"
-const KEY_APIKEY = "llm_api_key"
-const KEY_MODEL = "llm_model"
 
 // API 地址
 const baseUrl = ref("")
@@ -33,9 +29,9 @@ const errorMsg = ref("")
 onMounted(async () => {
 	try {
 		const [BASE, KEY, MODEL] = await Promise.all([
-			invoke<string | null>("get_config", {key: KEY_BASE}),
-			invoke<string | null>("get_config", {key: KEY_APIKEY}),
-			invoke<string | null>("get_config", {key: KEY_MODEL}),
+			config.get("llm_api_base"),
+			config.get("llm_api_key"),
+			config.get("llm_model"),
 		])
 		if (BASE) baseUrl.value = BASE
 		if (KEY) apiKey.value = KEY
@@ -48,33 +44,23 @@ onMounted(async () => {
 
 // 保存配置: 输入防抖 (每个 key 独立 timer, 避免互相 clear 导致写入丢失)
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
-const saveOnChange = (key: string, get: () => string) => {
+const saveOnChange = (key: ConfigKey, get: () => string) => {
 	clearTimeout(timers.get(key))
 	timers.set(key, setTimeout(() => {
 		timers.delete(key)
 		const VALUE = get()
 		if (!VALUE) return
-		try {
-			invoke("set_config", {key, value: VALUE})
-			if (key !== KEY_APIKEY) invoke("write_log", {level: "info", message: `保存配置键 ${key} 为: ${VALUE}`})
-		} catch (error) {
-			console.error("保存 LLM 配置失败:", error)
-		}
+		config.set(key, VALUE, false)
 	}, 400))
 }
 
-watch(baseUrl, v => saveOnChange(KEY_BASE, () => v))
-watch(apiKey, v => saveOnChange(KEY_APIKEY, () => v))
+watch(baseUrl, v => saveOnChange("llm_api_base", () => v))
+watch(apiKey, v => saveOnChange("llm_api_key", () => v))
 
 // 选中模型直接保存
 watch(selectedModel, value => {
 	if (!value) return
-	try {
-		invoke("set_config", {key: KEY_MODEL, value: value})
-		invoke("write_log", {level: "info", message: `保存配置键 ${KEY_MODEL} 为: ${value}`})
-	} catch (error) {
-		console.error("保存模型失败:", error)
-	}
+	config.set("llm_model", value, false)
 })
 
 // 获取模型按钮

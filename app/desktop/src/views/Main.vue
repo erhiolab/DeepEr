@@ -4,6 +4,7 @@ import {invoke} from "@tauri-apps/api/core"
 import {closeWindow} from "../services/window"
 import useLanguages from "../services/i18n/useLanguages"
 import {logger} from "../services/logger"
+import {config} from "../services/config"
 import Icon from "../components/Icon.vue"
 import {IconName} from "../services/icon"
 import TitleBar from "../components/TitleBar.vue"
@@ -15,8 +16,6 @@ const I18N = computed(() => useLanguages().views.main)
 
 // 侧边导航项
 type NavKey = "home" | "talk" | "model" | "settings"
-
-const CONFIG_KEY_ACTIVE_NAV = "main_active_nav"
 
 // 侧边导航项
 const NAV_ITEMS: { key: NavKey; icon: IconName }[] = [
@@ -33,14 +32,8 @@ const activeNav = ref<NavKey>("home")
 const isNavKey = (value: string): value is NavKey => NAV_ITEMS.some((item) => item.key === value)
 
 onMounted(async () => {
-	try {
-		const SAVED = await invoke<string | null>("get_config", {key: CONFIG_KEY_ACTIVE_NAV})
-		if (SAVED && isNavKey(SAVED)) {
-			activeNav.value = SAVED
-		}
-	} catch (error) {
-		await logger.error("读取导航页配置失败:", error)
-	}
+	const SAVED = await config.get("main_active_nav")
+	if (SAVED && isNavKey(SAVED)) activeNav.value = SAVED
 })
 
 // 切换方向: 1 = 下, -1 = 上 (决定动画方向)
@@ -53,9 +46,7 @@ const switchNav = (key: NavKey) => {
 	const TARGET_INDEX = NAV_ITEMS.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
 	activeNav.value = key
-	invoke("set_config", {key: CONFIG_KEY_ACTIVE_NAV, value: key}).catch(async (error) => {
-		await logger.error("保存导航页配置失败:", error)
-	})
+	config.set("main_active_nav", key)
 }
 </script>
 

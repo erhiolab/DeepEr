@@ -391,7 +391,7 @@ pub fn ensure_resource(
     Ok(())
 }
 
-/// 列出指定类型下所有已安装的资源 (精简概要)
+/// 列出指定类型下所有已安装的资源
 /// 只记录 name 与 size, 不向解析端暴露本机文件路径.
 /// invoke("list_resources", {
 ///   resourceType: "live2d"

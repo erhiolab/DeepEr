@@ -3,7 +3,8 @@ import {defineStore} from "pinia"
 import {invoke} from "@tauri-apps/api/core"
 import {init} from "l2d"
 import {logger} from "../logger"
-import {assetUrl} from "../config.ts"
+import {config} from "../config"
+import {assetUrl} from "../asset.ts"
 
 // Live2D 实例类型
 type L2DInstance = ReturnType<typeof init>
@@ -184,9 +185,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 		if (!l2dInstance.value) return
 		try {
 			const [savedScale, savedX, savedY] = await Promise.all([
-				invoke<number | string | null>("get_config", {key: "live2d_scale"}),
-				invoke<number | string | null>("get_config", {key: "live2d_pos_x"}),
-				invoke<number | string | null>("get_config", {key: "live2d_pos_y"}),
+				config.get("live2d_scale"),
+				config.get("live2d_pos_x"),
+				config.get("live2d_pos_y"),
 			])
 			// 兼容 Tauri 可能返回字符串类型的数字
 			modelScale.value = savedScale !== null ? Number(savedScale) : 1.0
@@ -241,11 +242,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		if (!l2dInstance.value) return
 		modelScale.value = scale
 		l2dInstance.value.setScale(scale)
-		try {
-			await invoke("set_config", {key: "live2d_scale", value: scale})
-		} catch (err) {
-			await logger.error("保存模型缩放配置失败:", err)
-		}
+		await config.set("live2d_scale", scale)
 	}
 
 	/**
@@ -260,8 +257,8 @@ export const useLive2DStore = defineStore("live2d", () => {
 		l2dInstance.value.setPosition(x, y)
 		try {
 			await Promise.all([
-				invoke("set_config", {key: "live2d_pos_x", value: x}),
-				invoke("set_config", {key: "live2d_pos_y", value: y}),
+				config.set("live2d_pos_x", x),
+				config.set("live2d_pos_y", y),
 			])
 		} catch (err) {
 			await logger.error("保存模型位置配置失败:", err)

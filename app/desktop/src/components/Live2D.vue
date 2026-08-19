@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed, onMounted, onBeforeUnmount, ref} from "vue"
-import {invoke} from "@tauri-apps/api/core"
 import useLanguages from "../services/i18n/useLanguages.ts"
+import {config} from "../services/config"
 import {useLive2DStore} from "../services/store/live2d.ts"
 import Icon from "./Icon.vue"
 
@@ -12,14 +12,11 @@ const L2D = useLive2DStore()
 // 容器引用
 const containerRef = ref<HTMLDivElement | null>(null)
 
-// 配置键
-const CONFIG_KEY_MODEL = "selected_model"
-
 onMounted(async () => {
 	if (!containerRef.value) return
 	if (!L2D.l2dInstance) {
 		await L2D.initApp()
-		const MODEL = await invoke<string | null>("get_config", {key: CONFIG_KEY_MODEL})
+		const MODEL = await config.get("live2d_model")
 		if (MODEL) await L2D.loadModel(MODEL)
 	}
 	await L2D.mountCanvas(containerRef.value)

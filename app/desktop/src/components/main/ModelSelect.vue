@@ -2,6 +2,7 @@
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
 import {invoke} from "@tauri-apps/api/core"
 import {logger} from "../../services/logger"
+import {config} from "../../services/config"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {createResourceDownload, formatBytes} from "../../services/resourceDownload"
 import {useLive2DStore} from "../../services/store/live2d.ts"
@@ -13,9 +14,6 @@ import arNori from "../../assets/images/live2D/ARGNori.webp"
 const I18N = computed(() => useLanguages().components.main.modelSelect)
 
 const L2D = useLive2DStore()
-
-// 配置键名
-const CONFIG_KEY_MODEL = "selected_model"
 
 interface Model {
 	id: string
@@ -75,11 +73,7 @@ const loadInstalled = async (): Promise<void> => {
 
 // 读取当前应用的模型
 const loadApplied = async (): Promise<void> => {
-	try {
-		applied.value = await invoke<string | null>("get_config", {key: CONFIG_KEY_MODEL})
-	} catch (error) {
-		await logger.error("读取模型配置失败:", error)
-	}
+	applied.value = await config.get("live2d_model")
 }
 
 onMounted(async () => {
@@ -99,19 +93,13 @@ const selectedInstalled = computed(() => (selected.value ? isInstalled(selected.
 const handleApply = async (): Promise<void> => {
 	if (!selected.value) return
 	const ID = selected.value
-	try {
-		const SUCCESS = await L2D.loadModel(ID)
-		if (!SUCCESS) {
-			await logger.error(`应用模型失败: ${ID}`)
-			return
-		}
-		// 加载成功后才持久化配置, 避免失败时配置已指向未成功应用的模型
-		await invoke("set_config", {key: CONFIG_KEY_MODEL, value: ID})
-		await logger.info(`保存模型配置: ${ID}`)
-		applied.value = ID
-	} catch (error) {
-		await logger.error("应用模型失败:", error)
+	const SUCCESS = await L2D.loadModel(ID)
+	if (!SUCCESS) {
+		await logger.error(`应用模型失败: ${ID}`)
+		return
 	}
+	await config.set("live2d_model", ID)
+	applied.value = ID
 }
 
 // 删除模型
@@ -123,11 +111,7 @@ const handleDelete = async (): Promise<void> => {
 		await logger.info(`删除模型: ${ID}`)
 		// 若删除的是当前应用模型, 清理配置, 应用标记与 L2D 状态
 		if (applied.value === ID) {
-			try {
-				await invoke("delete_config", {key: CONFIG_KEY_MODEL})
-			} catch (error) {
-				await logger.error("删除配置失败:", error)
-			}
+			await config.delete("live2d_model")
 			applied.value = null
 		}
 		selected.value = null

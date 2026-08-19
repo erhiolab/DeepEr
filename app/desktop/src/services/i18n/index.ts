@@ -1,6 +1,7 @@
 import {createI18n} from "vue-i18n"
 import {invoke} from "@tauri-apps/api/core"
 import {logger} from "../logger"
+import {config} from "../config"
 import useLanguages from "./useLanguages.ts"
 
 /**
@@ -39,21 +40,14 @@ export const i18n = createI18n({
 	messages: {}
 })
 
-// 配置键名
-const CONFIG_KEY = "language"
-
 const useLanguage = {
 	useLang: {} as ReturnType<typeof useLanguages>,
 	/**
 	 * 获取当前语言
 	 */
 	async getLanguage(): Promise<LanguageType> {
-		try {
-			const SAVED = await invoke<string | null>("get_config", {key: CONFIG_KEY})
-			if (typeof SAVED === "string" && SAVED) return SAVED
-		} catch (error) {
-			console.error("读取语言配置失败:", error)
-		}
+		const SAVED = await config.get("language")
+		if (typeof SAVED === "string" && SAVED) return SAVED
 		return getSystemLanguage()
 	},
 	/**
@@ -67,12 +61,7 @@ const useLanguage = {
 	 * 设置当前语言
 	 */
 	async setLanguage(lang: LanguageType): Promise<void> {
-		try {
-			await invoke("set_config", {key: CONFIG_KEY, value: lang})
-			await logger.info(`切换语言: ${lang}`)
-		} catch (error) {
-			await logger.error("保存语言配置失败:", error)
-		}
+		await config.set("language", lang)
 		if (!i18n.global.availableLocales.includes(lang)) {
 			const LOADER = this.getLoader(lang)
 			if (LOADER) {
