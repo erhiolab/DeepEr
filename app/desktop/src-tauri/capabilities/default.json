@@ -17,6 +17,8 @@
 		"core:window:allow-set-decorations",
 		"core:window:allow-set-skip-taskbar",
 		"opener:default",
-		"core:window:allow-close"
+		"core:window:allow-close",
+		"core:event:allow-listen",
+		"core:event:default"
 	]
 }

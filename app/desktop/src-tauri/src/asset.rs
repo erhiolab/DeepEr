@@ -68,6 +68,11 @@ pub fn handle(
         }
         return serve_file(&file_path, &candidate);
     }
+    // model3.json 文件名可能与模型目录名不一致 (例如目录 arg-nori 内是 ARGNori.model3.json).
+    // live2d 客户端会请求 `<modelDir>.model3.json`, 常规候选无法命中时, 按 `.model3.json` 后缀在模型目录下查找真实文件.
+    if let Some((file_path, logical)) = find_model3_by_suffix(&data_root, relative) {
+        return serve_file(&file_path, &logical);
+    }
     not_found(&format!("资源不存在: {}", relative))
 }
 
@@ -150,6 +155,100 @@ fn path_candidates(path: &str) -> Vec<String> {
         candidates.push(candidate.join("/"));
     }
     candidates
+}
+
+/// 当 `.model3.json` 请求按普通路径无法命中时, 按文件后缀在模型目录下兜底查找真实文件.
+///
+/// live2d 客户端把请求固定命名为 `<modelDir>.model3.json` (例如 `arg-nori.model3.json`),
+/// 但磁盘真实文件可能是其它名字 (例如 `ARGNori.model3.json`), 普通候选匹配不到.
+/// 优先匹配与模型名(去分隔符, 大小写不敏感)一致的候选, 再退回任意匹配.
+fn find_model3_by_suffix(data_root: &Path, relative: &str) -> Option<(PathBuf, String)> {
+    let rel_lower = relative.to_ascii_lowercase();
+    if !rel_lower.ends_with(".model3.json") {
+        return None;
+    }
+    let segments: Vec<&str> = relative.split('/').filter(|s| !s.is_empty()).collect();
+    // 需要至少两段: <资源类型>/<模型名>/...
+    if segments.len() < 2 {
+        return None;
+    }
+    // 模型目录根 = <资源类型>/<模型名>
+    let model_root = data_root.join(segments[0]).join(segments[1]);
+    let canonical_root = model_root.canonicalize().ok()?;
+    // 防止路径穿越 / symlink 逃逸
+    if !canonical_root.starts_with(data_root) {
+        return None;
+    }
+    // 优先匹配与模型名一致的候选 (例如模型 arg-nori 在目录内是 arg-nori.model3.json)
+    let model_key = segments[1].replace(['-', '_', ' ', '.'], "").to_ascii_lowercase();
+    if !model_key.is_empty() {
+        if let Some(collated) = match_collated_model3(&canonical_root, &model_key) {
+            return Some((collated, relative.to_string()));
+        }
+    }
+    // 回退: 任意 .model3.json (递归, 浅层优先)
+    let found = find_first_model3_file(&canonical_root)?;
+    Some((found, relative.to_string()))
+}
+
+/// 在目录的直接子文件中查找文件名(去分隔符后, 大小写不敏感)与给定 key 一致的 `.model3.json`.
+fn match_collated_model3(dir: &Path, model_key: &str) -> Option<PathBuf> {
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !file_name.to_ascii_lowercase().ends_with(".model3.json") {
+            continue;
+        }
+        let base = file_name
+            .replace(".model3.json", "")
+            .replace(['-', '_', ' ', '.'], "")
+            .to_ascii_lowercase();
+        if base == model_key {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// 在目录下递归查找第一个 `.model3.json` 文件 (浅层优先).
+fn find_first_model3_file(dir: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(dir).ok()?;
+    let mut dirs = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.is_dir() {
+            dirs.push(path);
+            continue;
+        }
+        if !meta.is_file() {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if file_name.to_ascii_lowercase().ends_with(".model3.json") {
+            return Some(path);
+        }
+    }
+    // 递归子目录
+    for d in dirs {
+        if let Some(found) = find_first_model3_file(&d) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// 读取文件并返回 HTTP Response

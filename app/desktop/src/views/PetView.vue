@@ -1,25 +1,7 @@
 <script setup lang="ts">
-import {onBeforeUnmount} from "vue"
-import {setAngle} from "live2d-easy-control"
-import {useLive2DStore} from "../services/store/live2d.ts"
-
-const L2D = useLive2DStore()
-
-const onMouseMove = (e: MouseEvent) => {
-	setAngle(e).catch(() => {
-		/* 未加载完成时忽略 */
-	})
-}
-
-onBeforeUnmount(() => {
-	void L2D.destroyModel()
-})
 </script>
 
 <template>
-	<div class="pet-stage" @mousemove="onMouseMove">
-		<canvas ref="canvasRef" class="pet-canvas"/>
-	</div>
 </template>
 
 <style scoped lang="less">

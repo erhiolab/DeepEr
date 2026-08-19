@@ -153,7 +153,7 @@ pub fn fetch_llm_models(
     let data = body
         .get("data")
         .and_then(|value| value.as_array())
-        .ok_or_else(|| "接口返回成功，但缺少 data 字段".to_string())?;
+        .ok_or_else(|| "接口返回成功, 但缺少 data 字段".to_string())?;
     let mut models = Vec::with_capacity(data.len());
     for item in data {
         if let Some(id) = item.as_str() {
@@ -171,15 +171,15 @@ pub fn fetch_llm_models(
             &app,
             &log::LogSource::Backend,
             "warn",
-            "拉取模型成功，但 data 中没有有效模型",
+            "拉取模型成功, 但 data 中没有有效模型",
         );
-        return Err("接口返回成功，但没有解析到任何模型".to_string());
+        return Err("接口返回成功, 但没有解析到任何模型".to_string());
     }
     let _ = log::write(
         &app,
         &log::LogSource::Backend,
         "info",
-        &format!("拉取模型成功，共 {} 个", models.len()),
+        &format!("拉取模型成功, 共 {} 个", models.len()),
     );
     Ok(models)
 }
@@ -386,6 +386,71 @@ pub fn ensure_resource(
         &format!(
             "资源就位: type={type_name} name={name} path={}",
             target_dir.display()
+        ),
+    );
+    Ok(())
+}
+
+/// 列出指定类型下所有已安装的资源 (精简概要)
+/// 只记录 name 与 size, 不向解析端暴露本机文件路径.
+/// invoke("list_resources", {
+///   resourceType: "live2d"
+/// })
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSummary {
+    pub name: String,
+    pub size: u64,
+}
+
+#[tauri::command]
+pub fn list_resources(
+    app: tauri::AppHandle,
+    resource_type: String,
+) -> Result<Vec<ResourceSummary>, String> {
+    let resource_type = parse_resource_type(&resource_type)?;
+    let resources = crate::resource::list(&app, resource_type)?;
+    let _ = log::write(
+        &app,
+        &log::LogSource::Backend,
+        "info",
+        &format!(
+            "列出资源: type={} count={}",
+            resource_type.as_str(),
+            resources.len()
+        ),
+    );
+    Ok(resources
+        .into_iter()
+        .map(|r| ResourceSummary {
+            name: r.name,
+            size: r.size,
+        })
+        .collect())
+}
+
+/// 删除指定已安装资源
+/// invoke("delete_resource", {
+///   resourceType: "live2d",
+///   name: "arg-nori"
+/// })
+#[tauri::command]
+pub fn delete_resource(
+    app: tauri::AppHandle,
+    resource_type: String,
+    name: String,
+) -> Result<(), String> {
+    let resource_type = parse_resource_type(&resource_type)?;
+    let name = validate_resource_name(&name)?;
+    crate::resource::delete(&app, resource_type, name)?;
+    let _ = log::write(
+        &app,
+        &log::LogSource::Backend,
+        "info",
+        &format!(
+            "删除资源: type={} name={}",
+            resource_type.as_str(),
+            name
         ),
     );
     Ok(())

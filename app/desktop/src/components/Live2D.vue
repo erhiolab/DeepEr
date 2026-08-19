@@ -1,61 +1,35 @@
 <script setup lang="ts">
-import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
+import {computed, onMounted, onBeforeUnmount, ref} from "vue"
+import {invoke} from "@tauri-apps/api/core"
 import useLanguages from "../services/i18n/useLanguages.ts"
-import {useLive2DStore} from "../services/store/live2d"
+import {useLive2DStore} from "../services/store/live2d.ts"
 import Icon from "./Icon.vue"
-
-const L2D = useLive2DStore()
 
 const I18N = computed(() => useLanguages().components.live2d)
 
-const containerRef = ref<HTMLDivElement>()
+const L2D = useLive2DStore()
 
-const bindCanvas = () => {
-	const CONTAINER = containerRef.value
-	const CANVAS = L2D.canvas
-	if (!CONTAINER || !CANVAS) return
+const containerRef = ref<HTMLCanvasElement | null>(null)
 
-	if (CANVAS.parentElement !== CONTAINER) {
-		CONTAINER.appendChild(CANVAS)
-	}
+const CONFIG_KEY_MODEL = "selected_model"
 
-	resizeCanvas()
-}
-
-const resizeCanvas = () => {
-	const CONTAINER = containerRef.value
-	const CANVAS = L2D.canvas
-	if (!CONTAINER || !CANVAS) return
-
-	const RECT = CONTAINER.getBoundingClientRect()
-	const RATIO = window.devicePixelRatio || 1
-
-	CANVAS.width = RECT.width * RATIO
-	CANVAS.height = RECT.height * RATIO
-}
-
-let resizeObserver: ResizeObserver | null = null
-
-watch(() => L2D.canvas, () => {
-	bindCanvas()
+onMounted(async () => {
+	if (!containerRef.value) return
+	const MODEL = await invoke<string | null>("get_config", {key: CONFIG_KEY_MODEL})
+	if (!MODEL) return
+	const APP_READY = await L2D.initApp(containerRef.value)
+	if (!APP_READY) return
+	await L2D.initModel(MODEL)
 })
 
-onMounted(() => {
-	bindCanvas()
-	if (containerRef.value) {
-		resizeObserver = new ResizeObserver(() => resizeCanvas())
-		resizeObserver.observe(containerRef.value)
-	}
-})
-
-onBeforeUnmount(() => {
-	resizeObserver?.disconnect()
-	resizeObserver = null
+onBeforeUnmount(async () => {
+	await L2D.destroyApp()
 })
 </script>
 
 <template>
-	<div ref="containerRef" class="live2d">
+	<div class="live2d">
+		<div ref="containerRef" class="live2d-canvas"/>
 		<div v-if="L2D.isLoading" class="live2d-loading">
 			<Icon name="loading"/>
 			{{ I18N.loading }}
@@ -70,25 +44,32 @@ onBeforeUnmount(() => {
 	position: relative;
 	padding: 1.2rem 0.8rem;
 	width: 40rem;
-	min-height: 0;
+	height: 100%;
+	min-height: 30rem;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	flex-direction: column;
 	border-left: 0.1rem solid var(--line-subtle);
 	color: var(--text-muted);
 	font-size: 1.2rem;
 	overflow: hidden;
 
-	canvas {
+	.live2d-canvas {
 		position: absolute;
 		inset: 0;
 		width: 100%;
 		height: 100%;
-		pointer-events: none;
+	}
+
+	.live2d-canvas :deep(canvas) {
+		display: block;
+		width: 100%;
+		height: 100%;
 	}
 
 	.live2d-loading {
+		position: relative;
+		z-index: 1;
 		display: flex;
 		align-items: center;
 		flex-direction: column;
@@ -96,7 +77,14 @@ onBeforeUnmount(() => {
 	}
 
 	.live2d-error {
+		position: relative;
+		z-index: 1;
 		color: var(--danger);
+	}
+
+	.live2d-empty {
+		position: relative;
+		z-index: 1;
 	}
 }
 </style>

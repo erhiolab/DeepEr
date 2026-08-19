@@ -56,6 +56,20 @@ export default () => {
 			},
 			main: {
 				modelSelect: {
+					officialTitle: t("components.main.modelSelect.officialTitle"),
+					customTitle: t("components.main.modelSelect.customTitle"),
+					importModel: t("components.main.modelSelect.importModel"),
+					customEmpty: t("components.main.modelSelect.customEmpty"),
+					installed: t("components.main.modelSelect.installed"),
+					notInstalled: t("components.main.modelSelect.notInstalled"),
+					apply: t("components.main.modelSelect.apply"),
+					delete: t("components.main.modelSelect.delete"),
+					download: t("components.main.modelSelect.download"),
+					downloading: t("components.main.modelSelect.downloading"),
+					downloadDone: t("components.main.modelSelect.downloadDone"),
+					extracting: t("components.main.modelSelect.extracting"),
+					downloadReady: t("components.main.modelSelect.downloadReady"),
+					downloadFailed: t("components.main.modelSelect.downloadFailed"),
 				},
 			}
 		},

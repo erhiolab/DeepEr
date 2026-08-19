@@ -143,6 +143,8 @@ export const createResourceDownload = () => {
 	// 订阅事件并触发资源就位流程 (检查 → 如需则下载解压)
 	const ensure = async (resourceType: string, name: string): Promise<void> => {
 		reset()
+		// 先取消上一次残留的监听, 避免重复订阅导致事件重复处理
+		unlisten?.()
 		unlisten = await listen<ResourceDownloadEventPayload>(EVENT_NAME, onEvent)
 		try {
 			await invoke("ensure_resource", {resourceType, name})

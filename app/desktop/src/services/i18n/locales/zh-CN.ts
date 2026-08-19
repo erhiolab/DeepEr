@@ -64,6 +64,20 @@ export default {
 		},
 		main: {
 			modelSelect: {
+				officialTitle: "官方模型",
+				customTitle: "自定义模型",
+				importModel: "导入模型",
+				customEmpty: "还没有导入模型",
+				installed: "已安装",
+				notInstalled: "未安装",
+				apply: "应用",
+				delete: "删除",
+				download: "下载",
+				downloading: "正在下载...",
+				downloadDone: "下载完成",
+				extracting: "正在解压...",
+				downloadReady: "就绪",
+				downloadFailed: "下载失败",
 			},
 		}
 	},

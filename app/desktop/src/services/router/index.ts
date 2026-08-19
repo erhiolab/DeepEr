@@ -27,14 +27,14 @@ const router = createRouter({
 })
 
 router.afterEach(async (to) => {
-	switch (to.path) {
-		case "/first-run":
+	switch (to.name) {
+		case "FirstRun":
 			await setFirstRunWindow()
 			break
-		case "/main":
+		case "Main":
 			await setMainWindow()
 			break
-		case "/pet":
+		case "Pet":
 			// await setPetWindow()
 			break
 	}

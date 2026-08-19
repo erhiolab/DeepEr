@@ -47,7 +47,7 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let _tray = TrayIconBuilder::new()
         .icon(icon.clone())
         .menu(&menu)
-        .show_menu_on_left_click(false) // 左键不弹出菜单，用于自定义行为
+        .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| {
             let _ = handle_menu_event(&app, &event.id.0);
         })

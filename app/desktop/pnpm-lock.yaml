@@ -4,13 +4,13 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  live2d-easy-control: be4b5b18cc05ab5ce8858a8005aaa57087bc5d2a44752bb5471d150aa281d418
-
 importers:
 
   .:
     dependencies:
+      '@jannchie/pixi-live2d-display':
+        specifier: ^1.4.0
+        version: 1.4.0(pixi.js@8.19.0)
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -20,12 +20,12 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.4
-      live2d-easy-control:
-        specifier: ^1.0.3
-        version: 1.0.3(patch_hash=be4b5b18cc05ab5ce8858a8005aaa57087bc5d2a44752bb5471d150aa281d418)
       pinia:
         specifier: ^4.0.3
         version: 4.0.3(@vue/devtools-api@8.2.1)(typescript@5.6.3)(vue@3.5.41(typescript@5.6.3))
+      pixi.js:
+        specifier: ^8.19.0
+        version: 8.19.0
       vue:
         specifier: ^3.5.13
         version: 3.5.41(typescript@5.6.3)
@@ -246,6 +246,11 @@ packages:
     resolution: {integrity: sha512-XbRgrv+XEuvDr7UCY55oibVrh+o4u+A0VB6nSL0F5Z8LcZxE/8j573LYG6bCrOigIcHdGpSNI7Rh5UpC5/B/eg==}
     engines: {node: '>= 22'}
 
+  '@jannchie/pixi-live2d-display@1.4.0':
+    resolution: {integrity: sha512-Qgg27x+psxB6nSxDbhtSgv4Caoxjir9iv4nBi+BH5XdD4AkyxNgm+wPP0UJjLXun0NFc55dmGTZfyPtVLTxevw==}
+    peerDependencies:
+      pixi.js: ^8.0.0
+
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
 
@@ -255,6 +260,9 @@ packages:
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+
+  '@pixi/colord@2.9.6':
+    resolution: {integrity: sha512-nezytU2pw587fQstUu1AsJZDVEynjskwOL+kibwcdxsMBFqPsFFNA7xl0ii/gXuDi6M0xj3mfRJj8pBSc2jCfA==}
 
   '@rollup/rollup-android-arm-eabi@4.62.4':
     resolution: {integrity: sha512-RrPokAb7dmbxFoeO3TloqHyOjgye8RkBhSqmp4aJMIex4c9r46ZstPnleDQOq1t46VOVjwIuwNogIqbodV1Vvg==}
@@ -479,6 +487,9 @@ packages:
   '@tauri-apps/plugin-opener@2.5.4':
     resolution: {integrity: sha512-1HnPkb+AmgO29HBazm4uPLKB+r7zzcTBW1d0fyYp1uP+jwtpoiNDGKMMzz58SFp49nOIrxdE3aUJtT57lfO9CQ==}
 
+  '@types/earcut@3.0.0':
+    resolution: {integrity: sha512-k/9fOUGO39yd2sCjrbAJvGDEQvRwRnQIZlBz43roGwUZo5SHAmyVvSFyaVVZkicRVCaDXPKlbxrUcBuJoSWunQ==}
+
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
@@ -553,6 +564,13 @@ packages:
   '@vue/shared@3.5.41':
     resolution: {integrity: sha512-IOnwSCma8j+9xJT6b8H0dEYidC80NsYmNMlZxRsukYcSoGaDBohog5hDxzeUXdFeGWFA++vWvxqOmrr96VlqMA==}
 
+  '@webgpu/types@0.1.71':
+    resolution: {integrity: sha512-mMy8/ODcKhab808co15eW+yN+HgXoQxRQHTiBV9Mrvl1r0ufnid7YOcI+gi4eUWSWl9ezD6TW2KXccrL8HCh2A==}
+
+  '@xmldom/xmldom@0.8.14':
+    resolution: {integrity: sha512-T4EDRUBVZYRldYApjEJiU0e1stYWaRAX7CuSnKzrpwdZKo53zGV8/pqfzV6FfwNl9YThD2OumQYvqtvjvgG7aQ==}
+    engines: {node: '>=10.0.0'}
+
   alien-signals@1.0.13:
     resolution: {integrity: sha512-OGj9yyTnJEttvzhTUWuscOvtqxq5vrhF7vL9oS0xJ2mK0ItPYP1/y+vCFebfxoEyAz0++1AIwJ5CMr+Fk3nDmg==}
 
@@ -591,6 +609,9 @@ packages:
       supports-color:
         optional: true
 
+  earcut@3.2.3:
+    resolution: {integrity: sha512-vnS4AVwp1KHAF13i1vp1/2D5evWy3k5u/iW/B81QVsUZtV8cv2tU0b2VNFlqvh4kYwrFMDdjPCfAmfyJW9y14Q==}
+
   entities@7.0.1:
     resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
     engines: {node: '>=0.12'}
@@ -607,6 +628,9 @@ packages:
   estree-walker@2.0.2:
     resolution: {integrity: sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==}
 
+  eventemitter3@5.0.4:
+    resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
+
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
     engines: {node: '>=12.0.0'}
@@ -620,6 +644,9 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  gifuct-js@2.1.2:
+    resolution: {integrity: sha512-rI2asw77u0mGgwhV3qA+OEgYqaDn5UNqgs+Bx0FGwSpuqfYn+Ir6RQY5ENNQ8SbIiG/m5gVa7CD5RriO4f4Lsg==}
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
@@ -643,13 +670,16 @@ packages:
     resolution: {integrity: sha512-ZhMwEosbFJkA0YhFnNDgTM4ZxDRsS6HqTo7qsZM08fehyRYIYa0yHu5R6mgo1n/8MgaPBXiPimPD77baVFYg+A==}
     engines: {node: '>=12.13'}
 
+  ismobilejs@1.1.1:
+    resolution: {integrity: sha512-VaFW53yt8QO61k2WJui0dHf4SlL8lxBofUuUmwBo0ljPk0Drz2TiuDW4jo3wDcv41qy/SxrJ+VAzJ/qYqsmzRw==}
+
+  js-binary-schema-parser@2.0.3:
+    resolution: {integrity: sha512-xezGJmOb4lk/M1ZZLTR/jaBHQ4gG/lqQnJqdIv4721DMggsa1bDVlHXNeHYogaIEHD9vCRv0fcL4hMA+Coarkg==}
+
   less@4.9.0:
     resolution: {integrity: sha512-umRhrCH7fCi8Uj2RcwKjJdvUORTjeWqkdKx0LbcZvjIwsAVsnIAGcxHaqowPeBFBjQuWOeC/bve0AlpFzF/+SQ==}
     engines: {node: '>=18'}
     hasBin: true
-
-  live2d-easy-control@1.0.3:
-    resolution: {integrity: sha512-+uiq22DwCPG4jpAE1sTGKsJYB8+lJ6UF61GyZ1hH0+Fxvz/ZyuZtkIbXOZQafGl6olmCog0kgYo43RceTf/lCA==}
 
   lodash.merge@4.6.2:
     resolution: {integrity: sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==}
@@ -701,6 +731,9 @@ packages:
     resolution: {integrity: sha512-3YHlOa/JgH6Mnpr05jP9eDG254US9ek25LyIxZlDItp2iJtwyaXQb57lBYLdT3MowkUFYEV2XXNAYIPlESvJlA==}
     engines: {node: '>= 0.10'}
 
+  parse-svg-path@0.2.0:
+    resolution: {integrity: sha512-Tf7FFIrguPKQwzD4pWnYkR2VOv3raoHeKED80Bm+BYHI3KxC8KsgsGC5+fSMzAGDA6UEk4bHvmi+RsjmL3khpg==}
+
   path-browserify@1.0.1:
     resolution: {integrity: sha512-b7uo2UCUOYZcnF/3ID0lulOJi/bafxa1xPe7ZPsammBSpjSWQkjNxlt635YGS2MiR9GjvuXCtz2emr3jbsz98g==}
 
@@ -723,6 +756,9 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  pixi.js@8.19.0:
+    resolution: {integrity: sha512-pq1O6emA/GFjjeF+8d3Pb5t7knD8FsnfWGqQcRjYjsqFZ7QdzG1XgjLDUu0DFJRbafjV5+g8iNLFBx0b9649lg==}
 
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
@@ -756,6 +792,10 @@ packages:
 
   stream-parser@0.3.1:
     resolution: {integrity: sha512-bJ/HgKq41nlKvlhccD5kaCr/P+Hu0wPNKPJOH7en+YrJu/9EgqUF+88w5Jb6KNcjOFMhfX4B2asfeAtIGuHObQ==}
+
+  tiny-lru@11.4.7:
+    resolution: {integrity: sha512-w/Te7uMUVeH0CR8vZIjr+XiN41V+30lkDdK+NRIDCUYKKuL9VcmaUEmaPISuwGhLlrTGh5yu18lENtR9axSxYw==}
+    engines: {node: '>=12'}
 
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
@@ -950,10 +990,16 @@ snapshots:
 
   '@intlify/shared@11.4.8': {}
 
+  '@jannchie/pixi-live2d-display@1.4.0(pixi.js@8.19.0)':
+    dependencies:
+      pixi.js: 8.19.0
+
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
+
+  '@pixi/colord@2.9.6': {}
 
   '@rollup/rollup-android-arm-eabi@4.62.4':
     optional: true
@@ -1087,6 +1133,8 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.11.1
 
+  '@types/earcut@3.0.0': {}
+
   '@types/estree@1.0.9': {}
 
   '@vitejs/plugin-vue@5.2.4(vite@6.4.3(less@4.9.0)(yaml@2.9.0))(vue@3.5.41(typescript@5.6.3))':
@@ -1195,6 +1243,10 @@ snapshots:
 
   '@vue/shared@3.5.41': {}
 
+  '@webgpu/types@0.1.71': {}
+
+  '@xmldom/xmldom@0.8.14': {}
+
   alien-signals@1.0.13: {}
 
   balanced-match@1.0.2: {}
@@ -1222,6 +1274,8 @@ snapshots:
     dependencies:
       ms: 2.1.3
     optional: true
+
+  earcut@3.2.3: {}
 
   entities@7.0.1: {}
 
@@ -1261,12 +1315,18 @@ snapshots:
 
   estree-walker@2.0.2: {}
 
+  eventemitter3@5.0.4: {}
+
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
 
   fsevents@2.3.3:
     optional: true
+
+  gifuct-js@2.1.2:
+    dependencies:
+      js-binary-schema-parser: 2.0.3
 
   graceful-fs@4.2.11:
     optional: true
@@ -1287,6 +1347,10 @@ snapshots:
 
   is-what@4.1.16: {}
 
+  ismobilejs@1.1.1: {}
+
+  js-binary-schema-parser@2.0.3: {}
+
   less@4.9.0:
     dependencies:
       copy-anything: 3.0.5
@@ -1301,8 +1365,6 @@ snapshots:
       source-map: 0.6.1
     transitivePeerDependencies:
       - supports-color
-
-  live2d-easy-control@1.0.3(patch_hash=be4b5b18cc05ab5ce8858a8005aaa57087bc5d2a44752bb5471d150aa281d418): {}
 
   lodash.merge@4.6.2:
     optional: true
@@ -1350,6 +1412,8 @@ snapshots:
 
   parse-node-version@1.0.1: {}
 
+  parse-svg-path@0.2.0: {}
+
   path-browserify@1.0.1: {}
 
   perfect-debounce@2.1.0: {}
@@ -1365,6 +1429,19 @@ snapshots:
       vue: 3.5.41(typescript@5.6.3)
     optionalDependencies:
       typescript: 5.6.3
+
+  pixi.js@8.19.0:
+    dependencies:
+      '@pixi/colord': 2.9.6
+      '@types/earcut': 3.0.0
+      '@webgpu/types': 0.1.71
+      '@xmldom/xmldom': 0.8.14
+      earcut: 3.2.3
+      eventemitter3: 5.0.4
+      gifuct-js: 2.1.2
+      ismobilejs: 1.1.1
+      parse-svg-path: 0.2.0
+      tiny-lru: 11.4.7
 
   postcss@8.5.26:
     dependencies:
@@ -1433,6 +1510,8 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
     optional: true
+
+  tiny-lru@11.4.7: {}
 
   tinyglobby@0.2.17:
     dependencies:

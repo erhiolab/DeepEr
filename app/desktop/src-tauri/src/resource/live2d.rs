@@ -37,7 +37,7 @@ pub fn get(data_dir: &Path, name: &str) -> Result<ResourceInfo, String> {
         return Err(format!("Live2D 资源不存在: {name}"));
     }
     if !has_model3_json(&resource_dir) {
-        return Err(format!("Live2D 资源无效，缺少 .model3.json: {name}"));
+        return Err(format!("Live2D 资源无效, 缺少 .model3.json: {name}"));
     }
     let size = calculate_dir_size(&resource_dir)
         .map_err(|e| format!("计算 Live2D 资源大小失败: {e}"))?;

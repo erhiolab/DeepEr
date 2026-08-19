@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import {computed, ref} from "vue"
+import {computed, onMounted, ref} from "vue"
+import {invoke} from "@tauri-apps/api/core"
 import {closeWindow} from "../services/window"
 import useLanguages from "../services/i18n/useLanguages"
+import {logger} from "../services/logger"
 import Icon from "../components/Icon.vue"
 import {IconName} from "../services/icon"
 import TitleBar from "../components/TitleBar.vue"
@@ -14,6 +16,9 @@ const I18N = computed(() => useLanguages().views.main)
 // 侧边导航项
 type NavKey = "home" | "talk" | "model" | "settings"
 
+// 配置键: 记住当前导航页, 刷新后恢复
+const CONFIG_KEY_ACTIVE_NAV = "main_active_nav"
+
 // 侧边导航项
 const NAV_ITEMS = computed(() => [
 	{key: "home", label: I18N.value.home, icon: "noriOS"},
@@ -24,6 +29,22 @@ const NAV_ITEMS = computed(() => [
 
 // 当前激活的导航项
 const activeNav = ref<NavKey>("home")
+
+// 判断是否为合法导航键
+const isNavKey = (value: string): value is NavKey =>
+	NAV_ITEMS.value.some((item) => item.key === value)
+
+// 恢复上次的导航页
+onMounted(async () => {
+	try {
+		const SAVED = await invoke<string | null>("get_config", {key: CONFIG_KEY_ACTIVE_NAV})
+		if (SAVED && isNavKey(SAVED)) {
+			activeNav.value = SAVED
+		}
+	} catch (error) {
+		await logger.error("读取导航页配置失败:", error)
+	}
+})
 
 // 当前激活的导航项
 const currentNav = computed(() => NAV_ITEMS.value.find((item) => item.key === activeNav.value))
@@ -38,6 +59,10 @@ const switchNav = (key: NavKey) => {
 	const TARGET_INDEX = NAV_ITEMS.value.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
 	activeNav.value = key
+	// 记住当前导航页
+	invoke("set_config", {key: CONFIG_KEY_ACTIVE_NAV, value: key}).catch(async (error) => {
+		await logger.error("保存导航页配置失败:", error)
+	})
 }
 </script>
 

@@ -61,7 +61,9 @@ pub fn run() {
             config::get_all_configs,
             config::get_init_config,
             commands::check_resource,
-            commands::ensure_resource
+            commands::ensure_resource,
+            commands::list_resources,
+            commands::delete_resource
         ])
         .run(tauri::generate_context!())
         .expect("运行应用时出错")
