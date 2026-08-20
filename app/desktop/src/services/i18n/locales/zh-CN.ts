@@ -19,7 +19,8 @@ export default {
 			notInstalled: "未安装",
 			apply: "应用",
 			delete: "删除",
-			download: "下载"
+			download: "下载",
+			refresh: "刷新",
 		},
 		live2d: {
 			loading: "加载中...",
@@ -33,6 +34,7 @@ export default {
 			downloadFailed: "下载失败"
 		},
 		toast: {
+			firstRunFailed: "首次运行失败",
 			openLinkFailed: "打开链接失败",
 			copyFailed: "复制失败",
 			loadLanguagesFailed: "加载语言列表失败",
@@ -40,7 +42,7 @@ export default {
 			loadModelsFailed: "加载模型列表失败",
 			applyModelFailed: "应用模型失败",
 			deleteModelFailed: "删除模型失败",
-			firstRunFailed: "首次运行失败"
+			refreshFailed: "刷新 Live2D 模型失败",
 		},
 	},
 	components: {
@@ -113,6 +115,13 @@ export default {
 				subtitle: "选择你偏好的界面语言，切换后立即生效",
 				current: "当前语言",
 				langEmpty: "暂无可用语言"
+			},
+			exception: {
+				title: "异常处理",
+				subtitle: "遇到问题时可在这里手动恢复",
+				refreshLive2d: "刷新 Live2D 模型",
+				refreshLive2dDesc: "重新加载当前应用的 Live2D 模型",
+				noModel: "尚未应用任何 Live2D 模型",
 			},
 		}
 	},

@@ -101,6 +101,15 @@ export default () => {
 					loadLanguagesFailed: t("common.toast.loadLanguagesFailed"),
 					switchLanguageFailed: t("common.toast.switchLanguageFailed"),
 				},
+				exception: {
+					title: t("components.main.exception.title"),
+					subtitle: t("components.main.exception.subtitle"),
+					refreshLive2d: t("components.main.exception.refreshLive2d"),
+					refreshLive2dDesc: t("components.main.exception.refreshLive2dDesc"),
+					refresh: t("common.label.refresh"),
+					refreshFailed: t("common.toast.refreshFailed"),
+					noModel: t("components.main.exception.noModel"),
+				},
 			}
 		},
 		views: {

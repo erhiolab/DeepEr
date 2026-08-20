@@ -173,6 +173,15 @@ export const icon = {
 			"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20",
 			"M2 12h20"
 		]
+	},
+	// refresh (刷新)
+	refresh: {
+		stroke: [
+			"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
+			"M21 3v5h-5",
+			"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
+			"M3 21v-5h5"
+		]
 	}
 } satisfies Record<string, IconData>
 

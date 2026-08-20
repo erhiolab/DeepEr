@@ -102,8 +102,11 @@ const select = async (code: string) => {
 .page-lang {
 	width: 100%;
 	max-width: 44rem;
+	margin: 0 auto;
+	height: 100%;
 	display: flex;
 	flex-direction: column;
+	justify-content: center;
 	gap: 1.6rem;
 }
 

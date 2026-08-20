@@ -302,6 +302,21 @@ export const useLive2DStore = defineStore("live2d", () => {
 	/**
 	 * 销毁 Live2D 实例
 	 */
+	/**
+	 * 刷新(重新加载)当前 Live2D 模型
+	 * 保留 canvas 与实例, 仅强制重新加载当前已应用的模型
+	 */
+	const reloadModel = async (): Promise<boolean> => {
+		if (!currentModel.value) {
+			await logger.warn("刷新 Live2D 失败: 尚未应用任何模型")
+			return false
+		}
+		const NAME = currentModel.value
+		// 绕过相同模型的短路判断, 强制走一遍加载流程
+		isInitialized.value = false
+		return loadModel(NAME)
+	}
+
 	const destroyApp = async () => {
 		if (!l2dInstance.value) return
 		await logger.info("销毁 Live2D 实例")
@@ -355,6 +370,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		// 核心方法
 		initApp,
 		loadModel,
+		reloadModel,
 		mountCanvas,
 		detachCanvas,
 		destroyApp,

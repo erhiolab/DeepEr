@@ -11,6 +11,7 @@ import Home from "../components/main/Home.vue"
 import ModelSelect from "../components/main/ModelSelect.vue"
 import About from "../components/firstRun/About.vue"
 import LanguageSelect from "../components/main/LanguageSelect.vue";
+import Exception from "../components/main/Exception.vue";
 
 const I18N = computed(() => useLanguages().views.main)
 
@@ -93,6 +94,7 @@ const switchNav = (key: NavKey) => {
 					<Home v-if="activeNav === 'home'"/>
 					<LanguageSelect v-else-if="activeNav === 'language'"/>
 					<ModelSelect v-else-if="activeNav === 'model'"/>
+					<Exception v-else-if="activeNav === 'exception'"/>
 					<About v-else-if="activeNav === 'about'"/>
 				</Transition>
 			</main>
@@ -187,13 +189,14 @@ const switchNav = (key: NavKey) => {
 
 .content {
 	flex: 1;
+	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	align-items: center;
-	justify-content: center;
+	align-items: stretch;
+	justify-content: flex-start;
 	gap: 1rem;
 	padding: 2rem;
-	overflow: hidden;
+	overflow-y: auto;
 	border-right: 0.1rem solid var(--line-strong);
 	border-left: 0.1rem solid var(--line-strong);
 
