@@ -38,6 +38,7 @@ interface CustomModel {
 	name: string
 }
 
+// 自定义区展示: 已安装自定义模型 (按 id 去重)
 const customModels = ref<CustomModel[]>([])
 
 // 已安装的模型 id 集合
@@ -226,6 +227,15 @@ const handleDownload = async (): Promise<void> => {
 	await DOWNLOAD.ensure("live2d", selected.value)
 }
 
+// 双击
+const handleDblClick = async () => {
+	if (selectedInstalled.value) {
+		await handleApply()
+	} else {
+		await handleDownload()
+	}
+}
+
 // 导入模型: 选择目录 → 触发后端命令 (结果通过 resource-import 事件推进, done 时刷新列表)
 const handleImport = async (): Promise<void> => {
 	try {
@@ -280,6 +290,7 @@ onBeforeUnmount(() => {
 					class="model-card"
 					:class="{selected: selected === model.id}"
 					@click.stop="selected = model.id"
+					@dblclick="handleDblClick"
 				>
 					<span class="model-thumb-wrap">
 						<span class="model-thumb model-placeholder">
@@ -383,6 +394,9 @@ onBeforeUnmount(() => {
 	position: relative;
 	width: 100%;
 	height: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
 	overflow-y: auto;
 }
 

@@ -36,6 +36,7 @@ onBeforeUnmount(() => {
 				<span>{{ I18N.loading }}</span>
 				<span v-if="L2D.totalFiles > 0" class="text-sm">({{ L2D.loadedFiles }} / {{ L2D.totalFiles }})</span>
 			</p>
+			<p v-if="L2D.isRetrying" class="text-sm live2d-retrying">{{ I18N.retrying(L2D.retryCount, L2D.retryTotal) }}</p>
 		</div>
 		<div v-else-if="L2D.error" class="live2d-overlay live2d-error">
 			<Icon name="error"/>
@@ -82,6 +83,10 @@ onBeforeUnmount(() => {
 	.text-sm {
 		font-size: 0.9rem;
 		opacity: 0.8;
+	}
+
+	.live2d-retrying {
+		color: var(--warning, #d97706);
 	}
 }
 

@@ -83,7 +83,7 @@ const openLink = async (url: string) => {
 			</div>
 			<h3 class="block-title">{{ I18N.linksTitle }}</h3>
 			<div class="links">
-				<button class="link-card" @click="openLink('https://github.com/erhiolab/Nori-Desktop-Pet')">
+				<button class="link-card" @click="openLink('https://github.com/erhiolab/DeepEr')">
 					<span class="link-text">
 						<span class="link-label">{{ I18N.source.label }}</span>
 						<span class="link-sub">{{ I18N.source.sub }}</span>
@@ -92,7 +92,7 @@ const openLink = async (url: string) => {
 						<Icon name="arrow-right"/>
 					</span>
 				</button>
-				<button class="link-card" @click="openLink('https://github.com/erhiolab/Nori-Desktop-Pet/issues')">
+				<button class="link-card" @click="openLink('https://github.com/erhiolab/DeepEr/issues')">
 					<span class="link-text">
 						<span class="link-label">{{ I18N.issues.label }}</span>
 						<span class="link-sub">{{ I18N.issues.sub }}</span>

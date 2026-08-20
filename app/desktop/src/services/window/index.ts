@@ -44,7 +44,7 @@ export const setFirstRunWindow = async () => {
  */
 export const setMainWindow = async () => {
 	// 设置窗口大小
-	await appWindow.setSize(new LogicalSize(1500, 750))
+	await appWindow.setSize(new LogicalSize(1300, 750))
 	// 不置顶
 	await appWindow.setAlwaysOnTop(false)
 	// 不允许调整大小

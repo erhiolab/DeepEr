@@ -26,7 +26,7 @@ onMounted(async () => {
 	try {
 		initConfig.value = await getInitConfig()
 	} catch (error) {
-		console.error("加载初始化配置失败:", error)
+		await logger.error("加载初始化配置失败:", error)
 	}
 })
 
@@ -79,7 +79,7 @@ const finish = async () => {
 	<div class="first-run-window" :class="`bg-step-${currentStep + 1}`">
 		<TitleBar>
 			<div class="titlebar-right">
-				<div class="steps-indicator">
+				<div class="steps-indicator" data-tauri-drag-region>
 					<span
 						v-for="item in STEPS_COUNT"
 						:key="item"
@@ -87,7 +87,7 @@ const finish = async () => {
 						:class="{active: item <= currentStep + 1}"
 					/>
 				</div>
-				<span class="step-count">{{ currentStep + 1 }} / {{ STEPS_COUNT }}</span>
+				<span class="step-count" data-tauri-drag-region>{{ currentStep + 1 }} / {{ STEPS_COUNT }}</span>
 				<button class="close-btn" :title="I18N.close" @click="closeWindow">
 					<Icon name="close" class="close-icon"/>
 				</button>

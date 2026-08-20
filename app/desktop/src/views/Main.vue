@@ -9,6 +9,7 @@ import TitleBar from "../components/TitleBar.vue"
 import Live2D from "../components/Live2D.vue"
 import Home from "../components/main/Home.vue"
 import ModelSelect from "../components/main/ModelSelect.vue"
+import About from "../components/firstRun/About.vue"
 
 const I18N = computed(() => useLanguages().views.main)
 
@@ -52,7 +53,7 @@ const switchNav = (key: NavKey) => {
 <template>
 	<div class="main-window">
 		<TitleBar>
-			<span class="nav-title">{{ I18N[activeNav] }}</span>
+			<span class="nav-title" data-tauri-drag-region>{{ I18N[activeNav] }}</span>
 			<div class="titlebar-right">
 				<button class="close-btn" :title="I18N.close" @click="hideWindow">
 					<Icon name="close" class="close-icon"/>
@@ -76,6 +77,7 @@ const switchNav = (key: NavKey) => {
 				<Transition :name="direction > 0 ? 'page-next' : 'page-prev'" mode="out-in">
 					<Home v-if="activeNav === 'home'"/>
 					<ModelSelect v-else-if="activeNav === 'model'"/>
+					<About v-else-if="activeNav === 'about'"/>
 				</Transition>
 			</main>
 			<div class="live2d-container">
