@@ -21,11 +21,12 @@ type LoggerConfig struct {
 
 // OSSConfig OSS配置
 type OSSConfig struct {
-	Endpoint         string `yaml:"endpoint"`
-	AccessKeyID      string `yaml:"access-key-id"`
-	AccessKeySecret  string `yaml:"access-key-secret"`
-	BucketName       string `yaml:"bucket-name"`
-	URLExpireSeconds int    `yaml:"url-expire-seconds"`
+	Endpoint          string `yaml:"endpoint"`
+	AccessKeyID       string `yaml:"access-key-id"`
+	AccessKeySecret   string `yaml:"access-key-secret"`
+	BucketName        string `yaml:"bucket-name"`
+	URLExpireSeconds  int    `yaml:"url-expire-seconds"`
+	CoverCacheSeconds int    `yaml:"cover-cache-seconds"`
 }
 
 // Config 配置

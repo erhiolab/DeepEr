@@ -37,6 +37,7 @@ interface ExceptionAction {
 	desc: string
 	action: () => Promise<void> | void
 	disabled?: () => boolean
+	actionLabel: string
 }
 
 const ACTIONS: ExceptionAction[] = [
@@ -46,6 +47,7 @@ const ACTIONS: ExceptionAction[] = [
 		desc: I18N.value.refreshLive2dDesc,
 		action: handleRefreshLive2d,
 		disabled: () => refreshing.value || L2D.isLoading,
+		actionLabel: I18N.value.refresh,
 	},
 ]
 </script>
@@ -70,7 +72,7 @@ const ACTIONS: ExceptionAction[] = [
 				>
 					<Icon name="refresh" :size="14" v-if="!refreshing"/>
 					<Icon name="loading" class="animate-spin" :size="14" v-else/>
-					<span>{{ refreshing ? "..." : I18N.refresh }}</span>
+					<span>{{ item.actionLabel }}</span>
 				</button>
 			</li>
 		</ul>

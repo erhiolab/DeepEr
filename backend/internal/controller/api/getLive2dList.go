@@ -11,6 +11,14 @@ func GetLive2dList() http.HandlerFunc {
 		utils.Success(w, map[string]any{
 			"list": []any{
 				map[string]any{
+					"id": "ARGNori",
+					"name": "ARGNori",
+				},
+				map[string]any{
+					"id": "Nori",
+					"name": "Nori",
+				},
+				map[string]any{
 					"id": "Haru",
 					"name": "Haru",
 				},

@@ -92,6 +92,16 @@ export default () => {
 					loadModelsFailed: t("common.toast.loadModelsFailed"),
 					applyModelFailed: t("common.toast.applyModelFailed"),
 					deleteModelFailed: t("common.toast.deleteModelFailed"),
+					gate: {
+						title: t("components.main.modelSelect.gate.title"),
+						desc: t("components.main.modelSelect.gate.desc"),
+						question: t("components.main.modelSelect.gate.question"),
+						placeholder: t("components.main.modelSelect.gate.placeholder"),
+						cancel: t("components.main.modelSelect.gate.cancel"),
+						submit: t("components.main.modelSelect.gate.submit"),
+						wrong: t("components.main.modelSelect.gate.wrong"),
+						foot: t("components.main.modelSelect.gate.foot"),
+					},
 				},
 				languageSelect: {
 					title: t("components.main.languageSelect.title"),

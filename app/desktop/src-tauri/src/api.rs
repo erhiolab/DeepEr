@@ -18,6 +18,8 @@ pub mod path {
     pub const RESOURCE_DOWNLOAD_URL: &str = "/resource/download_url";
     /// 获取 Live2D 模型列表
     pub const LIVE2D_LIST: &str = "/live2d/list";
+    /// 获取 Live2D 模型封面图
+    pub const LIVE2D_COVER: &str = "/live2d/cover";
 }
 
 /// Live2D 模型摘要 (来自 `/live2d/list`)
@@ -28,6 +30,9 @@ pub struct Live2dSummary {
     pub id: String,
     /// 模型名称
     pub name: String,
+    /// 模型封面图 URL (指向网关 /live2d/cover, 由浏览器缓存)
+    #[serde(rename = "coverUrl", default)]
+    pub cover_url: String,
 }
 
 /// 后端统一响应结构
@@ -98,7 +103,16 @@ struct Live2dListBody {
 pub async fn fetch_live2d_list_async() -> Result<Vec<Live2dSummary>, ApiError> {
     let url = format!("{API_BASE_URL}{}", path::LIVE2D_LIST);
     let response: ApiResponse<Live2dListBody> = get_async(&url, &[]).await?;
-    Ok(response.into_body()?.list)
+    let mut list = response.into_body()?.list;
+    // 为每个模型补充封面图 URL (指向网关 /live2d/cover, 浏览器缓存)
+    for item in &mut list {
+        item.cover_url = format!(
+            "{API_BASE_URL}{}?id={}",
+            path::LIVE2D_COVER,
+            urlencode(&item.id)
+        );
+    }
+    Ok(list)
 }
 
 /// `/resource/download_url` 的 body 结构
@@ -207,4 +221,19 @@ fn parse_model_list(body: serde_json::Value) -> Result<Vec<String>, ApiError> {
         ));
     }
     Ok(models)
+}
+
+/// 对查询参数值做 URL 百分号编码 (仅转义非 URL-安全字符, 零第三方依赖)
+/// 模型 ID 通常为字母数字, 此函数主要用于防御空格/中文等特殊字符.
+fn urlencode(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }

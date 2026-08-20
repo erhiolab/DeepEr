@@ -1,7 +1,7 @@
 //! 日志模块
-//! Windows: %APPDATA%/<应用标识>/data/log/
-//! macOS: ~/Library/Application Support/<应用标识>/data/log/
-//! Linux: ~/.local/share/<应用标识>/data/log/
+//! Windows: %APPDATA%/<应用标识>/log/
+//! macOS: ~/Library/Application Support/<应用标识>/log/
+//! Linux: ~/.local/share/<应用标识>/log/
 
 use chrono::Local;
 use std::error::Error as StdError;
@@ -36,10 +36,10 @@ impl LogSource {
     }
 }
 
-/// 获取日志目录: 软件安装目录/data/log
+/// 获取日志目录: 软件数据目录/log
 fn log_dir(app: &AppHandle) -> LogResult<PathBuf> {
     let app_data_dir = app.path().app_data_dir()?;
-    let dir = app_data_dir.join("data").join("log");
+    let dir = app_data_dir.join("log");
     Ok(dir)
 }
 

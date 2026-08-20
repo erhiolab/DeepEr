@@ -8,7 +8,7 @@ pub mod types;
 pub use types::{DownloadProgress, ResourceType};
 
 use std::path::{Path, PathBuf};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::db;
 
@@ -25,10 +25,10 @@ pub fn resources_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .join(RESOURCES_DIR))
 }
 
-/// 获取资源下载临时目录
+/// 获取资源下载临时目录: 软件数据目录/temp
 pub fn temp_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let data_dir = db::data_dir(app).map_err(|e| e.to_string())?;
-    Ok(data_dir.join(TEMP_DIR))
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(app_data_dir.join(TEMP_DIR))
 }
 
 /// 初始化资源目录

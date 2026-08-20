@@ -189,14 +189,14 @@ const switchNav = (key: NavKey) => {
 
 .content {
 	flex: 1;
+	padding: 2rem;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	align-items: stretch;
 	justify-content: flex-start;
 	gap: 1rem;
-	padding: 2rem;
-	overflow-y: auto;
+	overflow: hidden;
 	border-right: 0.1rem solid var(--line-strong);
 	border-left: 0.1rem solid var(--line-strong);
 

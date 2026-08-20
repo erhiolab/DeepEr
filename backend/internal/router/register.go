@@ -9,5 +9,6 @@ import (
 func Register(r *Router) {
 	r.handleFunc(http.MethodGet, "/ping", api.Ping())
 	r.handleFunc(http.MethodGet, "/resource/download_url", api.GetResourceDownloadURL())
+	r.handleFunc(http.MethodGet, "/live2d/cover", api.GetLive2dCover())
 	r.handleFunc(http.MethodGet, "/live2d/list", api.GetLive2dList())
 }

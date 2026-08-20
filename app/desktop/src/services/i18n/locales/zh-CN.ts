@@ -108,7 +108,17 @@ export default {
 				importing: "正在导入...",
 				importReady: "导入完成",
 				importFailed: "导入失败",
-				customEmpty: "还没有导入模型"
+				customEmpty: "还没有导入模型",
+				gate: {
+					title: "模型授权验证",
+					desc: "该模型由 inori 提供, 因模型特殊性不可分发, 但是你可以回答这个问题获得下载资格",
+					question: "Nori写的诗第一句？8字",
+					placeholder: "请输入答案",
+					cancel: "取消",
+					submit: "验证并下载",
+					wrong: "答案不正确, 再想想~",
+					foot: "你或许可以去群里找找答案, 如果感兴趣可以加个愿望单, 谢谢~"
+				}
 			},
 			languageSelect: {
 				title: "语言",

@@ -123,7 +123,11 @@ where
 {
     validate_name(name)?;
     let signed_url = get_signed_url(resource_type, name)?;
-    let temp = data_dir.join("temp");
+    // 临时目录: <应用数据目录>/temp
+    let temp = data_dir
+        .parent()
+        .ok_or_else(|| DownloadError::Io("临时目录解析失败: data 目录无父路径".to_string()))?
+        .join("temp");
     fs::create_dir_all(&temp).map_err(|e| DownloadError::Io(format!("创建临时目录失败: {e}")))?;
     let zip_path = temp.join(format!("{name}.zip"));
     let part_path = temp.join(format!("{name}.zip.part"));
