@@ -144,7 +144,7 @@ const switchNav = (key: NavKey) => {
 
 		&.active {
 			background: rgba(125, 227, 255, 0.14);
-			color: var(--nori-teal-bright);
+			color: var(--deep-teal-bright);
 			box-shadow: inset 0 0 0 0.1rem var(--line-strong);
 		}
 	}

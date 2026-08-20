@@ -33,7 +33,7 @@ defineProps<{
 .progress-bar {
 	height: 100%;
 	border-radius: 0.2rem;
-	background: linear-gradient(90deg, var(--nori-teal-bright), var(--nori-teal));
+	background: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
 	transition: width 0.4s ease;
 }
 

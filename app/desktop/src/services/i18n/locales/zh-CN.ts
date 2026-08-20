@@ -27,6 +27,16 @@ export default {
 			downloadReady: "就绪",
 			downloadFailed: "下载失败"
 		},
+		toast: {
+			openLinkFailed: "打开链接失败",
+			copyFailed: "复制失败",
+			loadLanguagesFailed: "加载语言列表失败",
+			switchLanguageFailed: "切换语言失败",
+			loadModelsFailed: "加载模型列表失败",
+			applyModelFailed: "应用模型失败",
+			deleteModelFailed: "删除模型失败",
+			firstRunFailed: "首次运行失败"
+		},
 	},
 	components: {
 		firstRun: {
@@ -49,9 +59,9 @@ export default {
 				}
 			},
 			about: {
-				title: "关于 Nori",
+				title: "关于 DeepEr",
 				subtitle: "致谢与联系方式",
-				thanksPlaceholder: "感谢每一位让 Nori 变得更好的伙伴. ",
+				thanksPlaceholder: "感谢每一位让 DeepEr 变得更好的伙伴. ",
 				linksTitle: "了解更多",
 				source: {
 					label: "GitHub 仓库",

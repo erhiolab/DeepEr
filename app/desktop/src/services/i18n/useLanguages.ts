@@ -6,7 +6,7 @@ export default () => {
 		common: {
 			download: {
 				downloadFailed: t("common.download.downloadFailed"),
-			}
+			},
 		},
 		components: {
 			live2d: {
@@ -30,7 +30,9 @@ export default () => {
 							label: t("components.firstRun.welcome.links.bilibili.label"),
 							sub: t("components.firstRun.welcome.links.bilibili.sub"),
 						}
-					}
+					},
+					copyFailed: t("common.toast.copyFailed"),
+					openLinkFailed: t("common.toast.openLinkFailed"),
 				},
 				about: {
 					title: t("components.firstRun.about.title"),
@@ -44,7 +46,8 @@ export default () => {
 					issues: {
 						label: t("components.firstRun.about.issues.label"),
 						sub: t("components.firstRun.about.issues.sub"),
-					}
+					},
+					openLinkFailed: t("common.toast.openLinkFailed"),
 				},
 				agreement: {
 					title: t("components.firstRun.agreement.title"),
@@ -68,11 +71,15 @@ export default () => {
 					extracting: t("common.download.extracting"),
 					downloadReady: t("common.download.downloadReady"),
 					downloadFailed: t("common.download.downloadFailed"),
+					loadModelsFailed: t("common.toast.loadModelsFailed"),
+					applyModelFailed: t("common.toast.applyModelFailed"),
+					deleteModelFailed: t("common.toast.deleteModelFailed"),
 				},
 			}
 		},
 		views: {
 			firstRun: {
+				firstRunFailed: t("common.toast.firstRunFailed"),
 				close: t("common.action.closeApp"),
 				back: t("views.firstRun.back"),
 				next: t("views.firstRun.next"),

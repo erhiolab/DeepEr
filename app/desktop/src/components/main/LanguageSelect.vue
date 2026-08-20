@@ -3,6 +3,7 @@ import {computed, ref, onMounted} from "vue"
 import useLanguage from "../../services/i18n"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import type {LanguageType} from "../../services/i18n"
+import {toast} from "vue3-toastify"
 import zhCn from "../../assets/images/flags/cn.png"
 import enGb from "../../assets/images/flags/gb.png"
 import enUs from "../../assets/images/flags/us.png"
@@ -45,6 +46,7 @@ onMounted(async () => {
 		current.value = await language.getLanguage()
 	} catch (error) {
 		console.error("加载语言列表失败:", error)
+		toast.error(useLanguages().common.toast.loadLanguagesFailed)
 	}
 })
 
@@ -55,6 +57,7 @@ const select = async (code: string) => {
 		await language.setLanguage(code)
 	} catch (error) {
 		console.error("切换语言失败:", error)
+		toast.error(useLanguages().common.toast.switchLanguageFailed)
 	}
 }
 </script>
@@ -136,11 +139,11 @@ const select = async (code: string) => {
 
 	&:hover {
 		background-color: rgba(125, 227, 255, 0.08);
-		border-color: var(--nori-teal-soft);
+		border-color: var(--deep-teal-soft);
 	}
 
 	&.active {
-		border-color: var(--nori-teal);
+		border-color: var(--deep-teal);
 		background-color: rgba(125, 227, 255, 0.12);
 		box-shadow: 0 0 1rem var(--glow-teal-soft);
 	}
@@ -164,7 +167,7 @@ const select = async (code: string) => {
 }
 
 .lang-check {
-	color: var(--nori-teal);
+	color: var(--deep-teal);
 	display: inline-flex;
 	align-items: center;
 	opacity: 0;

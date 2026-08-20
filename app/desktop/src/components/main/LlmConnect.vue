@@ -204,7 +204,7 @@ const fetchModels = async () => {
 	transition: all 0.2s ease;
 
 	&:focus {
-		border-color: var(--nori-teal-soft);
+		border-color: var(--deep-teal-soft);
 		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
 	}
 }
@@ -237,7 +237,7 @@ const fetchModels = async () => {
 	padding: 0.9rem 1.8rem;
 	border: none;
 	border-radius: var(--radius-sm);
-	background-image: linear-gradient(90deg, var(--nori-teal-bright), var(--nori-teal));
+	background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
 	color: #05121a;
 	font-size: 1.3rem;
 	font-weight: 600;

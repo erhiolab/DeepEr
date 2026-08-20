@@ -1,13 +1,7 @@
-// ============================================================
-// Nori Desktop Pet — 全局设计规范
-// 配色参考先导页面设计规范
-// ============================================================
-
-// ---------- 基础重置 ----------
 * {
 	padding: 0;
-	box-sizing: border-box;
 	margin: 0;
+	box-sizing: border-box;
 	background: transparent;
 }
 
@@ -16,7 +10,6 @@ img {
 	user-select: none;
 }
 
-// 根字号: 1rem = 10px (浏览器默认 16px × 62.5%), 组件内一律用 rem
 html {
 	font-size: 62.5%;
 }
@@ -26,30 +19,39 @@ html, body, #app {
 	height: 100%;
 }
 
-// 品牌色
-@nori-teal: #5eead4; // 品牌主色(青绿)
-@nori-teal-bright: #7de3ff; // 高光青(强调/光晕)
-@nori-teal-soft: #7fd4e8; // 柔青(次级强调)
+// 主色
+@deep-teal: #80ceff;
+// 强调/光晕
+@deep-teal-bright: #7de3ff;
+// 次级强调
+@deep-teal-soft: #7fd4e8;
 
-// 深色背景层级 (由深到浅,本家网页渐变 #0f2d47 → #081a2e → #050e1a)
-@bg-base: #05070a; // 全局最底
-@bg-abyss: #050e1a; // 最深
-@bg-deep: #081a2e; // 深
-@bg-panel: #0f2d47; // 面板/渐变顶
+// 全局最底
+@bg-base: #05070a;
+// 最深
+@bg-abyss: #050e1a;
+// 深
+@bg-deep: #081a2e;
+// 面板/渐变顶
+@bg-panel: #0f2d47;
 
-// 文字
-@text-primary: #dcf3ff; // 主文字(亮)
-@text-body: #cfdde5; // 正文
-@text-muted: #748895; // 次要(灰蓝)
-@text-faint: #9db3c0; // 弱化
+// 主文字/亮色
+@text-primary: #dcf3ff;
+// 正文
+@text-body: #cfdde5;
+// 次要/灰蓝
+@text-muted: #748895;
+// 弱化
+@text-faint: #9db3c0;
 
 // 边框 / 分隔
 @line-subtle: rgba(125, 227, 255, 0.14);
 @line-strong: rgba(125, 227, 255, 0.28);
 
-// 状态色
-@warning: #f1b24a; // 警告/停滞
-@danger: #fb2c36; // 危险/错误
+// 警告/停滞
+@warning: #f1b24a;
+// 危险/错误
+@danger: #fb2c36;
 
 // 光晕
 @glow-teal: rgba(125, 227, 255, 0.45);
@@ -61,11 +63,10 @@ html, body, #app {
 @radius-lg: 1.6rem;
 @shadow-soft: 0 0.4rem 2.4rem rgba(0, 0, 0, 0.35);
 
-// ---------- CSS 变量 (供组件运行时使用) ----------
 :root {
-	--nori-teal: @nori-teal;
-	--nori-teal-bright: @nori-teal-bright;
-	--nori-teal-soft: @nori-teal-soft;
+	--deep-teal: @deep-teal;
+	--deep-teal-bright: @deep-teal-bright;
+	--deep-teal-soft: @deep-teal-soft;
 
 	--bg-base: @bg-base;
 	--bg-abyss: @bg-abyss;
@@ -92,8 +93,6 @@ html, body, #app {
 	--shadow-soft: @shadow-soft;
 }
 
-// ---------- 通用工具类 ----------
-// 窗口根容器 (无边框窗口的标准画布)
 .window-root {
 	width: 100vw;
 	height: 100vh;
@@ -103,14 +102,11 @@ html, body, #app {
 	user-select: none;
 }
 
-// 青绿文字光晕
 .glow-teal {
 	text-shadow: 0 0 1.8rem @glow-teal, 0 0 6rem @glow-teal-soft;
 }
 
-// ---------- 通用组件工具类 ----------
-
-// 主按钮 (青绿渐变)
+// 主按钮
 .btn-primary {
 	padding: 0.9rem 2.2rem;
 	border: none;
@@ -120,7 +116,7 @@ html, body, #app {
 	font-weight: 600;
 	cursor: pointer;
 	color: #05121a;
-	background-image: linear-gradient(90deg, var(--nori-teal-bright), var(--nori-teal));
+	background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
 	display: inline-flex;
 	align-items: center;
 	gap: 0.6rem;
@@ -167,22 +163,6 @@ html, body, #app {
 	}
 }
 
-// 旋转动画 (加载图标)
-@keyframes rotate {
-	from {
-		transform: rotate(0deg);
-	}
-	to {
-		transform: rotate(360deg);
-	}
-}
-
-.spin {
-	animation: rotate 1s linear infinite;
-}
-
-// ---------- 全局滚动条 ----------
-// 细窄半透明滚动条, 贴合深色玻璃背景
 ::-webkit-scrollbar {
 	width: 0.6rem;
 	height: 0.6rem;
@@ -202,7 +182,6 @@ html, body, #app {
 	}
 }
 
-// Firefox
 * {
 	scrollbar-width: thin;
 	scrollbar-color: rgba(125, 227, 255, 0.22) transparent;

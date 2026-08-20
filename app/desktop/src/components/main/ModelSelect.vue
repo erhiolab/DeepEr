@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
 import {invoke} from "@tauri-apps/api/core"
+import {toast} from "vue3-toastify"
 import {logger} from "../../services/logger"
 import {config} from "../../services/config"
 import useLanguages from "../../services/i18n/useLanguages.ts"
@@ -68,6 +69,7 @@ const loadInstalled = async (): Promise<void> => {
 			.map(item => ({id: item.name, name: item.name}))
 	} catch (error) {
 		await logger.error("读取已安装资源失败:", error)
+		toast.error(I18N.value.loadModelsFailed)
 	}
 }
 
@@ -96,6 +98,7 @@ const handleApply = async (): Promise<void> => {
 	const SUCCESS = await L2D.loadModel(ID)
 	if (!SUCCESS) {
 		await logger.error(`应用模型失败: ${ID}`)
+		toast.error(I18N.value.applyModelFailed)
 		return
 	}
 	await config.set("live2d_model", ID)
@@ -118,6 +121,7 @@ const handleDelete = async (): Promise<void> => {
 		await loadInstalled()
 	} catch (error) {
 		await logger.error("删除模型失败:", error)
+		toast.error(I18N.value.deleteModelFailed)
 	}
 }
 
@@ -318,12 +322,12 @@ onBeforeUnmount(() => {
 
 	&:hover {
 		background-color: rgba(125, 227, 255, 0.08);
-		border-color: var(--nori-teal-soft);
+		border-color: var(--deep-teal-soft);
 		transform: translateY(-0.2rem);
 	}
 
 	&.selected {
-		border-color: var(--nori-teal);
+		border-color: var(--deep-teal);
 		background-color: rgba(125, 227, 255, 0.1);
 		box-shadow: 0 0 1.6rem var(--glow-teal-soft);
 	}
@@ -378,8 +382,8 @@ onBeforeUnmount(() => {
 
 	&.on {
 		opacity: 1;
-		background-color: var(--nori-teal);
-		border-color: var(--nori-teal);
+		background-color: var(--deep-teal);
+		border-color: var(--deep-teal);
 		color: #05121a;
 		transform: scale(1);
 	}
@@ -404,7 +408,7 @@ onBeforeUnmount(() => {
 	border: 0.1rem solid currentColor;
 
 	&.installed {
-		color: var(--nori-teal-soft);
+		color: var(--deep-teal-soft);
 	}
 
 	&.missing {
@@ -434,7 +438,7 @@ onBeforeUnmount(() => {
 
 	&:hover {
 		background-color: rgba(125, 227, 255, 0.1);
-		color: var(--nori-teal-bright);
+		color: var(--deep-teal-bright);
 	}
 }
 
@@ -497,7 +501,7 @@ onBeforeUnmount(() => {
 
 	&:hover:not(:disabled) {
 		background-color: rgba(125, 227, 255, 0.14);
-		color: var(--nori-teal-bright);
+		color: var(--deep-teal-bright);
 	}
 
 	&:disabled {
@@ -508,7 +512,7 @@ onBeforeUnmount(() => {
 	&.apply {
 		border: none;
 		color: #05121a;
-		background-image: linear-gradient(90deg, var(--nori-teal-bright), var(--nori-teal));
+		background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
 
 		&:hover:not(:disabled) {
 			box-shadow: 0 0 1.4rem var(--glow-teal-soft);

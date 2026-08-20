@@ -108,7 +108,7 @@ const GROUPS = [
 .group-title {
 	font-size: 1.35rem;
 	font-weight: 600;
-	color: var(--nori-teal);
+	color: var(--deep-teal);
 }
 
 .group-intro {
@@ -142,7 +142,7 @@ const GROUPS = [
 	width: 0.45rem;
 	height: 0.45rem;
 	border-radius: 50%;
-	background-color: var(--nori-teal);
+	background-color: var(--deep-teal);
 }
 
 .agree-foot {

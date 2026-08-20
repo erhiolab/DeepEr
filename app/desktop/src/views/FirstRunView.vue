@@ -3,6 +3,7 @@ import {computed, ref} from "vue"
 import {onMounted} from "vue"
 import {useRouter} from "vue-router"
 import {invoke} from "@tauri-apps/api/core"
+import {toast} from "vue3-toastify"
 import {logger} from "../services/logger"
 import {closeWindow} from "../services/window"
 import useLanguages from "../services/i18n/useLanguages.ts"
@@ -69,6 +70,7 @@ const finish = async () => {
 		await ROUTER.push({name: "Main"})
 	} catch (error) {
 		await logger.error("首次运行失败:", error)
+		toast.error(I18N.value.firstRunFailed)
 	}
 }
 </script>
@@ -171,7 +173,7 @@ const finish = async () => {
 		transition: all 0.3s ease;
 
 		&.active {
-			background-image: linear-gradient(90deg, var(--nori-teal-bright), var(--nori-teal));
+			background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
 			box-shadow: 0 0 0.6rem var(--glow-teal-soft);
 		}
 	}

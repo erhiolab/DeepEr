@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed} from "vue"
 import {openUrl} from "@tauri-apps/plugin-opener"
+import {toast} from "vue3-toastify"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import Icon from "../Icon.vue"
 import logo from "../../assets/images/logo.png"
@@ -48,6 +49,7 @@ const openLink = async (url: string) => {
 		await openUrl(url)
 	} catch (error) {
 		console.error("打开链接失败:", error)
+		toast.error(I18N.value.thanksPlaceholder)
 	}
 }
 </script>
@@ -55,7 +57,7 @@ const openLink = async (url: string) => {
 <template>
 	<section key="about" class="page page-about">
 		<div class="about-head">
-			<img class="about-logo" :src="logo" alt="Nori"/>
+			<img class="about-logo" :src="logo" alt="DeepEr"/>
 			<div class="about-meta">
 				<h2 class="about-title glow-teal">{{ I18N.title }}</h2>
 				<p class="about-subtitle">{{ I18N.subtitle }}</p>
@@ -192,7 +194,7 @@ const openLink = async (url: string) => {
 		&:hover {
 			transform: translateY(-0.15rem);
 			background-color: rgba(125, 227, 255, 0.1);
-			border-color: var(--nori-teal-soft);
+			border-color: var(--deep-teal-soft);
 			box-shadow: 0 0 1.2rem var(--glow-teal-soft);
 		}
 	}
@@ -219,7 +221,7 @@ const openLink = async (url: string) => {
 
 .contrib-role {
 	font-size: 1.05rem;
-	color: var(--nori-teal);
+	color: var(--deep-teal);
 	font-weight: 500;
 }
 
@@ -236,7 +238,7 @@ const openLink = async (url: string) => {
 	margin-top: 0.2rem;
 	font-size: 1.3rem;
 	font-weight: 600;
-	color: var(--nori-teal);
+	color: var(--deep-teal);
 }
 
 .links {
@@ -262,7 +264,7 @@ const openLink = async (url: string) => {
 
 	&:hover {
 		background-color: rgba(125, 227, 255, 0.1);
-		border-color: var(--nori-teal-soft);
+		border-color: var(--deep-teal-soft);
 		box-shadow: 0 0 1.2rem var(--glow-teal-soft);
 		transform: translateX(0.3rem);
 	}
@@ -286,7 +288,7 @@ const openLink = async (url: string) => {
 }
 
 .link-arrow {
-	color: var(--nori-teal);
+	color: var(--deep-teal);
 	flex-shrink: 0;
 	display: inline-flex;
 	align-items: center;

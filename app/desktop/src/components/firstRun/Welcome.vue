@@ -2,6 +2,7 @@
 import {computed} from "vue"
 import {openUrl} from "@tauri-apps/plugin-opener"
 import {writeText} from "@tauri-apps/plugin-clipboard-manager"
+import {toast} from "vue3-toastify"
 import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import Icon from "../../components/Icon.vue"
@@ -53,9 +54,16 @@ const handleLink = async (link: Link) => {
 			await logger.info(`复制 QQ 群号 ${link.qq} 成功`)
 		} catch (error) {
 			await logger.error(`复制 QQ 群号 ${link.qq} 失败`, error)
+			toast.error(I18N.value.copyFailed)
 		}
 	} else if (link.url) {
-		await openUrl(link.url)
+		try {
+			await openUrl(link.url)
+			await logger.info(`打开网页 ${link.url} 成功`)
+		} catch (error) {
+			await logger.error(`打开网页 ${link.url} 失败`, error)
+			toast.error(I18N.value.openLinkFailed)
+		}
 	}
 }
 </script>
@@ -81,7 +89,7 @@ const handleLink = async (link: Link) => {
 		</div>
 		<div class="hero-art">
 			<div class="halo"></div>
-			<img class="hero-logo" :src="logo" alt="Nori"/>
+			<img class="hero-logo" :src="logo" alt="DeepEr"/>
 			<span class="hero-hint">- D E E P E R -</span>
 		</div>
 	</section>
@@ -117,7 +125,7 @@ const handleLink = async (link: Link) => {
 	border-radius: 99.9rem;
 	background-color: rgba(125, 227, 255, 0.08);
 	border: 0.1rem solid var(--line-subtle);
-	color: var(--nori-teal);
+	color: var(--deep-teal);
 	font-size: 1.1rem;
 	letter-spacing: 0.04rem;
 }
@@ -160,7 +168,7 @@ const handleLink = async (link: Link) => {
 
 	&:hover {
 		background: rgba(125, 227, 255, 0.1);
-		border-color: var(--nori-teal-soft);
+		border-color: var(--deep-teal-soft);
 		box-shadow: 0 0 1.2rem var(--glow-teal-soft);
 		transform: translateX(0.3rem);
 	}
@@ -170,7 +178,7 @@ const handleLink = async (link: Link) => {
 	width: 2.2rem;
 	height: 2.2rem;
 	flex-shrink: 0;
-	color: var(--nori-teal);
+	color: var(--deep-teal);
 }
 
 .link-text {
@@ -193,7 +201,7 @@ const handleLink = async (link: Link) => {
 }
 
 .link-arrow {
-	color: var(--nori-teal);
+	color: var(--deep-teal);
 	flex-shrink: 0;
 	display: inline-flex;
 	align-items: center;
