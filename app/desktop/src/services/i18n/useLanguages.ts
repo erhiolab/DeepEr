@@ -54,10 +54,6 @@ export default () => {
 					subtitle: t("components.firstRun.agreement.subtitle"),
 					agree: t("components.firstRun.agreement.agree"),
 				},
-				languageSelect: {
-					title: t("components.firstRun.languageSelect.title"),
-					langEmpty: t("components.firstRun.languageSelect.langEmpty"),
-				},
 				llmConnect: {
 					error: {
 						apiBaseUrl: t("components.firstRun.llmConnect.error.apiBaseUrl"),
@@ -97,6 +93,14 @@ export default () => {
 					applyModelFailed: t("common.toast.applyModelFailed"),
 					deleteModelFailed: t("common.toast.deleteModelFailed"),
 				},
+				languageSelect: {
+					title: t("components.main.languageSelect.title"),
+					subtitle: t("components.main.languageSelect.subtitle"),
+					current: t("components.main.languageSelect.current"),
+					langEmpty: t("components.main.languageSelect.langEmpty"),
+					loadLanguagesFailed: t("common.toast.loadLanguagesFailed"),
+					switchLanguageFailed: t("common.toast.switchLanguageFailed"),
+				},
 			}
 		},
 		views: {
@@ -109,10 +113,15 @@ export default () => {
 			},
 			main: {
 				close: t("common.action.closeWin"),
+				petGroup: t("common.label.petGroup"),
+				settingGroup: t("common.label.settingGroup"),
 				home: t("common.label.home"),
 				talk: t("common.label.talk"),
+				language: t("common.label.language"),
 				model: t("common.label.model"),
-				settings: t("common.label.settings"),
+				llm: t("common.label.llm"),
+				tts: t("common.label.tts"),
+				exception: t("common.label.exception"),
 				about: t("common.label.about"),
 			}
 		},

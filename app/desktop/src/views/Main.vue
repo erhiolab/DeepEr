@@ -10,20 +10,32 @@ import Live2D from "../components/Live2D.vue"
 import Home from "../components/main/Home.vue"
 import ModelSelect from "../components/main/ModelSelect.vue"
 import About from "../components/firstRun/About.vue"
+import LanguageSelect from "../components/main/LanguageSelect.vue";
 
 const I18N = computed(() => useLanguages().views.main)
 
-// 侧边导航项
-type NavKey = "home" | "talk" | "model" | "settings" | "about"
+// 侧边导航项类型
+type NavType = "petGroup" | "settingGroup"
 
 // 侧边导航项
-const NAV_ITEMS: { key: NavKey; icon: IconName }[] = [
-	{key: "home", icon: "page"},
-	{key: "talk", icon: "send"},
-	{key: "model", icon: "cube"},
-	{key: "settings", icon: "settings"},
-	{key: "about", icon: "info"}
+type NavKey = "home" | "talk" | "language" | "model" | "llm" | "tts" | "exception" | "about"
+
+// 侧边导航项
+const NAV_ITEMS: { type: NavType; key: NavKey; icon: IconName }[] = [
+	{type: "petGroup", key: "home", icon: "page"},
+	{type: "petGroup", key: "talk", icon: "send"},
+	{type: "settingGroup", key: "language", icon: "globe"},
+	{type: "settingGroup", key: "model", icon: "cube"},
+	{type: "settingGroup", key: "llm", icon: "robot"},
+	{type: "settingGroup", key: "tts", icon: "microphone"},
+	{type: "settingGroup", key: "exception", icon: "error"},
+	{type: "settingGroup", key: "about", icon: "info"}
 ]
+
+// 按类别分组的侧边导航项
+const NAV_GROUPS: { type: NavType; items: typeof NAV_ITEMS }[] = (["petGroup", "settingGroup"] as NavType[])
+	.map((type) => ({type, items: NAV_ITEMS.filter((item) => item.type === type)}))
+	.filter((group) => group.items.length > 0)
 
 // 当前激活的导航项
 const activeNav = ref<NavKey>("home")
@@ -62,20 +74,24 @@ const switchNav = (key: NavKey) => {
 		</TitleBar>
 		<div class="body">
 			<aside class="sidebar">
-				<button
-					v-for="item in NAV_ITEMS"
-					:key="item.key"
-					class="nav-item"
-					:class="{active: item.key === activeNav}"
-					@click="switchNav(item.key)"
-				>
-					<Icon :name="item.icon" :size="18"/>
-					<span>{{ I18N[item.key] }}</span>
-				</button>
+				<template v-for="group in NAV_GROUPS" :key="group.type">
+					<h3 class="nav-group-divider">{{ I18N[group.type] }}</h3>
+					<button
+						v-for="item in group.items"
+						:key="item.key"
+						class="nav-item"
+						:class="{active: item.key === activeNav}"
+						@click="switchNav(item.key)"
+					>
+						<Icon :name="item.icon" :size="18"/>
+						<span>{{ I18N[item.key] }}</span>
+					</button>
+				</template>
 			</aside>
 			<main class="content">
 				<Transition :name="direction > 0 ? 'page-next' : 'page-prev'" mode="out-in">
 					<Home v-if="activeNav === 'home'"/>
+					<LanguageSelect v-else-if="activeNav === 'language'"/>
 					<ModelSelect v-else-if="activeNav === 'model'"/>
 					<About v-else-if="activeNav === 'about'"/>
 				</Transition>
@@ -123,7 +139,24 @@ const switchNav = (key: NavKey) => {
 	display: flex;
 	flex-direction: column;
 	gap: 0.4rem;
-	border-right: 0.1rem solid var(--line-subtle);
+
+	.nav-group-divider {
+		display: flex;
+		align-items: center;
+		margin: 1rem 0 0.2rem;
+		padding: 0 0.4rem;
+		font-size: 1rem;
+		font-weight: 500;
+		letter-spacing: 0.08rem;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		user-select: none;
+	}
+
+	// 首个分栏标题与侧边栏顶部拉开间距
+	.nav-group-divider:first-child {
+		margin-top: 0.4rem;
+	}
 
 	.nav-item {
 		display: flex;
@@ -161,6 +194,8 @@ const switchNav = (key: NavKey) => {
 	gap: 1rem;
 	padding: 2rem;
 	overflow: hidden;
+	border-right: 0.1rem solid var(--line-strong);
+	border-left: 0.1rem solid var(--line-strong);
 
 	// 页面过渡: 下一项向下滑入, 上一项向上滑入
 	.page-next-enter-active,
@@ -195,6 +230,5 @@ const switchNav = (key: NavKey) => {
 	width: 40rem;
 	height: 100%;
 	min-height: 0;
-	border-left: 0.1rem solid var(--line-subtle);
 }
 </style>

@@ -11,7 +11,7 @@ import Icon from "../Icon.vue"
 
 const language = useLanguage
 
-const I18N = computed(() => useLanguages().components.firstRun.languageSelect)
+const I18N = computed(() => useLanguages().components.main.languageSelect)
 
 // 语言 code → 本地国旗图片 (来自 flagcdn 下载, 存于 src/assets/images/flags)
 const FLAG_MAP: Record<string, string> = {
@@ -46,28 +46,39 @@ onMounted(async () => {
 		current.value = await language.getLanguage()
 	} catch (error) {
 		console.error("加载语言列表失败:", error)
-		toast.error(useLanguages().common.toast.loadLanguagesFailed)
+		toast.error(I18N.value.loadLanguagesFailed)
 	}
 })
 
 // 切换语言
 const select = async (code: string) => {
+	if (code === current.value) return
 	current.value = code
 	try {
 		await language.setLanguage(code)
 	} catch (error) {
 		console.error("切换语言失败:", error)
-		toast.error(useLanguages().common.toast.switchLanguageFailed)
+		toast.error(I18N.value.switchLanguageFailed)
 	}
 }
 </script>
 
 <template>
-	<div class="lang">
+	<section key="language-select" class="page-lang">
 		<div class="lang-head">
-			<h3 class="lang-title glow-teal">{{ I18N.title }}</h3>
-			<p class="lang-sub">{{ current }}</p>
+			<h2 class="lang-title">{{ I18N.title }}</h2>
+			<p class="lang-sub">{{ I18N.subtitle }}</p>
 		</div>
+
+		<div class="lang-current">
+			<span class="lang-current-label">{{ I18N.current }}</span>
+			<span class="lang-current-value">
+				<img v-if="flagOf(current)" class="lang-flag" :src="flagOf(current)" :alt="nameOf(current)"/>
+				<span v-else class="lang-flag lang-flag-empty"></span>
+				{{ nameOf(current) }}
+			</span>
+		</div>
+
 		<div class="lang-list">
 			<button
 				v-for="code in languages"
@@ -79,59 +90,87 @@ const select = async (code: string) => {
 				<img v-if="flagOf(code)" class="lang-flag" :src="flagOf(code)" :alt="nameOf(code)"/>
 				<span v-else class="lang-flag lang-flag-empty"></span>
 				<span class="lang-name">{{ nameOf(code) }}</span>
-				<span class="lang-check"><icon name="check"/></span>
+				<span class="lang-code">{{ code }}</span>
+				<span class="lang-check"><Icon name="check"/></span>
 			</button>
 			<p v-if="languages.length === 0" class="lang-empty">{{ I18N.langEmpty }}</p>
 		</div>
-	</div>
+	</section>
 </template>
 
 <style scoped lang="less">
-.lang {
+.page-lang {
 	width: 100%;
+	max-width: 44rem;
 	display: flex;
 	flex-direction: column;
-	gap: 1rem;
+	gap: 1.6rem;
 }
 
 .lang-head {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 0.2rem;
+	gap: 0.4rem;
+	text-align: center;
+
+	.lang-title {
+		font-size: 2rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		text-shadow: 0 0 1.8rem var(--glow-teal), 0 0 6rem var(--glow-teal-soft);
+	}
+
+	.lang-sub {
+		font-size: 1.2rem;
+		color: var(--text-muted);
+	}
 }
 
-.lang-title {
-	font-size: 1.6rem;
-	font-weight: 600;
-	color: var(--text-primary);
-}
+.lang-current {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1rem 1.6rem;
+	border: 0.1rem solid var(--line-subtle);
+	border-radius: var(--radius-sm);
+	background-color: rgba(255, 255, 255, 0.03);
 
-.lang-sub {
-	font-size: 1.1rem;
-	color: var(--text-muted);
+	.lang-current-label {
+		font-size: 1.2rem;
+		color: var(--text-muted);
+	}
+
+	.lang-current-value {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.8rem;
+		font-size: 1.3rem;
+		color: var(--deep-teal-bright);
+	}
 }
 
 .lang-list {
-	padding: 0.2rem 1rem;
 	width: 100%;
 	max-height: 24rem;
 	display: flex;
 	flex-direction: column;
-	gap: 0.6rem;
+	gap: 0.8rem;
 	overflow-y: auto;
+	padding: 0.2rem 0.2rem;
 }
 
 .lang-item {
-	padding: 0.8rem 1.2rem;
+	padding: 1rem 1.4rem;
 	display: flex;
 	align-items: center;
-	gap: 1rem;
+	gap: 1.2rem;
 	border: 0.1rem solid var(--line-subtle);
 	border-radius: var(--radius-sm);
 	background-color: rgba(255, 255, 255, 0.04);
 	color: var(--text-primary);
-	font-size: 1.3rem;
+	font-size: 1.4rem;
 	font-family: inherit;
 	cursor: pointer;
 	text-align: left;
@@ -150,10 +189,10 @@ const select = async (code: string) => {
 }
 
 .lang-flag {
-	width: 2.6rem;
-	height: 1.7rem;
+	width: 3rem;
+	height: 2rem;
 	object-fit: cover;
-	border-radius: 0.2rem;
+	border-radius: 0.25rem;
 	flex-shrink: 0;
 	box-shadow: 0 0 0.4rem rgba(0, 0, 0, 0.3);
 
@@ -166,6 +205,12 @@ const select = async (code: string) => {
 	flex: 1;
 }
 
+.lang-code {
+	font-size: 1.1rem;
+	color: var(--text-muted);
+	letter-spacing: 0.04rem;
+}
+
 .lang-check {
 	color: var(--deep-teal);
 	display: inline-flex;
@@ -174,8 +219,8 @@ const select = async (code: string) => {
 	transition: opacity 0.2s ease;
 
 	:deep(svg) {
-		width: 1.4rem;
-		height: 1.4rem;
+		width: 1.5rem;
+		height: 1.5rem;
 	}
 
 	.active & {
@@ -184,7 +229,7 @@ const select = async (code: string) => {
 }
 
 .lang-empty {
-	font-size: 1.2rem;
+	font-size: 1.3rem;
 	color: var(--text-faint);
 	text-align: center;
 }

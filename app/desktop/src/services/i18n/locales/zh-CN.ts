@@ -5,10 +5,15 @@ export default {
 			closeWin: "关闭"
 		},
 		label: {
+			petGroup: "伙伴",
+			settingGroup: "设置",
 			home: "主页",
 			talk: "对话",
-			model: "模型",
-			settings: "设置",
+			language: "语言",
+			model: "Live2D",
+			llm: "LLM",
+			tts: "TTS",
+			exception: "异常",
 			about: "关于",
 			installed: "已安装",
 			notInstalled: "未安装",
@@ -77,10 +82,6 @@ export default {
 				subtitle: "请阅读以下声明后继续",
 				agree: "我已阅读并同意以上声明"
 			},
-			languageSelect: {
-				title: "选择语言",
-				langEmpty: "暂无可用语言"
-			},
 			llmConnect: {
 				error: {
 					apiBaseUrl: "请填写 API 地址",
@@ -106,6 +107,12 @@ export default {
 				importReady: "导入完成",
 				importFailed: "导入失败",
 				customEmpty: "还没有导入模型"
+			},
+			languageSelect: {
+				title: "语言",
+				subtitle: "选择你偏好的界面语言，切换后立即生效",
+				current: "当前语言",
+				langEmpty: "暂无可用语言"
 			},
 		}
 	},
