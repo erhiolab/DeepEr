@@ -23,7 +23,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-	L2D.detachCanvas()
+	if (containerRef.value) L2D.detachCanvas(containerRef.value)
 })
 </script>
 

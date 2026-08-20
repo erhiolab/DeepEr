@@ -60,6 +60,10 @@ pub struct ResourceInfo {
     pub path: PathBuf,
     /// 资源总大小, 单位：bytes
     pub size: u64,
+    /// 入口文件 (相对资源目录名/所在目录的路径)
+    /// 例如 Live2D: "arg-nori.model3.json" (Cubism3) 或 "arg-nori.model.json" (Cubism2)
+    /// 前端拿到后通过 asset 协议拼完整可加载路径
+    pub entry_file: Option<String>,
 }
 
 /// 下载状态

@@ -1,10 +1,11 @@
 //! 资源管理模块
 
 pub mod downloader;
+pub mod index;
 pub mod live2d;
 pub mod types;
 
-pub use types::{DownloadProgress, ResourceInfo, ResourceType};
+pub use types::{DownloadProgress, ResourceType};
 
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
@@ -22,21 +23,6 @@ pub fn resources_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(db::data_dir(app)
         .map_err(|e| e.to_string())?
         .join(RESOURCES_DIR))
-}
-
-/// 获取指定类型资源的目录
-pub fn type_dir(app: &AppHandle, resource_type: ResourceType) -> Result<PathBuf, String> {
-    Ok(resources_dir(app)?.join(resource_type.dir_name()))
-}
-
-/// 获取指定资源目录
-pub fn resource_dir(
-    app: &AppHandle,
-    resource_type: ResourceType,
-    name: &str,
-) -> Result<PathBuf, String> {
-    validate_resource_name(name)?;
-    Ok(type_dir(app, resource_type)?.join(name))
 }
 
 /// 获取资源下载临时目录
@@ -67,27 +53,6 @@ pub fn is_installed(
     let data_dir = db::data_dir(app).map_err(|e| e.to_string())?;
     match resource_type {
         ResourceType::Live2D => Ok(live2d::exists(&data_dir, name))
-    }
-}
-
-/// 获取指定类型的所有资源
-pub fn list(app: &AppHandle, resource_type: ResourceType) -> Result<Vec<ResourceInfo>, String> {
-    let data_dir = db::data_dir(app).map_err(|e| e.to_string())?;
-    match resource_type {
-        ResourceType::Live2D => Ok(live2d::list(&data_dir)),
-    }
-}
-
-/// 获取单个资源信息
-pub fn get(
-    app: &AppHandle,
-    resource_type: ResourceType,
-    name: &str,
-) -> Result<ResourceInfo, String> {
-    validate_resource_name(name)?;
-    let data_dir = db::data_dir(app).map_err(|e| e.to_string())?;
-    match resource_type {
-        ResourceType::Live2D => live2d::get(&data_dir, name),
     }
 }
 
@@ -124,37 +89,6 @@ pub fn validate_resource_name(name: &str) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-/// 列出普通目录型资源
-fn list_directory_resources(
-    data_dir: &Path,
-    resource_type: ResourceType,
-) -> Result<Vec<ResourceInfo>, String> {
-    let root = data_dir.join(RESOURCES_DIR).join(resource_type.dir_name());
-    if !root.is_dir() {
-        return Ok(Vec::new());
-    }
-    let entries = std::fs::read_dir(&root).map_err(|e| format!("读取资源目录失败: {e}"))?;
-    let mut resources = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        let size = calculate_dir_size(&path).unwrap_or(0);
-        resources.push(ResourceInfo {
-            name: name.to_string(),
-            resource_type,
-            path,
-            size,
-        });
-    }
-    resources.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(resources)
 }
 
 /// 计算目录大小

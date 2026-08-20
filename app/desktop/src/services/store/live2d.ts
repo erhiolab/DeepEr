@@ -55,9 +55,28 @@ export const useLive2DStore = defineStore("live2d", () => {
 	// 模型 Y 轴位置 -2 ~ 2
 	const modelY = ref<number>(0.0)
 
-	// 获取模型文件路径
-	const getModelPath = (modelName: string) => {
-		return `${assetUrl(`live2d/${modelName}`)}/${modelName}.model3.json`
+	// 已安装模型的入口文件映射: 模型名 -> 入口文件相对路径 (如 "arg-nori.model3.json")
+	// 用于支持 Cubism2 (.model.json) 与 Cubism3 (.model3.json) 的加载
+	const modelEntryFiles = ref<Record<string, string>>({})
+
+	// 刷新已安装模型入口文件映射 (调用 list_resources)
+	const refreshInstalled = async (): Promise<void> => {
+		try {
+			const LIST = await invoke<{ name: string; entryFile?: string | null }[]>("list_resources", {resourceType: "live2d"})
+			const MAP: Record<string, string> = {}
+			for (const ITEM of LIST) {
+				if (ITEM.entryFile) MAP[ITEM.name] = ITEM.entryFile
+			}
+			modelEntryFiles.value = MAP
+		} catch (err) {
+			await logger.error("读取已安装模型入口失败:", err)
+		}
+	}
+
+	// 获取模型文件路径 (使用后端探测到的入口文件)
+	const getModelPath = (modelName: string, entryFile: string) => {
+		const REL = entryFile.replace(/\\/g, "/").replace(/^\/+/, "")
+		return `${assetUrl(`live2d/${modelName}`)}/${REL}`
 	}
 
 	// 检查模型资源是否存在
@@ -224,8 +243,17 @@ export const useLive2DStore = defineStore("live2d", () => {
 		try {
 			// 检查模型资源
 			await checkModel(modelName)
-			const MODEL_PATH = getModelPath(modelName)
-			await logger.info(`模型路径: ${MODEL_PATH}`)
+			// 获取入口文件 (Cubism2 / Cubism3), 缓存里没有则刷新已安装列表
+			let entryFile = modelEntryFiles.value[modelName]
+			if (!entryFile) {
+				await refreshInstalled()
+				entryFile = modelEntryFiles.value[modelName]
+			}
+			if (!entryFile) {
+				throw new Error(`模型 ${modelName} 缺少入口文件信息`)
+			}
+			const MODEL_PATH = getModelPath(modelName, entryFile)
+			await logger.info(`模型路径: ${MODEL_PATH}, 入口: ${entryFile}`)
 			await l2dInstance.value.load({
 				path: MODEL_PATH,
 			})
@@ -319,6 +347,10 @@ export const useLive2DStore = defineStore("live2d", () => {
 		modelScale,
 		modelX,
 		modelY,
+
+		// 已安装模型入口文件映射
+		modelEntryFiles,
+		refreshInstalled,
 
 		// 核心方法
 		initApp,

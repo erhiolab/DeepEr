@@ -1,21 +1,17 @@
 //! 资源管理模块: 资源下载器
 //! 当前实现使用 reqwest::blocking, 因此不要在 UI / Tauri 主线程中直接执行
 
-use crate::resource::{calculate_dir_size, temp_dir, type_dir, validate_resource_name};
+use crate::resource::validate_resource_name;
 
 use crate::resource::types::{DownloadProgress, ResourceType};
 
 use reqwest::blocking::Client;
-use reqwest::Url;
 
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use zip::ZipArchive;
-
-/// 资源下载 API。
-const DOWNLOAD_API: &str = "https://api.elake.top/deeper/resource/download_url";
 
 /// 下载缓冲区大小。
 const BUFFER_SIZE: usize = 64 * 1024;
@@ -150,41 +146,8 @@ where
 
 /// 从后端 API 获取签名下载 URL
 fn get_signed_url(resource_type: &ResourceType, name: &str) -> Result<String, DownloadError> {
-    let client = Client::builder()
-        .build()
-        .map_err(|e| DownloadError::Network(e.to_string()))?;
-    let mut url = Url::parse(DOWNLOAD_API)
-        .map_err(|e| DownloadError::Api(format!("下载 API 地址无效: {e}")))?;
-    url.query_pairs_mut()
-        .append_pair("type", resource_type.as_str())
-        .append_pair("name", name);
-    let response = client
-        .get(url)
-        .send()
-        .map_err(|e| DownloadError::Network(e.to_string()))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(DownloadError::Api(format!("下载 API HTTP {}", status)));
-    }
-    let json: serde_json::Value = response
-        .json()
-        .map_err(|e| DownloadError::Api(format!("解析 API 响应失败: {e}")))?;
-    // API 业务错误
-    if json.get("error").and_then(|v| v.as_bool()).unwrap_or(false) {
-        let message = json
-            .get("message")
-            .and_then(|v| v.as_str())
-            .filter(|v| !v.is_empty())
-            .unwrap_or("接口返回错误");
-        return Err(DownloadError::Api(message.to_string()));
-    }
-    let url = json
-        .get("body")
-        .and_then(|v| v.get("url"))
-        .and_then(|v| v.as_str())
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| DownloadError::Api("API 响应中缺少 body.url".to_string()))?;
-    Ok(url.to_string())
+    crate::api::fetch_download_url(resource_type.as_str(), name)
+        .map_err(|e| DownloadError::Api(e.to_string()))
 }
 
 /// 下载文件
