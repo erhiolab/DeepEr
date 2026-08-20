@@ -9,7 +9,7 @@ use tauri::UriSchemeContext;
 use tauri::Wry;
 
 /// 自定义协议名称
-pub const SCHEME: &str = "nori-asset";
+pub const SCHEME: &str = "deeper-asset";
 
 /// 处理 <SCHEME>:// 请求
 pub fn handle(

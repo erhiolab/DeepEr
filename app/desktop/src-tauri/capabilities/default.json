@@ -3,7 +3,7 @@
 	"identifier": "default",
 	"description": "默认窗口能力",
 	"windows": [
-		"nori-desktop-pet"
+		"deeper"
 	],
 	"permissions": [
 		"core:window:allow-show",

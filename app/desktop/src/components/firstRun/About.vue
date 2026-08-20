@@ -6,7 +6,6 @@ import Icon from "../Icon.vue"
 import logo from "../../assets/images/logo.png"
 import erhiolab from "../../assets/images/erhio.webp"
 import QiCaiJie114514 from "../../assets/images/QiCaiJie114514.webp"
-import whiteNight from "../../assets/images/whiteNight.webp"
 import inori from "../../assets/images/inori.png"
 
 const I18N = computed(() => useLanguages().components.firstRun.about)
@@ -35,16 +34,6 @@ const CONTRIBUTORS: Contributor[] = [
 		url: "https://github.com/QiCaiJie114514",
 		handle: "@QiCaiJie114514",
 		avatar: QiCaiJie114514
-	},
-	{
-		name: "白夜",
-		role: "I_NORI 开发者",
-		avatar: whiteNight
-	},
-	{
-		name: "Nori",
-		role: "吉祥物",
-		avatar: inori
 	},
 	{
 		name: "I_NORI 交流群",

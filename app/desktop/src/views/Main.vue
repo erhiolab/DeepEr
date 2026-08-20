@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from "vue"
-import {invoke} from "@tauri-apps/api/core"
-import {closeWindow} from "../services/window"
+import {hideWindow} from "../services/window"
 import useLanguages from "../services/i18n/useLanguages"
-import {logger} from "../services/logger"
 import {config} from "../services/config"
 import Icon from "../components/Icon.vue"
 import {IconName} from "../services/icon"
@@ -15,14 +13,15 @@ import ModelSelect from "../components/main/ModelSelect.vue"
 const I18N = computed(() => useLanguages().views.main)
 
 // 侧边导航项
-type NavKey = "home" | "talk" | "model" | "settings"
+type NavKey = "home" | "talk" | "model" | "settings" | "about"
 
 // 侧边导航项
 const NAV_ITEMS: { key: NavKey; icon: IconName }[] = [
-	{key: "home", icon: "noriOS"},
+	{key: "home", icon: "page"},
 	{key: "talk", icon: "send"},
 	{key: "model", icon: "cube"},
-	{key: "settings", icon: "settings"}
+	{key: "settings", icon: "settings"},
+	{key: "about", icon: "info"}
 ]
 
 // 当前激活的导航项
@@ -55,7 +54,7 @@ const switchNav = (key: NavKey) => {
 		<TitleBar>
 			<span class="nav-title">{{ I18N[activeNav] }}</span>
 			<div class="titlebar-right">
-				<button class="close-btn" :title="I18N.close" @click="closeWindow">
+				<button class="close-btn" :title="I18N.close" @click="hideWindow">
 					<Icon name="close" class="close-icon"/>
 				</button>
 			</div>

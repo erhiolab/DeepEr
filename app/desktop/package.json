@@ -1,9 +1,9 @@
 {
-	"name": "nori-desktop-pet",
+	"name": "deeper",
 	"private": true,
-	"description": "Nori Desktop Pet - a desktop pet application",
+	"description": "DeepEr - a desktop pet application",
 	"version": "0.1.0",
-	"author": "erhio, Nori, qicajie",
+	"author": "erhio, qicajie",
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
@@ -20,7 +20,8 @@
 		"pinia": "^4.0.3",
 		"vue": "^3.5.13",
 		"vue-i18n": "^11.4.8",
-		"vue-router": "^4.6.4"
+		"vue-router": "^4.6.4",
+		"vue3-toastify": "^0.2.9"
 	},
 	"devDependencies": {
 		"@tauri-apps/cli": "^2",

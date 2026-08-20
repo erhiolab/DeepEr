@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS config (
 ";
 
 /// 数据库文件名
-const DB_FILE_NAME: &str = "nori.db";
+const DB_FILE_NAME: &str = "deeper.db";
 
 /// 初始化数据库
 pub fn init(app: &AppHandle) -> DbResult<Db> {

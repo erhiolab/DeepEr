@@ -3,10 +3,12 @@ import {i18n} from "./index"
 export default () => {
 	const t = i18n.global.t
 	return {
+		common: {
+			download: {
+				downloadFailed: t("common.download.downloadFailed"),
+			}
+		},
 		components: {
-			titleBar: {
-				title: t("app.title"),
-			},
 			live2d: {
 				loading: t("common.live2d.loading"),
 				empty: t("common.live2d.empty"),
@@ -23,10 +25,6 @@ export default () => {
 						noriOS: {
 							label: t("components.firstRun.welcome.links.noriOS.label"),
 							sub: t("components.firstRun.welcome.links.noriOS.sub"),
-						},
-						qq: {
-							label: t("components.firstRun.welcome.links.qq.label"),
-							sub: t("components.firstRun.welcome.links.qq.sub"),
 						},
 						bilibili: {
 							label: t("components.firstRun.welcome.links.bilibili.label"),
@@ -60,16 +58,16 @@ export default () => {
 					customTitle: t("components.main.modelSelect.customTitle"),
 					importModel: t("components.main.modelSelect.importModel"),
 					customEmpty: t("components.main.modelSelect.customEmpty"),
-					installed: t("components.main.modelSelect.installed"),
-					notInstalled: t("components.main.modelSelect.notInstalled"),
-					apply: t("components.main.modelSelect.apply"),
-					delete: t("components.main.modelSelect.delete"),
-					download: t("components.main.modelSelect.download"),
-					downloading: t("components.main.modelSelect.downloading"),
-					downloadDone: t("components.main.modelSelect.downloadDone"),
-					extracting: t("components.main.modelSelect.extracting"),
-					downloadReady: t("components.main.modelSelect.downloadReady"),
-					downloadFailed: t("components.main.modelSelect.downloadFailed"),
+					installed: t("common.label.installed"),
+					notInstalled: t("common.label.notInstalled"),
+					apply: t("common.label.apply"),
+					delete: t("common.label.delete"),
+					download: t("common.label.download"),
+					downloading: t("common.download.downloading"),
+					downloadDone: t("common.download.downloadDone"),
+					extracting: t("common.download.extracting"),
+					downloadReady: t("common.download.downloadReady"),
+					downloadFailed: t("common.download.downloadFailed"),
 				},
 			}
 		},
@@ -85,7 +83,8 @@ export default () => {
 				home: t("common.label.home"),
 				talk: t("common.label.talk"),
 				model: t("common.label.model"),
-				settings: t("common.label.settings")
+				settings: t("common.label.settings"),
+				about: t("common.label.about"),
 			}
 		},
 		// no: {

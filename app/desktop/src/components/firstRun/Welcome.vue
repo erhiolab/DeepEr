@@ -34,14 +34,7 @@ const links = computed<Link[]>(() => [
 		sub: I18N.value.links.noriOS.sub,
 		url: "https://os.inori.ai/landing",
 		mode: "stroke",
-		icon: "noriOS"
-	},
-	{
-		label: I18N.value.links.qq.label,
-		sub: I18N.value.links.qq.sub,
-		qq: "1041616195",
-		mode: "fill",
-		icon: "qq"
+		icon: "page"
 	},
 	{
 		label: I18N.value.links.bilibili.label,
@@ -89,7 +82,7 @@ const handleLink = async (link: Link) => {
 		<div class="hero-art">
 			<div class="halo"></div>
 			<img class="hero-logo" :src="logo" alt="Nori"/>
-			<span class="hero-hint">- N O R I -</span>
+			<span class="hero-hint">- D E E P E R -</span>
 		</div>
 	</section>
 </template>

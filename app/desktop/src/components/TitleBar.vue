@@ -1,18 +1,13 @@
 <script setup lang="ts">
-import {computed} from "vue"
-import useLanguages from "../services/i18n/useLanguages"
-
 // 窗口通用标题栏
 defineSlots<{
 	default: () => unknown
 }>()
-
-const I18N = computed(() => useLanguages().components.titleBar)
 </script>
 
 <template>
 	<div class="titlebar" data-tauri-drag-region>
-		<span class="title" data-tauri-drag-region>{{ I18N.title }}</span>
+		<span class="title" data-tauri-drag-region>deepEr</span>
 		<slot/>
 	</div>
 </template>

@@ -1,8 +1,8 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "Nori Desktop Pet",
+	"productName": "Deep El",
 	"version": "0.1.0",
-	"identifier": "cn.erhio.noriDesktopPet",
+	"identifier": "cn.erhio.deeper",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
 		"devUrl": "http://localhost:1420",
@@ -12,8 +12,8 @@
 	"app": {
 		"windows": [
 			{
-				"label": "nori-desktop-pet",
-				"title": "Nori",
+				"label": "deeper",
+				"title": "澄渊",
 				"width": 1500,
 				"height": 750,
 				"minWidth": 360,

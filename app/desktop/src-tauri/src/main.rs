@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    nori_desktop_pet_lib::run()
+    deeper_lib::run()
 }

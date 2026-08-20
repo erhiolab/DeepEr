@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
 /// 资源下载 API。
-const DOWNLOAD_API: &str = "https://api.elake.top/nori/resource/download_url";
+const DOWNLOAD_API: &str = "https://api.elake.top/deeper/resource/download_url";
 
 /// 下载缓冲区大小。
 const BUFFER_SIZE: usize = 64 * 1024;
