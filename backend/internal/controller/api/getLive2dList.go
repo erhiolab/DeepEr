@@ -18,38 +18,6 @@ func GetLive2dList() http.HandlerFunc {
 					"id": "Nori",
 					"name": "Nori",
 				},
-				map[string]any{
-					"id": "Haru",
-					"name": "Haru",
-				},
-				map[string]any{
-					"id": "Hiyori",
-					"name": "Hiyori",
-				},
-				map[string]any{
-					"id": "Mao",
-					"name": "Mao",
-				},
-				map[string]any{
-					"id": "Mark",
-					"name": "Mark",
-				},
-				map[string]any{
-					"id": "Natori",
-					"name": "Natori",
-				},
-				map[string]any{
-					"id": "Ren",
-					"name": "Ren",
-				},
-				map[string]any{
-					"id": "Rice",
-					"name": "Rice",
-				},
-				map[string]any{
-					"id": "Wanko",
-					"name": "Wanko",
-				},
 			},
 		})
 	}
