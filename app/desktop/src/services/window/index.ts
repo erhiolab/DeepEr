@@ -4,9 +4,17 @@ import {config} from "../config"
 const appWindow = getCurrentWindow()
 
 /**
- * 窗口调整大小方向 (四角对角)
+ * 窗口调整大小方向 (四角对角 + 四边单向)
  */
-export type ResizeDirection = "NorthWest" | "NorthEast" | "SouthWest" | "SouthEast"
+export type ResizeDirection =
+	| "NorthWest"
+	| "NorthEast"
+	| "SouthWest"
+	| "SouthEast"
+	| "North"
+	| "South"
+	| "West"
+	| "East"
 
 /**
  * 隐藏窗口
@@ -23,8 +31,8 @@ export const startDragWindow = async () => {
 }
 
 /**
- * 开始调整窗口大小 (对角方向, 由系统原生接管拖拽)
- * @param direction 调整方向, 由窗口四角触发
+ * 开始调整窗口大小 (方向, 由系统原生接管拖拽)
+ * @param direction 调整方向, 由窗口四角及四边控制点触发
  */
 export const startResizeWindow = async (direction: ResizeDirection) => {
 	await appWindow.startResizeDragging(direction)

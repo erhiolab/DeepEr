@@ -13,6 +13,7 @@ import Touch from "../components/main/Touch.vue"
 import About from "../components/firstRun/About.vue"
 import LanguageSelect from "../components/main/LanguageSelect.vue"
 import Exception from "../components/main/Exception.vue"
+import TTSAdapter from "../components/main/TTSAdapter.vue"
 
 const I18N = computed(() => useLanguages().views.main)
 
@@ -128,9 +129,13 @@ const goToPet = () => {
 			<main class="content">
 				<Transition :name="direction > 0 ? 'page-next' : 'page-prev'" mode="out-in">
 					<Home v-if="activeNav === 'home'"/>
-					<LanguageSelect v-else-if="activeNav === 'language'"/>
+
 					<ModelSelect v-else-if="activeNav === 'model'"/>
 					<Touch v-else-if="activeNav === 'touch'"/>
+
+					<TTSAdapter v-else-if="activeNav === 'tts'"/>
+
+					<LanguageSelect v-else-if="activeNav === 'language'"/>
 					<Exception v-else-if="activeNav === 'exception'"/>
 					<About v-else-if="activeNav === 'about'"/>
 				</Transition>

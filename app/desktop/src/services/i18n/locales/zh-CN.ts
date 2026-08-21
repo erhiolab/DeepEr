@@ -24,6 +24,10 @@ export default {
 			delete: "删除",
 			download: "下载",
 			refresh: "刷新",
+			add: "添加",
+			save: "保存",
+			redraw: "重新绘制",
+			cancel: "取消",
 		},
 		live2d: {
 			loading: "加载中...",
@@ -182,9 +186,6 @@ export default {
 				typeFrenzy: "狂点",
 				prompt: "AI 提示词（可选）",
 				promptPlaceholder: "触发时告诉 AI 用户触摸了哪里",
-				add: "添加",
-				save: "保存",
-				cancel: "取消",
 				empty: "还没有自定义触摸区域，在上方画布中拖拽添加",
 				deleteConfirmTitle: "删除触摸区域",
 				deleteConfirmMessage: "确定要删除触摸区域「{name}」吗？",
@@ -198,6 +199,7 @@ export default {
 			start: "开始"
 		},
 		pet: {
+			home: "打开主界面",
 			passthrough: "穿透 (点击后鼠标穿透到背后, 通过托盘恢复)",
 			resize: "调整大小",
 			resizing: "取消调整"

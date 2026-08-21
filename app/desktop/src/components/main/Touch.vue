@@ -139,10 +139,14 @@ const down = (e: PointerEvent) => {
 		return
 	}
 	if (T) {
-		mode = "move"
-		movingId = T.id
-		start = P
-		origin = {x: T.x, y: T.y}
+		if (editing.value?.id === T.id) {
+			mode = "move"
+			movingId = T.id
+			start = P
+			origin = {x: T.x, y: T.y}
+			return
+		}
+		resetPointer()
 		return
 	}
 	if (draft.value) {
@@ -200,21 +204,31 @@ const up = async (e: PointerEvent) => {
 			resetPointer()
 			return
 		}
-		editName.value = I18N.value.defaultName(TOUCH.touches.length + 1)
-		editType.value = "tap"
-		editPrompt.value = ""
-		editing.value = {
-			id: "",
-			name: editName.value,
-			type: "tap",
-			x: draft.value.x,
-			y: draft.value.y,
-			w: draft.value.w,
-			h: draft.value.h,
-			image: "",
-			prompt: ""
+		if (editing.value && editing.value.id === "" && editingIndex.value < 0) {
+			editing.value = {
+				...editing.value,
+				x: draft.value.x,
+				y: draft.value.y,
+				w: draft.value.w,
+				h: draft.value.h
+			}
+		} else {
+			editName.value = I18N.value.defaultName(TOUCH.touches.length + 1)
+			editType.value = "tap"
+			editPrompt.value = ""
+			editing.value = {
+				id: "",
+				name: editName.value,
+				type: "tap",
+				x: draft.value.x,
+				y: draft.value.y,
+				w: draft.value.w,
+				h: draft.value.h,
+				image: "",
+				prompt: ""
+			}
+			editingIndex.value = -1
 		}
-		editingIndex.value = -1
 	}
 	resetPointer()
 }
@@ -222,10 +236,6 @@ const up = async (e: PointerEvent) => {
 // 重绘制触摸区域
 const redraw = () => {
 	draft.value = null
-	editing.value = null
-	editingIndex.value = -1
-	editName.value = ""
-	editPrompt.value = ""
 	mode = "idle"
 	pointerId = -1
 	movingId = null
@@ -255,6 +265,7 @@ const render = () => {
 
 // 开始编辑触摸区域
 const startEdit = (t: TouchArea, i: number) => {
+	draft.value = null
 	editing.value = t
 	editingIndex.value = i
 	editName.value = t.name
@@ -289,11 +300,14 @@ const confirmEdit = async () => {
 	draft.value = null
 }
 
-// 取消编辑触摸区域
+// 取消编辑触摸区域: 放弃草稿并清空表单, 完全退出编辑
 const cancelEdit = () => {
 	editing.value = null
 	editingIndex.value = -1
 	draft.value = null
+	editName.value = ""
+	editType.value = "tap"
+	editPrompt.value = ""
 }
 
 // 待删除的触摸区域 (二次确认弹窗确认后执行)
@@ -338,39 +352,57 @@ watch(() => L2D.currentModel, async m => {
 				<h2 class="touch-title">{{ I18N.title }}</h2>
 				<p class="touch-sub">{{ I18N.subtitle }}</p>
 			</div>
-			<button v-if="draft" class="redraw-btn" @click="redraw">
-				<Icon name="refresh" :size="14"/>
-				<span>重新绘制</span>
-			</button>
 		</header>
-		<div
-			class="touch-canvas"
-			:class="{locked: !!draft}"
-			@pointerdown="down"
-			@pointermove="move"
-			@pointerup="up"
-			@pointercancel="up"
-		>
-			<canvas ref="canvas" class="touch-model-preview"/>
-			<div
-				v-for="t in TOUCH.touches"
-				:key="t.id"
-				class="touch-box saved"
-				:class="t.type"
-				:style="style(t)"
-			>
-				{{ t.name }}
+		<div class="touch-body">
+			<div class="touch-left">
+				<div
+					class="touch-canvas"
+					:class="{locked: !!draft}"
+					@pointerdown="down"
+					@pointermove="move"
+					@pointerup="up"
+					@pointercancel="up"
+				>
+					<canvas ref="canvas" class="touch-model-preview"/>
+					<div
+						v-for="t in TOUCH.touches"
+						:key="t.id"
+						class="touch-box saved"
+						:class="t.type"
+						:style="style(t)"
+					>
+						{{ t.name }}
+					</div>
+					<div v-if="draft" class="touch-box draft locked" :style="style(draft)">
+						{{ editing?.name || I18N.draftLabel }}
+					</div>
+					<span v-if="!L2D.isInitialized" class="touch-hint">{{ I18N.loadingModel }}</span>
+				</div>
 			</div>
-			<div v-if="draft" class="touch-box draft locked" :style="style(draft)">
-				{{ editing?.name || I18N.draftLabel }}
-			</div>
-			<span v-if="!L2D.isInitialized" class="touch-hint">{{ I18N.loadingModel }}</span>
-		</div>
-		<div v-if="editing" class="touch-editor">
-			<div class="editor-label">{{ I18N.name }}</div>
-			<input v-model="editName" class="editor-input" :placeholder="I18N.namePlaceholder">
-			<div class="editor-row">
-				<div class="editor-col">
+			<aside class="touch-right">
+				<ul v-if="TOUCH.touches.length" class="touch-list">
+					<li v-for="(t, i) in TOUCH.touches" :key="t.id" class="touch-item">
+						<span class="touch-item-type" :class="t.type">
+							{{t.type === "tap" ? I18N.typeTap : t.type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy }}
+						</span>
+						<span class="touch-item-name">{{ t.name }}</span>
+						<span class="touch-item-size">
+							({{ (t.w * 100).toFixed(0) }}% × {{(t.h * 100).toFixed(0) }}%)
+						</span>
+						<div class="touch-item-actions">
+							<button class="mini-btn" @click="startEdit(t, i)">
+								<Icon name="settings" :size="13"/>
+							</button>
+							<button class="mini-btn danger" @click="remove(t)">
+								<Icon name="close" :size="13"/>
+							</button>
+						</div>
+					</li>
+				</ul>
+				<p v-else class="touch-empty">{{ I18N.empty }}</p>
+				<div v-if="editing" class="touch-editor">
+					<div class="editor-label">{{ I18N.name }}</div>
+					<input v-model="editName" class="editor-input" :placeholder="I18N.namePlaceholder">
 					<div class="editor-label">{{ I18N.type }}</div>
 					<div class="editor-types">
 						<button
@@ -384,41 +416,25 @@ watch(() => L2D.currentModel, async m => {
 							{{ type === "tap" ? I18N.typeTap : type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy }}
 						</button>
 					</div>
-				</div>
-				<div class="editor-col editor-prompt-col">
 					<div class="editor-label">{{ I18N.prompt }}</div>
 					<input v-model="editPrompt" class="editor-input" :placeholder="I18N.promptPlaceholder">
+					<div class="editor-actions">
+						<button class="exc-btn" @click="cancelEdit">
+							<Icon name="close" :size="14"/>
+							<span>{{ I18N.cancel }}</span>
+						</button>
+						<button v-if="draft" class="exc-btn redraw" @click="redraw">
+							<Icon name="refresh" :size="14"/>
+							<span>{{ I18N.redraw }}</span>
+						</button>
+						<button class="exc-btn done" @click="confirmEdit">
+							<Icon name="check" :size="14"/>
+							<span>{{ editingIndex < 0 ? I18N.add : I18N.save }}</span>
+						</button>
+					</div>
 				</div>
-			</div>
-			<div class="editor-actions">
-				<button class="exc-btn done" @click="confirmEdit">
-					<Icon name="check" :size="14"/>
-					<span>{{ editingIndex < 0 ? I18N.add : I18N.save }}</span>
-				</button>
-				<button class="exc-btn" @click="cancelEdit">
-					<Icon name="close" :size="14"/>
-					<span>{{ I18N.cancel }}</span>
-				</button>
-			</div>
+			</aside>
 		</div>
-		<ul v-if="TOUCH.touches.length" class="touch-list">
-			<li v-for="(t, i) in TOUCH.touches" :key="t.id" class="touch-item">
-				<span class="touch-item-type" :class="t.type">
-					{{ t.type === "tap" ? I18N.typeTap : t.type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy }}
-				</span>
-				<span class="touch-item-name">{{ t.name }}</span>
-				<span class="touch-item-size">({{ (t.w * 100).toFixed(0) }}% × {{ (t.h * 100).toFixed(0) }}%)</span>
-				<div class="touch-item-actions">
-					<button class="mini-btn" @click="startEdit(t, i)">
-						<Icon name="settings" :size="13"/>
-					</button>
-					<button class="mini-btn danger" @click="remove(t)">
-						<Icon name="close" :size="13"/>
-					</button>
-				</div>
-			</li>
-		</ul>
-		<p v-else class="touch-empty">{{ I18N.empty }}</p>
 		<ConfirmDialog
 			v-model:open="showRemoveConfirm"
 			:title="I18N.deleteConfirmTitle"
@@ -440,6 +456,38 @@ watch(() => L2D.currentModel, async m => {
 	overflow: hidden;
 }
 
+.touch-body {
+	flex: 1;
+	min-height: 0;
+	width: 100%;
+	display: flex;
+	gap: 1rem;
+}
+
+.touch-left {
+	flex: 1;
+	width: 0;
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.touch-right {
+	width: 30rem;
+	flex-shrink: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.8rem;
+	overflow: hidden;
+	border: 0.1rem solid var(--line-subtle);
+	border-radius: var(--radius-sm);
+	padding: 0.8rem;
+	background-color: rgba(255, 255, 255, 0.03);
+}
+
 .touch-head {
 	display: flex;
 	align-items: center;
@@ -457,25 +505,6 @@ watch(() => L2D.currentModel, async m => {
 		margin-top: 0.4rem;
 		font-size: 1.2rem;
 		color: var(--text-muted);
-	}
-}
-
-.redraw-btn {
-	padding: 0.5rem 0.85rem;
-	display: inline-flex;
-	align-items: center;
-	gap: 0.45rem;
-	border: 0.1rem solid var(--line-strong);
-	border-radius: var(--radius-sm);
-	background-color: rgba(125, 227, 255, 0.08);
-	color: var(--deep-teal-bright);
-	font: inherit;
-	cursor: pointer;
-	transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-
-	&:hover {
-		background-color: rgba(125, 227, 255, 0.15);
-		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
 	}
 }
 
@@ -566,7 +595,7 @@ watch(() => L2D.currentModel, async m => {
 }
 
 .editor-label {
-	font-size: 1rem;
+	font-size: 1.05rem;
 	color: var(--text-muted);
 }
 
@@ -579,7 +608,7 @@ watch(() => L2D.currentModel, async m => {
 	background-color: rgba(255, 255, 255, 0.04);
 	color: var(--text-primary);
 	font: inherit;
-	font-size: 1.05rem;
+	font-size: 1.15rem;
 	outline: none;
 	transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
@@ -591,20 +620,6 @@ watch(() => L2D.currentModel, async m => {
 		border-color: var(--deep-teal-soft);
 		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
 	}
-}
-
-.editor-row {
-	display: flex;
-	gap: 1rem;
-}
-
-.editor-col {
-	flex: 1;
-	min-width: 0;
-}
-
-.editor-prompt-col {
-	flex: 1.6;
 }
 
 .editor-types {
@@ -619,7 +634,7 @@ watch(() => L2D.currentModel, async m => {
 	background-color: rgba(255, 255, 255, 0.04);
 	color: var(--text-muted);
 	font: inherit;
-	font-size: 1.02rem;
+	font-size: 1.1rem;
 	cursor: pointer;
 	user-select: none;
 	transition: all 0.18s ease;
@@ -640,7 +655,10 @@ watch(() => L2D.currentModel, async m => {
 
 .editor-actions {
 	display: flex;
+	align-items: center;
+	justify-content: space-between;
 	gap: 0.6rem;
+	margin-top: 0.2rem;
 }
 
 .exc-btn {
@@ -653,7 +671,7 @@ watch(() => L2D.currentModel, async m => {
 	background-color: rgba(125, 227, 255, 0.08);
 	color: var(--deep-teal-bright);
 	font: inherit;
-	font-size: 1.05rem;
+	font-size: 1.1rem;
 	cursor: pointer;
 	transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 
@@ -666,16 +684,25 @@ watch(() => L2D.currentModel, async m => {
 		background-color: color-mix(in srgb, var(--touch-ok) 18%, transparent);
 		color: var(--touch-ok);
 	}
+
+	&.redraw {
+		background-color: rgba(255, 170, 60, 0.1);
+		color: var(--warning, #f1b24a);
+		border-color: rgba(255, 170, 60, 0.35);
+
+		&:hover {
+			filter: brightness(1.1);
+			box-shadow: 0 0 0.8rem rgba(255, 170, 60, 0.25);
+		}
+	}
 }
 
 .touch-list {
-	padding-right: 0.2rem;
+	padding: 0;
 	margin: 0;
-	min-height: 0;
-	max-height: 30%;
 	list-style: none;
-	flex: 0 1 auto;
-	flex-shrink: 1;
+	flex: 1;
+	min-height: 0;
 	overflow-y: auto;
 	display: flex;
 	flex-direction: column;
@@ -755,8 +782,13 @@ watch(() => L2D.currentModel, async m => {
 }
 
 .touch-empty {
-	flex: 0 0 auto;
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	color: var(--text-muted);
 	font-size: 1.1rem;
+	text-align: center;
+	line-height: 1.8;
 }
 </style>

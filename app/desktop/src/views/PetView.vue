@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {computed, onMounted, onUnmounted, ref} from "vue"
+import {useRouter} from "vue-router"
 import {emit} from "@tauri-apps/api/event"
 import Live2D from "../components/Live2D.vue"
 import Icon from "../components/common/Icon.vue"
@@ -17,6 +18,8 @@ import {
 import useLanguages from "../services/i18n/useLanguages.ts"
 
 const I18N = computed(() => useLanguages().views.pet)
+
+const ROUTER = useRouter()
 
 // 气泡自动消失等待时长(毫秒)
 const BUBBLE_TTL = 6000
@@ -115,13 +118,22 @@ const hovered = ref(false)
 // 是否处于调整大小模式 (显示四角)
 const resizing = ref(false)
 
-// 四角调整方向
-const CORNERS: { position: string; direction: ResizeDirection }[] = [
+// 四角及四边调整方向
+const RESIZE_HANDLES: { position: string; direction: ResizeDirection }[] = [
 	{position: "top-left", direction: "NorthWest"},
+	{position: "top", direction: "North"},
 	{position: "top-right", direction: "NorthEast"},
+	{position: "right", direction: "East"},
+	{position: "bottom-right", direction: "SouthEast"},
+	{position: "bottom", direction: "South"},
 	{position: "bottom-left", direction: "SouthWest"},
-	{position: "bottom-right", direction: "SouthEast"}
+	{position: "left", direction: "West"}
 ]
+
+// 打开主界面
+const openMainView = () => {
+	ROUTER.push({name: "Main"})
+}
 
 // 开启点击穿透
 const enablePassthrough = () => {
@@ -168,7 +180,7 @@ const onStageMouseDown = (event: MouseEvent) => {
 	if (event.button !== 0) return
 	if (!resizing.value) return
 	const target = event.target as HTMLElement
-	if (target.closest("button, .pet-input, .resize-corner")) return
+	if (target.closest("button, .pet-input, .resize-handle")) return
 	void startDragWindow()
 }
 
@@ -199,27 +211,26 @@ let stopWatchFn: (() => void) | null = null
 <template>
 	<div class="pet-stage" @mouseenter="hovered = true" @mouseleave="hovered = false" @mousedown="onStageMouseDown">
 		<Live2D/>
+		<!--气泡-->
 		<div class="bubble-area">
 			<TransitionGroup name="bubble">
-				<div v-for="bubble in bubbles" :key="bubble.id" class="pet-bubble" @click.stop="dismissBubble(bubble.id)">
+				<div v-for="bubble in bubbles" :key="bubble.id" class="pet-bubble"
+				     @click.stop="dismissBubble(bubble.id)">
 					<span>{{ bubble.text }}</span>
 				</div>
 			</TransitionGroup>
 		</div>
 		<Transition name="controls" :duration="{enter: 420, leave: 420}">
 			<div v-if="hovered" class="pet-controls" :class="{resizing}">
+				<!--左按钮组-->
 				<div class="btn-col btn-col-left">
-					<button class="pet-btn" title="按钮" @mousedown.stop>
-						<Icon name="cube" :size="16"/>
+					<button class="pet-btn" :title="I18N.home" @mousedown.stop @click.stop="openMainView">
+						<Icon name="page" :size="16"/>
 					</button>
 				</div>
+				<!--右按钮组-->
 				<div class="btn-col btn-col-right">
-					<button
-						class="pet-btn"
-						:title="I18N.passthrough"
-						@mousedown.stop
-						@click.stop="enablePassthrough"
-					>
+					<button class="pet-btn" :title="I18N.passthrough" @mousedown.stop @click.stop="enablePassthrough">
 						<Icon name="dashed-mouse" :size="16"/>
 					</button>
 					<button
@@ -232,6 +243,7 @@ let stopWatchFn: (() => void) | null = null
 						<Icon name="resize" :size="16"/>
 					</button>
 				</div>
+				<!--输入框-->
 				<form class="pet-input" @submit.prevent="sendMessage" @mousedown.stop>
 					<input v-model="inputText" type="text" placeholder="..."/>
 					<button class="pet-btn pet-btn-send" type="submit" :disabled="!inputText.trim()">
@@ -240,13 +252,14 @@ let stopWatchFn: (() => void) | null = null
 				</form>
 			</div>
 		</Transition>
+		<!--调整大小-->
 		<template v-if="resizing">
 			<div
-				v-for="corner in CORNERS"
-				:key="corner.position"
-				class="resize-corner"
-				:class="`resize-${corner.position}`"
-				@mousedown.prevent.stop="onCornerMouseDown($event, corner.direction)"
+				v-for="handle in RESIZE_HANDLES"
+				:key="handle.position"
+				class="resize-handle"
+				:class="`resize-${handle.position}`"
+				@mousedown.prevent.stop="onCornerMouseDown($event, handle.direction)"
 			/>
 		</template>
 	</div>
@@ -335,9 +348,18 @@ let stopWatchFn: (() => void) | null = null
 	transition-delay: 0.1s;
 }
 
-// 进入调整模式时, 按钮组上移, 让出四角区域, 避免与缩放把手重叠
+// 进入调整模式时, 按钮组与输入框上移, 让出四角与底边区域, 避免与缩放把手重叠
 .pet-controls.resizing .btn-col {
 	bottom: 4.4rem;
+}
+
+.pet-controls.resizing .pet-input {
+	bottom: 4.2rem;
+}
+
+// 输入框随之上移时, 气泡区同步上移, 保持在其正上方
+.pet-controls.resizing .bubble-area {
+	bottom: 8rem;
 }
 
 .pet-btn {
@@ -461,7 +483,7 @@ let stopWatchFn: (() => void) | null = null
 	border-radius: 99.9rem;
 	pointer-events: auto;
 	backdrop-filter: blur(4px);
-	transition: opacity 0.34s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+	transition: opacity 0.34s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), bottom 0.3s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease;
 
 	&:focus-within {
 		border-color: var(--line-strong);
@@ -497,16 +519,39 @@ let stopWatchFn: (() => void) | null = null
 	}
 }
 
-// 四角调整
-.resize-corner {
+// 调整控制点 (四角方块 + 四边细条)
+.resize-handle {
 	position: absolute;
 	z-index: 30;
-	width: 1.8rem;
-	height: 1.8rem;
+	background-color: var(--surface-deep);
+	border-color: var(--deep-teal-bright);
+	box-shadow: 0 0 0.8rem var(--glow-teal-mid), 0 0 0.3rem rgba(0, 0, 0, 0.4);
+}
+
+// 四角: 方块控制点 (对角缩放)
+.resize-top-left,
+.resize-top-right,
+.resize-bottom-left,
+.resize-bottom-right {
 	border: 0.16rem solid var(--deep-teal-bright);
 	border-radius: 0.2rem;
-	background-color: var(--surface-deep);
-	box-shadow: 0 0 0.8rem var(--glow-teal-mid), 0 0 0.3rem rgba(0, 0, 0, 0.4);
+	width: 1.8rem;
+	height: 1.8rem;
+}
+
+// 四边: 粗条控制点 (单向缩放)
+.resize-top,
+.resize-bottom {
+	border-left: 0.14rem solid var(--deep-teal-bright);
+	border-right: 0.14rem solid var(--deep-teal-bright);
+	height: 1.4rem;
+}
+
+.resize-left,
+.resize-right {
+	border-top: 0.14rem solid var(--deep-teal-bright);
+	border-bottom: 0.14rem solid var(--deep-teal-bright);
+	width: 1.4rem;
 }
 
 .resize-top-left {
@@ -515,10 +560,37 @@ let stopWatchFn: (() => void) | null = null
 	cursor: nwse-resize;
 }
 
+.resize-top {
+	top: -0.15rem;
+	left: 50%;
+	transform: translateX(-50%);
+	cursor: ns-resize;
+}
+
 .resize-top-right {
 	top: -0.15rem;
 	right: -0.15rem;
 	cursor: nesw-resize;
+}
+
+.resize-right {
+	top: 50%;
+	right: -0.15rem;
+	transform: translateY(-50%);
+	cursor: ew-resize;
+}
+
+.resize-bottom-right {
+	bottom: -0.15rem;
+	right: -0.15rem;
+	cursor: nwse-resize;
+}
+
+.resize-bottom {
+	bottom: -0.15rem;
+	left: 50%;
+	transform: translateX(-50%);
+	cursor: ns-resize;
 }
 
 .resize-bottom-left {
@@ -527,9 +599,10 @@ let stopWatchFn: (() => void) | null = null
 	cursor: nesw-resize;
 }
 
-.resize-bottom-right {
-	bottom: -0.15rem;
-	right: -0.15rem;
-	cursor: nwse-resize;
+.resize-left {
+	top: 50%;
+	left: -0.15rem;
+	transform: translateY(-50%);
+	cursor: ew-resize;
 }
 </style>
