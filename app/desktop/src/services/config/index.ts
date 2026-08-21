@@ -4,7 +4,7 @@ import {logger} from "../logger"
 export type ConfigKey =
 	"language" | "main_active_nav" |
 	"llm_api_base" | "llm_api_key" | "llm_model" |
-	"live2d_model" | "live2d_scale" | "live2d_pos_x" | "live2d_pos_y" |
+	"live2d_model" |
 	"pet_window_x" | "pet_window_y" | "pet_width" | "pet_height"
 
 export const config = {

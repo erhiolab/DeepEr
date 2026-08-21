@@ -1,10 +1,11 @@
-import {ref} from "vue"
+import {ref, computed} from "vue"
 import {defineStore} from "pinia"
 import {invoke} from "@tauri-apps/api/core"
 import {init} from "l2d"
 import {logger} from "../logger"
-import {config} from "../config"
 import {assetUrl} from "../asset.ts"
+import useLanguages from "../i18n/useLanguages.ts"
+import {useTouchStore, TAP_MAX_DISTANCE, SWIPE_MIN_DISTANCE, FRENZY_MIN_CLICKS, FRENZY_WINDOW_MS, type TouchType} from "./touch"
 
 // Live2D 实例类型
 type L2DInstance = ReturnType<typeof init>
@@ -13,6 +14,9 @@ type L2DInstance = ReturnType<typeof init>
  * Live2D 模型状态管理
  */
 export const useLive2DStore = defineStore("live2d", () => {
+	// 界面文案 (随语言响应式)
+	const I18N = computed(() => useLanguages().components.live2d)
+
 	// Live2D 实例
 	const l2dInstance = ref<L2DInstance | null>(null)
 
@@ -57,6 +61,12 @@ export const useLive2DStore = defineStore("live2d", () => {
 
 	// 是否显示可触摸区域 (hit area) 边界调试覆盖层
 	const showHitAreas = ref(false)
+
+	// 自定义触摸检测: 当前拖拽起点 (相对 canvas 归一化) 与累计位移
+	let touchStart = {x: 0, y: 0, dist: 0}
+
+	// 自定义触摸检测: 是否正在拖拽 (相对 canvas 归一化)
+	let touchDownOnCanvas = false
 
 	// hit area 覆盖层 canvas (绘制各可触摸区域边界与名称)
 	let overlayCanvas: HTMLCanvasElement | null = null
@@ -134,6 +144,8 @@ export const useLive2DStore = defineStore("live2d", () => {
 				totalFiles.value = total
 			})
 			await logger.info("Live2D 实例初始化成功")
+			// 绑定自定义触摸检测 (document 级委托, 全局一次)
+			setupCustomTouchDetection()
 			return true
 		} catch (err) {
 			error.value = err instanceof Error ? err.message : String(err)
@@ -232,19 +244,22 @@ export const useLive2DStore = defineStore("live2d", () => {
 
 	/**
 	 * 应用模型渲染配置
+	 * 从模型级配置文件 (model.config.json) 读取, 数据库不再保存渲染信息
 	 */
 	const applyModelTransform = async () => {
 		if (!l2dInstance.value) return
 		try {
-			const [savedScale, savedX, savedY] = await Promise.all([
-				config.get("live2d_scale"),
-				config.get("live2d_pos_x"),
-				config.get("live2d_pos_y"),
-			])
-			// 兼容 Tauri 可能返回字符串类型的数字
-			modelScale.value = savedScale !== null ? Number(savedScale) : 1.0
-			modelX.value = savedX !== null ? Number(savedX) : 0.0
-			modelY.value = savedY !== null ? Number(savedY) : 0.0
+			const TOUCH = useTouchStore()
+			// 确保已加载当前模型的触摸配置
+			if (TOUCH.modelName !== currentModel.value) {
+				if (currentModel.value) {
+					await TOUCH.load(currentModel.value)
+				}
+			}
+			const R = TOUCH.render
+			modelScale.value = R.scale || 1.0
+			modelX.value = R.posX || 0.0
+			modelY.value = R.posY || 0.0
 			l2dInstance.value.setScale(modelScale.value)
 			l2dInstance.value.setPosition(modelX.value, modelY.value)
 		} catch (err) {
@@ -284,10 +299,10 @@ export const useLive2DStore = defineStore("live2d", () => {
 			currentModel.value = modelName
 			isInitialized.value = true
 			await applyModelTransform()
-			// 若开启了显示可触摸区域但此前实例未就绪, 在这里补启动绘制
+			// 若开启了显示可触摸区域但此前实例未就绪, 在这里重新启动绘制
 			if (showHitAreas.value && l2dInstance.value && !hitAreaRafId) {
 				ensureHitAreaOverlay()
-				drawHitAreas()
+				await drawHitAreas()
 			}
 			await logger.info(`Live2D 模型 ${modelName} 加载成功`)
 			return true
@@ -307,7 +322,8 @@ export const useLive2DStore = defineStore("live2d", () => {
 		if (!l2dInstance.value) return
 		modelScale.value = scale
 		l2dInstance.value.setScale(scale)
-		await config.set("live2d_scale", scale)
+		// 渲染配置写入模型级配置文件 (随模型一起保存), 不再写全局数据库
+		await useTouchStore().setRender({scale})
 	}
 
 	/**
@@ -319,10 +335,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		modelY.value = y
 		l2dInstance.value.setPosition(x, y)
 		try {
-			await Promise.all([
-				config.set("live2d_pos_x", x),
-				config.set("live2d_pos_y", y),
-			])
+			await useTouchStore().setRender({posX: x, posY: y})
 		} catch (err) {
 			await logger.error("保存模型位置配置失败:", err)
 		}
@@ -338,7 +351,6 @@ export const useLive2DStore = defineStore("live2d", () => {
 		CANVAS.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:50;"
 		overlayCanvas = CANVAS
 		overlayCtx = CANVAS.getContext("2d")
-		console.log(`[hitArea] 覆盖层已创建, 2d context: ${overlayCtx ? "ok" : "null"}`)
 		// 若主 Canvas 已在某容器中, 立即归位
 		const HOST = canvasElement.value?.parentElement
 		if (HOST) HOST.appendChild(CANVAS)
@@ -361,10 +373,132 @@ export const useLive2DStore = defineStore("live2d", () => {
 	}
 
 	/**
+	 * 判断坐标 (viewport) 是否落在主 Canvas 内, 返回归一化坐标或 null
+	 */
+	const pointInCanvas = (clientX: number, clientY: number) => {
+		const CANVAS = canvasElement.value
+		if (!CANVAS) return null
+		const R = CANVAS.getBoundingClientRect()
+		if (R.width <= 0 || R.height <= 0) return null
+		if (clientX < R.left || clientX > R.right || clientY < R.top || clientY > R.bottom) return null
+		return {
+			x: (clientX - R.left) / R.width,
+			y: (clientY - R.top) / R.height,
+		}
+	}
+
+	/**
+	 * 命中检测: 判断归一化点是否落在某个自定义触摸区域矩形内
+	 */
+	const hitTouchArea = (x: number, y: number, px: number, py: number, pw: number, ph: number) => x >= px && x <= px + pw && y >= py && y <= py + ph
+
+	/**
+	 * 遍历当前模型的所有自定义触摸区域, 命中则触发回调
+	 */
+	const dispatchTouch = async (type: TouchType, x: number, y: number) => {
+		const TOUCH = useTouchStore()
+		for (const AREA of TOUCH.touches) {
+			if (AREA.type !== type) continue
+			if (hitTouchArea(x, y, AREA.x, AREA.y, AREA.w, AREA.h)) {
+				await TOUCH.trigger(AREA)
+				break
+			}
+		}
+	}
+
+	// 狂点 (frenzy) 检测状态: 记录每个区域窗口期内的点击次数与最近一次时间
+	const frenzyState = new Map<string, {count: number; lastAt: number}>()
+
+	/**
+	 * 自定义触摸检测: 挖拽起点 (相对 canvas 归一化) 与累计位移
+	 * @param e 指针事件对象
+	 */
+	const onTouchPointerDown = (e: PointerEvent) => {
+		const P = pointInCanvas(e.clientX, e.clientY)
+		if (!P) return
+		touchDownOnCanvas = true
+		touchStart = {x: P.x, y: P.y, dist: 0}
+	}
+
+	/**
+	 * 自定义触摸检测: 移动累计位移 (相对 canvas 归一化)
+	 * @param e 指针事件对象
+	 */
+	const onTouchPointerMove = (e: PointerEvent) => {
+		if (!touchDownOnCanvas) return
+		const P = pointInCanvas(e.clientX, e.clientY)
+		if (!P) return
+		touchStart.dist += Math.hypot(e.movementX, e.movementY)
+	}
+
+	/**
+	 * 自定义触摸检测: 松开拖拽 (相对 canvas 归一化)
+	 * @param e 指针事件对象
+	 */
+	const onTouchPointerUp = (e: PointerEvent) => {
+		if (!touchDownOnCanvas) return
+		touchDownOnCanvas = false
+		const P = pointInCanvas(e.clientX, e.clientY)
+		if (!P) return
+		const NOW = Date.now()
+		// 狂点: 命中任意 frenzy 区域且窗口期内连续点击达到次数 → 触发
+		const TOUCH = useTouchStore()
+		let frenzyFired = false
+		for (const AREA of TOUCH.touches) {
+			if (AREA.type !== "frenzy") continue
+			if (!hitTouchArea(P.x, P.y, AREA.x, AREA.y, AREA.w, AREA.h)) continue
+			const S = frenzyState.get(AREA.id)
+			// 超出窗口期则重新计数
+			if (!S || NOW - S.lastAt > FRENZY_WINDOW_MS) {
+				frenzyState.set(AREA.id, {count: 1, lastAt: NOW})
+			} else {
+				S.count += 1
+				S.lastAt = NOW
+				if (S.count >= FRENZY_MIN_CLICKS) {
+					void TOUCH.trigger(AREA)
+					// 触发后重置该区域计数, 避免持续触发
+					frenzyState.set(AREA.id, {count: 0, lastAt: NOW})
+					frenzyFired = true
+				}
+			}
+		}
+		// 普通类型判定 (狂点区域优先, 已触发则不重复走 tap/swipe)
+		if (!frenzyFired) {
+			// 移动累计超过阈值 → 磨蹭; 否则视为点击
+			if (touchStart.dist >= SWIPE_MIN_DISTANCE) {
+				void dispatchTouch("swipe", P.x, P.y)
+			} else if (touchStart.dist <= TAP_MAX_DISTANCE) {
+				void dispatchTouch("tap", P.x, P.y)
+			}
+		}
+		touchStart.dist = 0
+	}
+
+	/**
+	 * 绑定自定义触摸检测 (document 级委托, 调用一次即可)
+	 * 在主 canvas 上的点击/磨蹭将命中自定义触摸区域并触发回调
+	 */
+	const setupCustomTouchDetection = () => {
+		document.addEventListener("pointerdown", onTouchPointerDown)
+		document.addEventListener("pointermove", onTouchPointerMove)
+		document.addEventListener("pointerup", onTouchPointerUp)
+	}
+
+	/**
+	 * 解绑自定义触摸检测 (document 级委托, 调用一次即可)
+	 */
+	const teardownCustomTouchDetection = () => {
+		document.removeEventListener("pointerdown", onTouchPointerDown)
+		document.removeEventListener("pointermove", onTouchPointerMove)
+		document.removeEventListener("pointerup", onTouchPointerUp)
+		touchDownOnCanvas = false
+	}
+
+	/**
 	 * 逐帧绘制 hit area 边界
 	 * 覆盖层与主 Canvas 同容器对齐, 直接复用 canvas 的物理尺寸, 无需视口换算
 	 */
-	const drawHitAreas = () => {
+	const drawHitAreas = async () => {
 		// 关闭时停止循环
 		if (!showHitAreas.value || !overlayCtx) {
 			hitAreaRafId = 0
@@ -396,7 +530,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		try {
 			BOUNDS = l2dInstance.value.getHitAreaBounds()
 		} catch (err) {
-			console.warn("[hitArea] 读取可触摸区域失败:", err)
+			await logger.error("读取可触摸区域失败:", err)
 			return
 		}
 		for (const B of BOUNDS) {
@@ -413,14 +547,33 @@ export const useLive2DStore = defineStore("live2d", () => {
 			overlayCtx.font = "bold 12px monospace"
 			overlayCtx.fillText(B.name, X + 4, Y + 14)
 		}
-		// 模型已加载但未定义 Hit Areas: 绘制提示文字, 避免"无显示"造成困惑
-		if (BOUNDS.length === 0 && isInitialized.value) {
+		// 叠加绘制用户自定义触摸区域 (蓝色)
+		const TOUCH = useTouchStore()
+		for (const T of TOUCH.touches) {
+			const X = T.x * W
+			const Y = T.y * H
+			const BW = T.w * W
+			const BH = T.h * H
+			// tap=蓝 / swipe=橙 / frenzy=品红
+			const COLOR = T.type === "swipe" ? "rgba(255,170,60," : T.type === "frenzy" ? "rgba(255,80,200," : "rgba(80,160,255,"
+			overlayCtx.strokeStyle = COLOR + "0.95)"
+			overlayCtx.lineWidth = 2
+			overlayCtx.strokeRect(X, Y, BW, BH)
+			overlayCtx.fillStyle = COLOR + "0.15)"
+			overlayCtx.fillRect(X, Y, BW, BH)
+			overlayCtx.fillStyle = "rgba(255,255,255,0.95)"
+			overlayCtx.font = "bold 12px monospace"
+			const TAG = T.type === "swipe" ? ` (${I18N.value.tagSwipe})` : T.type === "frenzy" ? ` (${I18N.value.tagFrenzy})` : ""
+			overlayCtx.fillText(`${T.name}${TAG}`, X + 4, Y + 28)
+		}
+		// 模型既无自带 Hit Areas 也无自定义区域: 绘制提示文字, 避免"无显示"造成困惑
+		if (BOUNDS.length === 0 && TOUCH.touches.length === 0 && isInitialized.value) {
 			overlayCtx.save()
 			overlayCtx.fillStyle = "rgba(255, 200, 0, 0.95)"
 			overlayCtx.font = `bold ${Math.max(13, Math.round(W / 30))}px "Microsoft YaHei", sans-serif`
 			overlayCtx.textAlign = "center"
 			overlayCtx.textBaseline = "middle"
-			overlayCtx.fillText("该模型未定义可触摸区域 (Hit Areas)", W / 2, H / 2)
+			overlayCtx.fillText(I18N.value.noTouchArea, W / 2, H / 2)
 			overlayCtx.restore()
 		}
 	}
@@ -429,20 +582,15 @@ export const useLive2DStore = defineStore("live2d", () => {
 	 * 设置是否显示可触摸区域 (hit area)
 	 * @param show true 开启绘制, false 停止并清理覆盖层
 	 */
-	const setShowHitAreas = (show: boolean) => {
+	const setShowHitAreas = async (show: boolean) => {
 		showHitAreas.value = show
 		if (show) {
 			// 实例未就绪时仅记录状态, 模型加载完成后会自动启动绘制
-			if (!l2dInstance.value) {
-				console.log("[hitArea] 开启, 但 Live2D 实例尚未就绪, 等待模型加载后自动启动")
-				return
-			}
+			if (!l2dInstance.value) return
 			ensureHitAreaOverlay()
-			if (!hitAreaRafId) drawHitAreas()
-			console.log("[hitArea] 显示可触摸区域: 开启")
+			if (!hitAreaRafId) await drawHitAreas()
 		} else {
 			clearHitAreaOverlay()
-			console.log("[hitArea] 显示可触摸区域: 关闭")
 		}
 	}
 
@@ -473,6 +621,8 @@ export const useLive2DStore = defineStore("live2d", () => {
 		// 清理 ResizeObserver
 		resizeObserver?.disconnect()
 		resizeObserver = null
+		// 解绑自定义触摸检测
+		teardownCustomTouchDetection()
 		// 清理 hit area 覆盖层
 		clearHitAreaOverlay()
 		showHitAreas.value = false

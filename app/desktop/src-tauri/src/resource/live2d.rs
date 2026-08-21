@@ -4,8 +4,104 @@
 use crate::resource::types::{ResourceInfo, ResourceType};
 use crate::resource::{calculate_dir_size, validate_resource_name, RESOURCES_DIR};
 
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// 模型级配置文件 (位于模型目录下, 随模型一起存在/删除/导入导出)
+/// 保存渲染配置与用户自定义可触摸区域, 数据库不再保存模型渲染信息
+pub const MODEL_CONFIG_FILE: &str = "model.config.json";
+
+/// 渲染配置 (原本在数据库 config 表)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRenderConfig {
+    /// 模型缩放比例, 1 为原始大小
+    #[serde(default = "default_scale")]
+    pub scale: f64,
+    /// X 轴偏移 -2 ~ 2
+    #[serde(default)]
+    pub pos_x: f64,
+    /// Y 轴偏移 -2 ~ 2
+    #[serde(default)]
+    pub pos_y: f64,
+}
+
+impl Default for ModelRenderConfig {
+    fn default() -> Self {
+        Self {
+            scale: default_scale(),
+            pos_x: 0.0,
+            pos_y: 0.0,
+        }
+    }
+}
+
+fn default_scale() -> f64 {
+    1.0
+}
+
+fn default_touch_type() -> String {
+    "tap".to_string()
+}
+
+fn default_version() -> i64 {
+    1
+}
+
+/// 用户自定义可触摸区域
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TouchArea {
+    /// 唯一 id (生成后不变, 用于增删改)
+    pub id: String,
+    /// 用户命名 (显示与回调用)
+    pub name: String,
+    /// 触摸类型: tap=点击 / swipe=磨蹭
+    #[serde(default = "default_touch_type")]
+    pub r#type: String,
+    /// 归一化区域 (0~1, 相对模型画布)
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+    #[serde(default)]
+    pub w: f64,
+    #[serde(default)]
+    pub h: f64,
+    /// 该区域展示/图标图片地址
+    #[serde(default)]
+    pub image: String,
+    /// 触发回调时携带的描述, 供 AI 理解
+    #[serde(default)]
+    pub prompt: String,
+}
+
+/// 模型级配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelConfig {
+    /// 配置结构版本, 不兼容变更时 +1 用于迁移
+    #[serde(default = "default_version")]
+    pub version: i64,
+    /// 渲染配置
+    #[serde(default)]
+    pub render: ModelRenderConfig,
+    /// 自定义可触摸区域
+    #[serde(default)]
+    pub touches: Vec<TouchArea>,
+}
+
+impl Default for ModelConfig {
+    fn default() -> Self {
+        Self {
+            version: default_version(),
+            render: ModelRenderConfig::default(),
+            touches: Vec::new(),
+        }
+    }
+}
+
 
 /// Live2D 资源根目录
 fn root_dir(data_dir: &Path) -> PathBuf {
@@ -252,4 +348,37 @@ fn ensure_inside(root: &Path, target: &Path) -> Result<(), String> {
         return Err("资源路径超出资源目录范围".to_string());
     }
     Ok(())
+}
+
+/// 模型级配置文件路径: <model_dir>/model.config.json
+pub fn model_config_path(data_dir: &Path, name: &str) -> Result<PathBuf, String> {
+    Ok(model_dir(data_dir, name)?.join(MODEL_CONFIG_FILE))
+}
+
+/// 读取模型级配置, 文件缺失时返回默认配置 (不报错)
+pub fn read_model_config(data_dir: &Path, name: &str) -> Result<ModelConfig, String> {
+    let path = model_config_path(data_dir, name)?;
+    if !path.is_file() {
+        return Ok(ModelConfig::default());
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("读取模型配置失败: {}: {e}", path.display()))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("解析模型配置失败: {}: {e}", path.display()))
+}
+
+/// 写入模型级配置 (自动创建父目录, 覆盖式写入)
+pub fn write_model_config(
+    data_dir: &Path,
+    name: &str,
+    config: &ModelConfig,
+) -> Result<(), String> {
+    let resource_dir = model_dir(data_dir, name)?;
+    if !resource_dir.is_dir() {
+        return Err(format!("Live2D 资源不存在: {name}"));
+    }
+    let path = resource_dir.join(MODEL_CONFIG_FILE);
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("序列化模型配置失败: {e}"))?;
+    fs::write(&path, content).map_err(|e| format!("写入模型配置失败: {}: {e}", path.display()))
 }

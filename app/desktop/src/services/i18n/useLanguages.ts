@@ -12,6 +12,12 @@ export default () => {
 			live2d: {
 				loading: t("common.live2d.loading"),
 				empty: t("common.live2d.empty"),
+				noTouchArea: t("common.live2d.noTouchArea"),
+				tagSwipe: t("common.live2d.tagSwipe"),
+				tagFrenzy: t("common.live2d.tagFrenzy"),
+				touchedName: (name: string) => t("common.live2d.touchedName", {name}),
+				touchedSwipe: (name: string) => t("common.live2d.touchedSwipe", {name}),
+				touchedFrenzy: (name: string) => t("common.live2d.touchedFrenzy", {name}),
 			},
 			firstRun: {
 				welcome: {
@@ -124,6 +130,26 @@ export default () => {
 					refreshFailed: t("common.toast.refreshFailed"),
 					noModel: t("components.main.exception.noModel"),
 				},
+				touch: {
+					title: t("components.main.touch.title"),
+					subtitle: t("components.main.touch.subtitle"),
+					loadingModel: t("components.main.touch.loadingModel"),
+					draftLabel: t("components.main.touch.draftLabel"),
+					defaultName: (n: number) => t("components.main.touch.defaultName", {n}),
+					untitled: t("components.main.touch.untitled"),
+					name: t("components.main.touch.name"),
+					namePlaceholder: t("components.main.touch.namePlaceholder"),
+					type: t("components.main.touch.type"),
+					typeTap: t("components.main.touch.typeTap"),
+					typeSwipe: t("components.main.touch.typeSwipe"),
+					typeFrenzy: t("components.main.touch.typeFrenzy"),
+					prompt: t("components.main.touch.prompt"),
+					promptPlaceholder: t("components.main.touch.promptPlaceholder"),
+					add: t("components.main.touch.add"),
+					save: t("components.main.touch.save"),
+					cancel: t("components.main.touch.cancel"),
+					empty: t("components.main.touch.empty"),
+				},
 			}
 		},
 		views: {
@@ -145,6 +171,7 @@ export default () => {
 				llm: t("common.label.llm"),
 				tts: t("common.label.tts"),
 				exception: t("common.label.exception"),
+				touch: t("common.label.touch"),
 				about: t("common.label.about"),
 			},
 			pet: {

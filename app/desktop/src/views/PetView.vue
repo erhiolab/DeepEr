@@ -220,7 +220,7 @@ let stopWatchFn: (() => void) | null = null
 						@mousedown.stop
 						@click.stop="enablePassthrough"
 					>
-						<Icon name="passthrough" :size="16"/>
+						<Icon name="dashed-mouse" :size="16"/>
 					</button>
 					<button
 						class="pet-btn"

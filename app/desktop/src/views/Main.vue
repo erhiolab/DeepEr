@@ -9,6 +9,7 @@ import TitleBar from "../components/TitleBar.vue"
 import Live2D from "../components/Live2D.vue"
 import Home from "../components/main/Home.vue"
 import ModelSelect from "../components/main/ModelSelect.vue"
+import Touch from "../components/main/Touch.vue"
 import About from "../components/firstRun/About.vue"
 import LanguageSelect from "../components/main/LanguageSelect.vue"
 import Exception from "../components/main/Exception.vue"
@@ -21,7 +22,7 @@ const ROUTER = useRouter()
 type NavType = "petGroup" | "settingGroup"
 
 // 侧边导航项
-type NavKey = "home" | "talk" | "language" | "model" | "llm" | "tts" | "exception" | "about"
+type NavKey = "home" | "talk" | "language" | "model" | "llm" | "tts" | "touch" | "exception" | "about"
 
 // 侧边导航项
 const NAV_ITEMS: { type: NavType; key: NavKey; icon: IconName }[] = [
@@ -31,6 +32,7 @@ const NAV_ITEMS: { type: NavType; key: NavKey; icon: IconName }[] = [
 	{type: "settingGroup", key: "model", icon: "cube"},
 	{type: "settingGroup", key: "llm", icon: "robot"},
 	{type: "settingGroup", key: "tts", icon: "microphone"},
+	{type: "settingGroup", key: "touch", icon: "settings"},
 	{type: "settingGroup", key: "exception", icon: "error"},
 	{type: "settingGroup", key: "about", icon: "info"}
 ]
@@ -101,6 +103,7 @@ const goToPet = () => {
 					<Home v-if="activeNav === 'home'"/>
 					<LanguageSelect v-else-if="activeNav === 'language'"/>
 					<ModelSelect v-else-if="activeNav === 'model'"/>
+					<Touch v-else-if="activeNav === 'touch'"/>
 					<Exception v-else-if="activeNav === 'exception'"/>
 					<About v-else-if="activeNav === 'about'"/>
 				</Transition>

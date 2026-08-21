@@ -76,7 +76,9 @@ pub fn run() {
             commands::resource::ensure_resource,
             commands::resource::list_resources,
             commands::resource::delete_resource,
-            commands::resource::import_live2d
+            commands::resource::import_live2d,
+            commands::resource::read_model_config,
+            commands::resource::write_model_config
         ])
         .run(tauri::generate_context!())
         .expect("运行应用时出错")

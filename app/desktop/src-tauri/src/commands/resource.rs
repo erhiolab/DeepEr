@@ -418,3 +418,43 @@ fn emit_resource_event(
         );
     }
 }
+
+/// 读取模型级配置 (渲染配置 + 自定义可触摸区域)
+/// 文件缺失时返回默认配置, 不报错.
+/// invoke("read_model_config", { name: "ARGNori" })
+#[tauri::command]
+pub fn read_model_config(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<crate::resource::live2d::ModelConfig, String> {
+    let name = validate_resource_name(&name)?;
+    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let config = crate::resource::live2d::read_model_config(&data_dir, name)?;
+    let _ = log::write(
+        &app,
+        &log::LogSource::Backend,
+        "info",
+        &format!("读取模型配置: name={name} touches={}", config.touches.len()),
+    );
+    Ok(config)
+}
+
+/// 写入模型级配置 (渲染配置 + 自定义可触摸区域)
+/// invoke("write_model_config", { name: "ARGNori", config: {...} })
+#[tauri::command]
+pub fn write_model_config(
+    app: tauri::AppHandle,
+    name: String,
+    config: crate::resource::live2d::ModelConfig,
+) -> Result<(), String> {
+    let name = validate_resource_name(&name)?;
+    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    crate::resource::live2d::write_model_config(&data_dir, name, &config)?;
+    let _ = log::write(
+        &app,
+        &log::LogSource::Backend,
+        "info",
+        &format!("写入模型配置: name={name} touches={}", config.touches.len()),
+    );
+    Ok(())
+}
