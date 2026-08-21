@@ -13,6 +13,8 @@
 		"core:window:allow-set-always-on-top",
 		"core:window:allow-set-size",
 		"core:window:allow-set-resizable",
+		"core:window:allow-start-resize-dragging",
+		"core:window:allow-set-ignore-cursor-events",
 		"core:window:allow-set-position",
 		"core:window:allow-set-decorations",
 		"core:window:allow-set-skip-taskbar",
@@ -20,6 +22,9 @@
 		"core:window:allow-close",
 		"core:event:allow-listen",
 		"core:event:default",
-		"dialog:default"
+		"dialog:default",
+		"core:window:allow-outer-size",
+		"core:window:default",
+		"core:window:allow-center"
 	]
 }

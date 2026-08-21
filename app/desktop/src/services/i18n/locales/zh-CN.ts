@@ -131,6 +131,10 @@ export default {
 				subtitle: "遇到问题时可在这里手动恢复",
 				refreshLive2d: "刷新 Live2D 模型",
 				refreshLive2dDesc: "重新加载当前应用的 Live2D 模型",
+				showHitAreas: "显示可触摸区域",
+				showHitAreasDesc: "以覆盖层标注模型中可触摸区域的边界",
+				show: "显示",
+				hide: "隐藏",
 				noModel: "尚未应用任何 Live2D 模型",
 			},
 		}
@@ -140,6 +144,11 @@ export default {
 			back: "上一步",
 			next: "下一步",
 			start: "开始"
+		},
+		pet: {
+			passthrough: "穿透 (点击后鼠标穿透到背后, 通过托盘恢复)",
+			resize: "调整大小",
+			resizing: "取消调整"
 		}
 	},
 }

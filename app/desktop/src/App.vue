@@ -13,7 +13,7 @@ onMounted(async () => {
 		await ROUTER.push({name: "FirstRun"})
 		return
 	}
-	await ROUTER.push({name: "Main"})
+	await ROUTER.push({name: "Pet"})
 })
 </script>
 

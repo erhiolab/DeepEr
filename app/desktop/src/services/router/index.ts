@@ -1,5 +1,6 @@
 import {createRouter, createWebHashHistory} from "vue-router"
-import {setFirstRunWindow, setMainWindow} from "../window"
+import {emit} from "@tauri-apps/api/event"
+import {setFirstRunWindow, setMainWindow, setPetWindow} from "../window"
 import {logger} from "../logger"
 import FirstRunView from "../../views/FirstRunView.vue"
 import MainView from "../../views/Main.vue"
@@ -27,6 +28,7 @@ const router = createRouter({
 })
 
 router.afterEach(async (to) => {
+	void emit("tray-set-view", to.name === "Main")
 	switch (to.name) {
 		case "FirstRun":
 			await setFirstRunWindow()
@@ -35,7 +37,7 @@ router.afterEach(async (to) => {
 			await setMainWindow()
 			break
 		case "Pet":
-			// await setPetWindow()
+			await setPetWindow()
 			break
 	}
 })

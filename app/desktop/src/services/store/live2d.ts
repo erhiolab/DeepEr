@@ -55,6 +55,18 @@ export const useLive2DStore = defineStore("live2d", () => {
 	// 模型 Y 轴位置 -2 ~ 2
 	const modelY = ref<number>(0.0)
 
+	// 是否显示可触摸区域 (hit area) 边界调试覆盖层
+	const showHitAreas = ref(false)
+
+	// hit area 覆盖层 canvas (绘制各可触摸区域边界与名称)
+	let overlayCanvas: HTMLCanvasElement | null = null
+
+	// hit area 覆盖层渲染上下文
+	let overlayCtx: CanvasRenderingContext2D | null = null
+
+	// hit area 绘制循环的 rAF id
+	let hitAreaRafId = 0
+
 	// 已安装模型的入口文件映射: 模型名 -> 入口文件相对路径 (如 "arg-nori.model3.json")
 	// 用于支持 Cubism2 (.model.json) 与 Cubism3 (.model3.json) 的加载
 	const modelEntryFiles = ref<Record<string, string>>({})
@@ -137,7 +149,12 @@ export const useLive2DStore = defineStore("live2d", () => {
 	 * 将 canvas 挂载到指定容器
 	 * 用于路由切换时保留 canvas 实例
 	 */
-	const mountCanvas = async (container: HTMLElement) => {
+	const mountCanvas = async (container: HTMLElement | null) => {
+		if (!container) {
+			// 组件可能已卸载 (路由切换时 await 初始化期间 ref 被置空), 直接跳过挂载
+			await logger.warn("Canvas 挂载失败: 容器引用为空 (组件可能已卸载)")
+			return
+		}
 		if (!canvasElement.value) {
 			await logger.warn("Canvas 尚未创建, 请先调用 initApp")
 			return
@@ -170,10 +187,17 @@ export const useLive2DStore = defineStore("live2d", () => {
 
 	/**
 	 * 设置 ResizeObserver 监听容器尺寸变化
+	 * 容器尺寸变化时调用 l2d 的 resize() 重新适配渲染 (节流到下一帧, 避免缩放中密集触发)
 	 */
 	const setupResizeObserver = (container: HTMLElement) => {
+		let rafId = 0
 		resizeObserver = new ResizeObserver(() => {
-			// 自动响应 canvas CSS 尺寸的变化并进行重绘
+			// 用 rAF 合并同一帧内的多次的尺寸变化, 减少缩放时的重绘抖动
+			if (rafId) return
+			rafId = requestAnimationFrame(() => {
+				rafId = 0
+				l2dInstance.value?.resize()
+			})
 		})
 		resizeObserver.observe(container)
 	}
@@ -260,6 +284,11 @@ export const useLive2DStore = defineStore("live2d", () => {
 			currentModel.value = modelName
 			isInitialized.value = true
 			await applyModelTransform()
+			// 若开启了显示可触摸区域但此前实例未就绪, 在这里补启动绘制
+			if (showHitAreas.value && l2dInstance.value && !hitAreaRafId) {
+				ensureHitAreaOverlay()
+				drawHitAreas()
+			}
 			await logger.info(`Live2D 模型 ${modelName} 加载成功`)
 			return true
 		} catch (err) {
@@ -300,6 +329,124 @@ export const useLive2DStore = defineStore("live2d", () => {
 	}
 
 	/**
+	 * 创建 hit area 覆盖层 canvas
+	 * 采用 absolute 铺满主 Canvas 所在容器, 天然与模型对齐, 避免 fixed/视口换算带来的遮蔽问题
+	 */
+	const ensureHitAreaOverlay = () => {
+		if (overlayCanvas) return
+		const CANVAS = document.createElement("canvas")
+		CANVAS.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:50;"
+		overlayCanvas = CANVAS
+		overlayCtx = CANVAS.getContext("2d")
+		console.log(`[hitArea] 覆盖层已创建, 2d context: ${overlayCtx ? "ok" : "null"}`)
+		// 若主 Canvas 已在某容器中, 立即归位
+		const HOST = canvasElement.value?.parentElement
+		if (HOST) HOST.appendChild(CANVAS)
+	}
+
+	/**
+	 * 清除 hit area 覆盖层并停止绘制
+	 */
+	const clearHitAreaOverlay = () => {
+		if (hitAreaRafId) {
+			cancelAnimationFrame(hitAreaRafId)
+			hitAreaRafId = 0
+		}
+		overlayCtx?.clearRect(0, 0, overlayCanvas?.width ?? 0, overlayCanvas?.height ?? 0)
+		if (overlayCanvas && overlayCanvas.parentElement) {
+			overlayCanvas.parentElement.removeChild(overlayCanvas)
+		}
+		overlayCanvas = null
+		overlayCtx = null
+	}
+
+	/**
+	 * 逐帧绘制 hit area 边界
+	 * 覆盖层与主 Canvas 同容器对齐, 直接复用 canvas 的物理尺寸, 无需视口换算
+	 */
+	const drawHitAreas = () => {
+		// 关闭时停止循环
+		if (!showHitAreas.value || !overlayCtx) {
+			hitAreaRafId = 0
+			return
+		}
+		hitAreaRafId = requestAnimationFrame(drawHitAreas)
+		const CANVAS = canvasElement.value
+		if (!CANVAS || !l2dInstance.value) return
+		// 主 Canvas 被 detach 到 body 隐藏时不绘制
+		const RECT = CANVAS.getBoundingClientRect()
+		if (RECT.left < -1000 || RECT.top < -1000 || RECT.width <= 0 || RECT.height <= 0) {
+			overlayCtx.clearRect(0, 0, overlayCanvas?.width ?? 0, overlayCanvas?.height ?? 0)
+			return
+		}
+		// 确保覆盖层与主 Canvas 处于同一父容器 (路由切换时容器会变化)
+		if (overlayCanvas!.parentElement !== CANVAS.parentElement) {
+			CANVAS.parentElement?.appendChild(overlayCanvas!)
+		}
+		// 直接用 canvas 的 backing store 尺寸, 与 getHitAreaBounds 的归一化一致
+		const W = CANVAS.width
+		const H = CANVAS.height
+		if (overlayCanvas!.width !== W || overlayCanvas!.height !== H) {
+			overlayCanvas!.width = W
+			overlayCanvas!.height = H
+		}
+		overlayCtx.clearRect(0, 0, W, H)
+		// 遍历所有 hit area, 绘制边界矩形与名称标签 (个别模型读取 bounds 可能抛错, 兜底不影响主循环)
+		let BOUNDS: {name: string; x: number; y: number; w: number; h: number}[] = []
+		try {
+			BOUNDS = l2dInstance.value.getHitAreaBounds()
+		} catch (err) {
+			console.warn("[hitArea] 读取可触摸区域失败:", err)
+			return
+		}
+		for (const B of BOUNDS) {
+			const X = B.x * W
+			const Y = B.y * H
+			const BW = B.w * W
+			const BH = B.h * H
+			overlayCtx.strokeStyle = "rgba(0,255,100,0.9)"
+			overlayCtx.lineWidth = 2
+			overlayCtx.strokeRect(X, Y, BW, BH)
+			overlayCtx.fillStyle = "rgba(0,255,100,0.12)"
+			overlayCtx.fillRect(X, Y, BW, BH)
+			overlayCtx.fillStyle = "rgba(0,255,100,1)"
+			overlayCtx.font = "bold 12px monospace"
+			overlayCtx.fillText(B.name, X + 4, Y + 14)
+		}
+		// 模型已加载但未定义 Hit Areas: 绘制提示文字, 避免"无显示"造成困惑
+		if (BOUNDS.length === 0 && isInitialized.value) {
+			overlayCtx.save()
+			overlayCtx.fillStyle = "rgba(255, 200, 0, 0.95)"
+			overlayCtx.font = `bold ${Math.max(13, Math.round(W / 30))}px "Microsoft YaHei", sans-serif`
+			overlayCtx.textAlign = "center"
+			overlayCtx.textBaseline = "middle"
+			overlayCtx.fillText("该模型未定义可触摸区域 (Hit Areas)", W / 2, H / 2)
+			overlayCtx.restore()
+		}
+	}
+
+	/**
+	 * 设置是否显示可触摸区域 (hit area)
+	 * @param show true 开启绘制, false 停止并清理覆盖层
+	 */
+	const setShowHitAreas = (show: boolean) => {
+		showHitAreas.value = show
+		if (show) {
+			// 实例未就绪时仅记录状态, 模型加载完成后会自动启动绘制
+			if (!l2dInstance.value) {
+				console.log("[hitArea] 开启, 但 Live2D 实例尚未就绪, 等待模型加载后自动启动")
+				return
+			}
+			ensureHitAreaOverlay()
+			if (!hitAreaRafId) drawHitAreas()
+			console.log("[hitArea] 显示可触摸区域: 开启")
+		} else {
+			clearHitAreaOverlay()
+			console.log("[hitArea] 显示可触摸区域: 关闭")
+		}
+	}
+
+	/**
 	 * 销毁 Live2D 实例
 	 */
 	/**
@@ -326,6 +473,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 		// 清理 ResizeObserver
 		resizeObserver?.disconnect()
 		resizeObserver = null
+		// 清理 hit area 覆盖层
+		clearHitAreaOverlay()
+		showHitAreas.value = false
 		if (canvasElement.value && canvasElement.value.parentElement) {
 			canvasElement.value.parentElement.removeChild(canvasElement.value)
 		}
@@ -363,6 +513,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 		modelX,
 		modelY,
 
+		// 可触摸区域显示状态
+		showHitAreas,
+
 		// 已安装模型入口文件映射
 		modelEntryFiles,
 		refreshInstalled,
@@ -379,5 +532,6 @@ export const useLive2DStore = defineStore("live2d", () => {
 		// 渲染控制方法
 		setModelScale,
 		setModelPosition,
+		setShowHitAreas,
 	}
 })

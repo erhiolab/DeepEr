@@ -116,6 +116,10 @@ export default () => {
 					subtitle: t("components.main.exception.subtitle"),
 					refreshLive2d: t("components.main.exception.refreshLive2d"),
 					refreshLive2dDesc: t("components.main.exception.refreshLive2dDesc"),
+					showHitAreas: t("components.main.exception.showHitAreas"),
+					showHitAreasDesc: t("components.main.exception.showHitAreasDesc"),
+					show: t("components.main.exception.show"),
+					hide: t("components.main.exception.hide"),
 					refresh: t("common.label.refresh"),
 					refreshFailed: t("common.toast.refreshFailed"),
 					noModel: t("components.main.exception.noModel"),
@@ -142,7 +146,12 @@ export default () => {
 				tts: t("common.label.tts"),
 				exception: t("common.label.exception"),
 				about: t("common.label.about"),
-			}
+			},
+			pet: {
+				passthrough: t("views.pet.passthrough"),
+				resize: t("views.pet.resize"),
+				resizing: t("views.pet.resizing"),
+			},
 		},
 	}
 }

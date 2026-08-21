@@ -142,15 +142,11 @@ pub const KEY_INITIALIZED_AT: &str = "initialized_at";
 pub const KEY_APP_VERSION: &str = "app_version";
 /// 配置键: 界面语言
 pub const KEY_LANGUAGE: &str = "language";
-/// 配置键: 桌宠模型
-pub const KEY_SELECTED_MODEL: &str = "selected_model";
 /// 配置键: 首次初始化是否已完成
 pub const KEY_FIRST_RUN_COMPLETED: &str = "first_run_completed";
 
 /// 当前配置结构版本
 const CONFIG_SCHEMA_VERSION: i64 = 1;
-/// 默认桌宠模型
-const DEFAULT_MODEL: &str = "arg-nori";
 
 /// 当前本地时间, 形如 2026-01-01 12:00:00
 fn now() -> String {
@@ -175,10 +171,6 @@ pub fn init_defaults(conn: &Connection) -> ConfigResult<()> {
         ),
         (KEY_INSTALLED_AT, ConfigValue::String(now())),
         (KEY_LANGUAGE, ConfigValue::String(system_language())),
-        (
-            KEY_SELECTED_MODEL,
-            ConfigValue::String(DEFAULT_MODEL.to_string()),
-        ),
         (KEY_FIRST_RUN_COMPLETED, ConfigValue::Boolean(false)),
     ];
     for (key, value) in defaults {
@@ -289,7 +281,6 @@ pub struct InitConfig {
     pub installed_at: String,
     pub initialized_at: Option<String>,
     pub language: String,
-    pub selected_model: String,
 }
 
 /// 获取首次初始化配置
@@ -312,7 +303,6 @@ pub fn get_init_config(state: tauri::State<'_, crate::db::Db>) -> Result<InitCon
         installed_at: get_str_or(&conn, KEY_INSTALLED_AT, ""),
         initialized_at,
         language: get_str_or(&conn, KEY_LANGUAGE, &language_fallback),
-        selected_model: get_str_or(&conn, KEY_SELECTED_MODEL, DEFAULT_MODEL),
     })
 }
 

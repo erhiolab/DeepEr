@@ -37,7 +37,14 @@ interface ExceptionAction {
 	desc: string
 	action: () => Promise<void> | void
 	disabled?: () => boolean
-	actionLabel: string
+	loading?: () => boolean
+	actionIcon: IconName
+	actionLabel: () => string
+}
+
+// 切换可触摸区域显示
+const handleToggleHitAreas = () => {
+	L2D.setShowHitAreas(!L2D.showHitAreas)
 }
 
 const ACTIONS: ExceptionAction[] = [
@@ -47,7 +54,19 @@ const ACTIONS: ExceptionAction[] = [
 		desc: I18N.value.refreshLive2dDesc,
 		action: handleRefreshLive2d,
 		disabled: () => refreshing.value || L2D.isLoading,
-		actionLabel: I18N.value.refresh,
+		loading: () => refreshing.value,
+		actionIcon: "refresh",
+		actionLabel: () => I18N.value.refresh,
+	},
+	{
+		icon: "eye",
+		name: I18N.value.showHitAreas,
+		desc: I18N.value.showHitAreasDesc,
+		action: handleToggleHitAreas,
+		disabled: () => !L2D.l2dInstance || L2D.isLoading,
+		loading: () => false,
+		actionIcon: "eye",
+		actionLabel: () => (L2D.showHitAreas ? I18N.value.hide : I18N.value.show),
 	},
 ]
 </script>
@@ -70,9 +89,9 @@ const ACTIONS: ExceptionAction[] = [
 					:disabled="item.disabled ? item.disabled() : false"
 					@click="item.action()"
 				>
-					<Icon name="refresh" :size="14" v-if="!refreshing"/>
-					<Icon name="loading" class="animate-spin" :size="14" v-else/>
-					<span>{{ item.actionLabel }}</span>
+					<Icon name="loading" class="animate-spin" :size="14" v-if="item.loading && item.loading()"/>
+					<Icon :name="item.actionIcon" :size="14" v-else/>
+					<span>{{ item.actionLabel() }}</span>
 				</button>
 			</li>
 		</ul>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed, onMounted, ref} from "vue"
-import {hideWindow} from "../services/window"
+import {useRouter} from "vue-router"
 import useLanguages from "../services/i18n/useLanguages"
 import {config} from "../services/config"
 import Icon from "../components/Icon.vue"
@@ -10,10 +10,12 @@ import Live2D from "../components/Live2D.vue"
 import Home from "../components/main/Home.vue"
 import ModelSelect from "../components/main/ModelSelect.vue"
 import About from "../components/firstRun/About.vue"
-import LanguageSelect from "../components/main/LanguageSelect.vue";
-import Exception from "../components/main/Exception.vue";
+import LanguageSelect from "../components/main/LanguageSelect.vue"
+import Exception from "../components/main/Exception.vue"
 
 const I18N = computed(() => useLanguages().views.main)
+
+const ROUTER = useRouter()
 
 // 侧边导航项类型
 type NavType = "petGroup" | "settingGroup"
@@ -61,6 +63,11 @@ const switchNav = (key: NavKey) => {
 	activeNav.value = key
 	config.set("main_active_nav", key)
 }
+
+// 回到桌宠
+const goToPet = () => {
+	ROUTER.push({name: "Pet"})
+}
 </script>
 
 <template>
@@ -68,7 +75,7 @@ const switchNav = (key: NavKey) => {
 		<TitleBar>
 			<span class="nav-title" data-tauri-drag-region>{{ I18N[activeNav] }}</span>
 			<div class="titlebar-right">
-				<button class="close-btn" :title="I18N.close" @click="hideWindow">
+				<button class="close-btn" :title="I18N.close" @click="goToPet">
 					<Icon name="close" class="close-icon"/>
 				</button>
 			</div>

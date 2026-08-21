@@ -63,6 +63,26 @@ html, body, #app {
 @radius-lg: 1.6rem;
 @shadow-soft: 0 0.4rem 2.4rem rgba(0, 0, 0, 0.35);
 
+// ===== 桌宠浮层配色 =====
+// 悬浮按钮 / 四角把手 深色底 (亮色背景下的强对比底)
+@surface-deep: rgba(8, 26, 46, 0.9);
+// 气泡 / 输入框 玻璃底
+@surface-glass: rgba(13, 32, 50, 0.82);
+// 亮青 - 强 (按钮边框 / hover 底)
+@teal-strong: rgba(125, 227, 255, 0.55);
+// 亮青 - 填充 (按钮激活底)
+@teal-fill: rgba(125, 227, 255, 0.65);
+// 亮青 - 中 (发送按钮 hover)
+@teal-mid: rgba(125, 227, 255, 0.32);
+// 亮青 - 弱 (发送按钮默认底)
+@teal-soft: rgba(125, 227, 255, 0.2);
+// 亮青光晕 - 强 (按钮光晕)
+@glow-teal-strong: rgba(125, 227, 255, 0.4);
+// 亮青光晕 - 中 (四角把手光晕)
+@glow-teal-mid: rgba(125, 227, 255, 0.35);
+// 亮青底上的深色图标/文字
+@ink-deep: #05121a;
+
 :root {
 	--deep-teal: @deep-teal;
 	--deep-teal-bright: @deep-teal-bright;
@@ -91,6 +111,16 @@ html, body, #app {
 	--radius-md: @radius-md;
 	--radius-lg: @radius-lg;
 	--shadow-soft: @shadow-soft;
+
+	--surface-deep: @surface-deep;
+	--surface-glass: @surface-glass;
+	--teal-strong: @teal-strong;
+	--teal-fill: @teal-fill;
+	--teal-mid: @teal-mid;
+	--teal-soft: @teal-soft;
+	--glow-teal-strong: @glow-teal-strong;
+	--glow-teal-mid: @glow-teal-mid;
+	--ink-deep: @ink-deep;
 }
 
 .window-root {
