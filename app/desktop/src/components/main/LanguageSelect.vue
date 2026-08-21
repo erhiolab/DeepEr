@@ -7,7 +7,8 @@ import {toast} from "vue3-toastify"
 import zhCn from "../../assets/images/flags/cn.png"
 import enGb from "../../assets/images/flags/gb.png"
 import enUs from "../../assets/images/flags/us.png"
-import Icon from "../Icon.vue"
+import Icon from "../common/Icon.vue"
+import {logger} from "../../services/logger"
 
 const language = useLanguage
 
@@ -29,8 +30,10 @@ const NAME_MAP: Record<string, string> = {
 	"en-US": "English (US)",
 }
 
+// 获取语言国旗图片 (fallback 用 code 本身)
 const flagOf = (code: string): string => FLAG_MAP[code] ?? FLAG_MAP[code.split("-")[0]] ?? ""
 
+// 获取语言显示名称 (fallback 用 code 本身)
 const nameOf = (code: string): string => NAME_MAP[code] ?? new Intl.DisplayNames([code], {type: "language"}).of(code.split("-")[0]) ?? code
 
 // 可用语言列表
@@ -45,7 +48,7 @@ onMounted(async () => {
 		languages.value = await language.getLanguages()
 		current.value = await language.getLanguage()
 	} catch (error) {
-		console.error("加载语言列表失败:", error)
+		logger.error("加载语言列表失败:", error)
 		toast.error(I18N.value.loadLanguagesFailed)
 	}
 })
@@ -57,7 +60,7 @@ const select = async (code: string) => {
 	try {
 		await language.setLanguage(code)
 	} catch (error) {
-		console.error("切换语言失败:", error)
+		logger.error("切换语言失败:", error)
 		toast.error(I18N.value.switchLanguageFailed)
 	}
 }

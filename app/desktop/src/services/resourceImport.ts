@@ -104,12 +104,13 @@ export const createResourceImport = () => {
 	}
 
 	// 触发导入: 立即返回; 结果通过 resource-import 的 done / error 事件驱动
-	const importModel = async (sourcePath: string): Promise<void> => {
+	// sourceType: dir(文件夹) / zip(压缩包) / model(单个入口 json)
+	const importModel = async (sourcePath: string, sourceType: "dir" | "zip" | "model" = "dir"): Promise<void> => {
 		reset()
 		unlisten?.()
 		unlisten = await listen<ResourceImportEventPayload>(EVENT_NAME, onEvent)
 		try {
-			await invoke("import_live2d", {sourcePath})
+			await invoke("import_live2d", {sourcePath, sourceType})
 		} catch (error) {
 			toast.error(I18N.value.downloadFailed)
 			await logger.error(`导入模型失败: ${sourcePath}`, error)

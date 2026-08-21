@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed} from "vue"
-import {logger} from "../services/logger"
-import {icon, type IconName, type IconMode, type IconData} from "../services/icon"
+import {logger} from "../../services/logger"
+import {icon, type IconName, type IconMode, type IconData} from "../../services/icon"
 
 const props = withDefaults(defineProps<{
 	name: IconName

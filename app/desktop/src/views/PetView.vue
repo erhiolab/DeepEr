@@ -2,7 +2,7 @@
 import {computed, onMounted, onUnmounted, ref} from "vue"
 import {emit} from "@tauri-apps/api/event"
 import Live2D from "../components/Live2D.vue"
-import Icon from "../components/Icon.vue"
+import Icon from "../components/common/Icon.vue"
 import {
 	persistWindowState,
 	setPassthrough,

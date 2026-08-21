@@ -5,7 +5,7 @@ import {writeText} from "@tauri-apps/plugin-clipboard-manager"
 import {toast} from "vue3-toastify"
 import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
-import Icon from "../../components/Icon.vue"
+import Icon from "../common/Icon.vue"
 import type {IconMode, IconName} from "../../services/icon"
 import logo from "../../assets/images/logo.png"
 

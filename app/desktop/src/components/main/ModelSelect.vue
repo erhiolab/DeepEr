@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
 import {invoke} from "@tauri-apps/api/core"
-import {open} from "@tauri-apps/plugin-dialog"
+import {open, save} from "@tauri-apps/plugin-dialog"
 import {toast} from "vue3-toastify"
 import {logger} from "../../services/logger"
 import {config} from "../../services/config"
+import {assetUrl} from "../../services/asset.ts"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {createResourceDownload, formatBytes} from "../../services/resourceDownload"
 import {createResourceImport} from "../../services/resourceImport"
 import {useLive2DStore} from "../../services/store/live2d.ts"
-import Icon from "../Icon.vue"
-import ProgressBar from "../ProgressBar.vue"
+import Icon from "../common/Icon.vue"
+import ProgressBar from "../common/ProgressBar.vue"
+import ModelGate from "./ModelGate.vue"
+import ConfirmDialog from "../common/ConfirmDialog.vue"
 
 const I18N = computed(() => useLanguages().components.main.modelSelect)
 
@@ -18,6 +21,9 @@ const L2D = useLive2DStore()
 
 // 官方模型 (来自后端 /live2d/list)
 const officialModels = ref<Live2dModel[]>([])
+
+// 官方模型列表是否正在从后端拉取中
+const officialLoading = ref(false)
 
 // 已安装的官方模型 (is_official = true, 来自本地索引)
 const officialInstalled = ref<Live2dModel[]>([])
@@ -35,11 +41,21 @@ const displayOfficialModels = computed<Live2dModel[]>(() => {
 // 自定义模型 (已安装但不在官方列表)
 interface CustomModel {
 	id: string
+	image?: string
+	/** 显示名称 (来自模型配置顶层 name, 后端已回落为模型目录名/id) */
 	name: string
 }
 
-// 自定义区展示: 已安装自定义模型 (按 id 去重)
-const customModels = ref<CustomModel[]>([])
+// 全部已安装的非官方来源模型 (含被误导入的官方模型, 渲染时再按官方 id 剔除)
+const customAll = ref<CustomModel[]>([])
+
+// 官方模型 id 集合 (线上官方 + 已装官方)
+const officialIds = computed<Set<string>>(() => new Set(displayOfficialModels.value.map(m => m.id)))
+
+// 自定义区展示: 非官方已装模型中, 剔除已被官方区覆盖的 (避免官方模型重复出现在自定义区)
+const customModels = computed<CustomModel[]>(() =>
+	customAll.value.filter(m => !officialIds.value.has(m.id))
+)
 
 // 已安装的模型 id 集合
 const installedIds = ref<Set<string>>(new Set())
@@ -77,6 +93,28 @@ const markCoverBroken = (id: string): void => {
 	if (!brokenCovers.value.includes(id)) brokenCovers.value.push(id)
 }
 
+// 自定义模型图标加载失败的模型 id (回落占位图标)
+const brokenCustomIcons = ref<string[]>([])
+
+// 自定义模型图标是否加载失败
+const isIconBroken = (id: string): boolean => brokenCustomIcons.value.includes(id)
+
+// 标记自定义模型图标加载失败
+const markIconBroken = (id: string): void => {
+	if (!brokenCustomIcons.value.includes(id)) brokenCustomIcons.value.push(id)
+}
+
+// 组装自定义模型图标的 asset 协议 URL
+// 校验: 图片必须是模型目录内相对路径, 禁止 `..` 或绝对路径穿越
+const iconUrl = (modelName: string, image: string): string | null => {
+	const CLEAN = image.replace(/^\/+/, "").replace(/\\/g, "/")
+	if (!CLEAN || CLEAN.startsWith("/")) return null
+	const SEGMENTS = CLEAN.split("/")
+	// 禁止 `..` 与空段 (路径穿越 / 多余分隔)
+	if (SEGMENTS.some(seg => seg === ".." || seg === "." || !seg)) return null
+	return `${assetUrl(`live2d/${modelName}`)}/${CLEAN}`
+}
+
 // 拉取官方模型列表
 const loadOfficial = async (): Promise<void> => {
 	const CACHED = sessionStorage.getItem("officialModels")
@@ -91,6 +129,7 @@ const loadOfficial = async (): Promise<void> => {
 		officialModels.value = CACHED_JSON as Live2dModel[]
 		return
 	}
+	officialLoading.value = true
 	try {
 		const LIST = await invoke<Live2dModel[]>("fetch_live2d_list")
 		if (Array.isArray(LIST)) officialModels.value = LIST
@@ -98,6 +137,8 @@ const loadOfficial = async (): Promise<void> => {
 	} catch (error) {
 		await logger.error("拉取 Live2D 模型列表失败", error)
 		toast.error(I18N.value.loadModelsFailed)
+	} finally {
+		officialLoading.value = false
 	}
 }
 
@@ -107,6 +148,8 @@ interface InstalledLive2dModel {
 	size: number
 	entryFile?: string | null
 	isOfficial?: boolean
+	image?: string | null
+	modelName?: string | null
 }
 
 // 拉取已安装资源信息
@@ -118,10 +161,13 @@ const loadInstalled = async (): Promise<void> => {
 		for (const ITEM of LIST) SIZES[ITEM.name] = ITEM.size
 		installedIds.value = new Set(NAMES)
 		modelSizes.value = SIZES
-		// 自定义模型 = 索引里标记为用户导入的 (is_official = false)
-		customModels.value = LIST
+		customAll.value = LIST
 			.filter(item => !item.isOfficial)
-			.map(item => ({id: item.name, name: item.name}))
+			.map(item => ({
+				id: item.name,
+				name: item.modelName || item.name,
+				image: item.image || undefined,
+			}))
 		// 已安装官方模型 = is_official = true
 		officialInstalled.value = LIST
 			.filter(item => item.isOfficial)
@@ -170,7 +216,29 @@ const handleApply = async (): Promise<void> => {
 // 删除模型
 const handleDelete = async (): Promise<void> => {
 	if (!selected.value) return
-	const ID = selected.value
+	pendingDeleteId.value = selected.value
+	showDeleteConfirm.value = true
+}
+
+// 待删除模型 id (二次确认弹窗确认后执行)
+const pendingDeleteId = ref<string | null>(null)
+
+// 待删除模型的显示名称 (用于确认弹窗文案)
+const pendingDeleteDisplayName = computed(() => {
+	const id = pendingDeleteId.value
+	if (!id) return ""
+	return customModels.value.find(m => m.id === id)?.name || id
+})
+
+// 删除二次确认弹窗
+const showDeleteConfirm = ref(false)
+
+// 确认删除模型
+const doDelete = async (): Promise<void> => {
+	const ID = pendingDeleteId.value
+	showDeleteConfirm.value = false
+	pendingDeleteId.value = null
+	if (!ID) return
 	try {
 		await invoke("delete_resource", {resourceType: "live2d", name: ID})
 		await logger.info(`删除模型: ${ID}`)
@@ -252,58 +320,21 @@ const handleDownload = async (): Promise<void> => {
 	// 涉及 nori 字样的模型需先通过验证问答 (特殊授权保护)
 	if (ID.toLowerCase().includes("nori")) {
 		pendingDownloadId.value = ID
-		gateAnswer.value = ""
-		gateError.value = ""
 		showGate.value = true
 		return
 	}
 	await DOWNLOAD.ensure("live2d", ID)
 }
 
-// 特殊模型授权验证弹窗
+// 特殊模型授权验证弹窗 (内容见 ModelGate.vue)
 const showGate = ref(false)
-
-// 验证答案
-const gateAnswer = ref("")
-
-// 验证错误提示
-const gateError = ref("")
-
-// 验证提交状态
-const gateSubmitting = ref(false)
 
 // 待下载模型 ID (验证通过后触发下载)
 const pendingDownloadId = ref<string | null>(null)
 
-// 正确校验答案
-const GATE_ANSWER = "水母是水里的月亮"
-
-// 关闭验证弹窗
-const closeGate = (): void => {
-	showGate.value = false
-	gateAnswer.value = ""
-	gateError.value = ""
-	pendingDownloadId.value = null
-}
-
-// 提交验证答案
-const submitGate = async (): Promise<void> => {
-	if (gateSubmitting.value) return
-	const ANSWER = gateAnswer.value.trim()
-	if (ANSWER !== GATE_ANSWER) {
-		gateError.value = I18N.value.gate.wrong
-		return
-	}
-	const ID = pendingDownloadId.value
-	closeGate()
-	if (ID) {
-		gateSubmitting.value = true
-		try {
-			await DOWNLOAD.ensure("live2d", ID)
-		} finally {
-			gateSubmitting.value = false
-		}
-	}
+// ModelGate 授权验证通过后触发下载
+const onGateConfirm = (modelId: string): void => {
+	void DOWNLOAD.ensure("live2d", modelId)
 }
 
 // 双击
@@ -315,88 +346,189 @@ const handleDblClick = async () => {
 	}
 }
 
-// 导入模型: 选择目录 → 触发后端命令 (结果通过 resource-import 事件推进, done 时刷新列表)
-const handleImport = async (): Promise<void> => {
+// 导入模型弹窗 (选择导入方式)
+const showImportDialog = ref(false)
+
+const closeImportDialog = (): void => {
+	showImportDialog.value = false
+}
+
+// 打开导入方式弹窗 (原直接选目录, 现增强为可选导入方式)
+const handleImport = (): void => {
+	showImportDialog.value = true
+}
+
+// 选择目录后执行导入
+const runImport = async (sourcePath: string, sourceType: "dir" | "zip" | "model"): Promise<void> => {
+	closeImportDialog()
 	try {
-		const DIR = await open({
-			directory: true,
-			multiple: false,
-			title: I18N.value.selectFolder,
-		})
-		if (!DIR) return
-		const SOURCE = Array.isArray(DIR) ? DIR[0] : DIR
-		await IMPORT.importModel(SOURCE)
+		await IMPORT.importModel(sourcePath, sourceType)
 	} catch (error) {
 		await logger.error("导入操作失败:", error)
 		toast.error(I18N.value.importFailed)
 	}
 }
 
+// 方式一: 导入模型文件夹
+const pickImportFolder = async (): Promise<void> => {
+	const DIR = await open({
+		directory: true,
+		multiple: false,
+		title: I18N.value.importTypeFolder,
+	})
+	if (!DIR) return
+	const SOURCE = Array.isArray(DIR) ? DIR[0] : DIR
+	await runImport(SOURCE, "dir")
+}
+
+// 方式二: 导入模型 zip
+const pickImportZip = async (): Promise<void> => {
+	const FILE = await open({
+		multiple: false,
+		directory: false,
+		title: I18N.value.importTypeZip,
+		filters: [{name: "Live2D 模型压缩包", extensions: ["zip"]}],
+	})
+	if (!FILE) return
+	const PATH = Array.isArray(FILE) ? FILE[0] : FILE
+	await runImport(PATH, "zip")
+}
+
+// 方式三: 导入单个入口 json (model.json / model3.json)
+const pickImportModel = async (): Promise<void> => {
+	const FILE = await open({
+		multiple: false,
+		directory: false,
+		title: I18N.value.importTypeModel,
+		filters: [{name: "Live2D 入口文件", extensions: ["json"]}],
+	})
+	if (!FILE) return
+	const PATH = Array.isArray(FILE) ? FILE[0] : FILE
+	await runImport(PATH, "model")
+}
+
 // 下载/解压进入完成态 (done/installed) 时刷新已安装列表
-watch(
-	() => DOWNLOAD.state.step,
-	(step) => {
-		if (step === "done" || step === "installed") {
-			void loadInstalled()
-		}
+watch(() => DOWNLOAD.state.step, (step) => {
+	if (step === "done" || step === "installed") {
+		void loadInstalled()
 	}
-)
+})
 
 // 导入完成 (done) 时刷新已安装列表
-watch(
-	() => IMPORT.state.step,
-	(step) => {
-		if (step === "done") {
-			void loadInstalled()
-		}
+watch(() => IMPORT.state.step, (step) => {
+	if (step === "done") {
+		void loadInstalled()
 	}
-)
+})
+
+// 当前选中模型的显示名称 (用于导出文件名; 找不到时回落模型 id)
+const selectedModelName = computed(() => {
+	const id = selected.value
+	if (!id) return ""
+	return customAll.value.find(m => m.id === id)?.name || id
+})
+
+// 导出当前选中模型的配置文件
+const handleExportConfig = async (): Promise<void> => {
+	if (!selected.value) return
+	const ID = selected.value
+	// 导出文件名默认用模型显示名称 (用模型名称命名), 无显示名时回落 id
+	const BASE = selectedModelName.value || ID
+	const TARGET = await save({
+		title: I18N.value.exportConfig,
+		defaultPath: `${BASE}.config.json`,
+		filters: [{name: "DeepEr 模型配置", extensions: ["json"]}],
+	})
+	if (!TARGET) return
+	try {
+		await invoke("export_model_config", {name: ID, targetPath: TARGET})
+		toast.success(I18N.value.exportConfigDone)
+		await logger.info(`导出模型配置: ${ID} -> ${TARGET}`)
+	} catch (error) {
+		await logger.error("导出模型配置失败:", error)
+		toast.error(I18N.value.exportConfigFailed)
+	}
+}
+
+// 导入配置文件到当前选中模型 (导入后写为 model.config.json)
+const handleImportConfig = async (): Promise<void> => {
+	if (!selected.value) return
+	const ID = selected.value
+	const SOURCE = await open({
+		multiple: false,
+		directory: false,
+		title: I18N.value.importConfig,
+		filters: [{name: "DeepEr 模型配置", extensions: ["json"]}],
+	})
+	if (!SOURCE) return
+	const PATH = Array.isArray(SOURCE) ? SOURCE[0] : SOURCE
+	try {
+		await invoke("import_model_config", {name: ID, sourcePath: PATH})
+		toast.success(I18N.value.importConfigDone)
+		await logger.info(`导入模型配置: ${ID} <- ${PATH}`)
+		// 导入可能改了显示名/图标, 刷新列表
+		await loadInstalled()
+	} catch (error) {
+		await logger.error("导入模型配置失败:", error)
+		toast.error(I18N.value.importConfigFailed)
+	}
+}
 
 onBeforeUnmount(() => {
 	DOWNLOAD.stop()
 	IMPORT.stop()
 })
 </script>
-
 <template>
 	<section key="model-select" class="page-model" @click="selected = null">
 		<div class="group">
 			<div class="group-title">{{ I18N.officialTitle }}</div>
 			<div class="cards">
-				<button
-					v-for="model in displayOfficialModels"
-					:key="model.id"
-					class="model-card"
-					:class="{selected: selected === model.id}"
-					@click.stop="selected = model.id"
-					@dblclick="handleDblClick"
-				>
-					<span class="model-thumb-wrap">
-						<img
-							v-if="model.coverUrl && !isCoverBroken(model.id)"
-							:src="model.coverUrl"
-							class="model-thumb"
-							alt=""
-							loading="lazy"
-							@error="markCoverBroken(model.id)"
-						/>
-						<span v-else class="model-thumb model-placeholder">
-							<icon name="cube" :size="42"/>
+				<template v-if="displayOfficialModels.length">
+					<button
+						v-for="model in displayOfficialModels"
+						:key="model.id"
+						class="model-card"
+						:class="{selected: selected === model.id}"
+						@click.stop="selected = model.id"
+						@dblclick="handleDblClick"
+					>
+						<span class="model-thumb-wrap">
+							<img
+								v-if="model.coverUrl && !isCoverBroken(model.id)"
+								:src="model.coverUrl"
+								class="model-thumb"
+								alt=""
+								loading="lazy"
+								@error="markCoverBroken(model.id)"
+							/>
+							<span v-else class="model-thumb model-placeholder">
+								<icon name="cube" :size="42"/>
+							</span>
+							<span class="check-badge" :class="{on: applied === model.id}">
+								<icon name="check"/>
+							</span>
 						</span>
-						<span class="check-badge" :class="{on: applied === model.id}">
-							<icon name="check"/>
+						<span class="model-name">{{ model.name }}</span>
+						<span class="model-meta">
+							<span class="status-badge" :class="isInstalled(model.id) ? 'installed' : 'missing'">
+								{{ isInstalled(model.id) ? I18N.installed : I18N.notInstalled }}
+							</span>
+							<span v-if="sizeOf(model.id) != null" class="model-size">
+								{{ formatBytes(sizeOf(model.id)!) }}
+							</span>
 						</span>
-					</span>
-					<span class="model-name">{{ model.name }}</span>
-					<span class="model-meta">
-						<span class="status-badge" :class="isInstalled(model.id) ? 'installed' : 'missing'">
-							{{ isInstalled(model.id) ? I18N.installed : I18N.notInstalled }}
-						</span>
-						<span v-if="sizeOf(model.id) != null" class="model-size">
-							{{ formatBytes(sizeOf(model.id)!) }}
-						</span>
-					</span>
-				</button>
+					</button>
+				</template>
+				<div v-else class="empty-state">
+					<template v-if="officialLoading">
+						<div class="card-loading">
+							<icon name="loading" :size="22" class="spin"/>
+							<span>{{ I18N.officialLoading }}</span>
+						</div>
+					</template>
+					<span v-else>{{ I18N.officialEmpty }}</span>
+				</div>
 			</div>
 		</div>
 		<div class="group">
@@ -422,7 +554,15 @@ onBeforeUnmount(() => {
 						@dblclick="handleDblClick"
 					>
 						<span class="model-thumb-wrap">
-							<span class="model-thumb model-placeholder">
+							<img
+								v-if="model.image && !isIconBroken(model.id) && iconUrl(model.id, model.image)"
+								:src="iconUrl(model.id, model.image)!"
+								class="model-thumb"
+								alt=""
+								loading="lazy"
+								@error="markIconBroken(model.id)"
+							/>
+							<span v-else class="model-thumb model-placeholder">
 								<icon name="cube" :size="42"/>
 							</span>
 							<span class="check-badge" :class="{on: applied === model.id}">
@@ -469,42 +609,62 @@ onBeforeUnmount(() => {
 				<button v-if="selectedInstalled" class="bar-btn danger" @click.stop="handleDelete">
 					{{ I18N.delete }}
 				</button>
+				<button v-if="selectedInstalled" class="bar-btn" @click.stop="handleExportConfig">
+					{{ I18N.exportConfig }}
+				</button>
+				<button v-if="selectedInstalled" class="bar-btn" @click.stop="handleImportConfig">
+					{{ I18N.importConfig }}
+				</button>
 				<button v-if="!selectedInstalled" class="bar-btn" @click.stop="handleDownload">
 					{{ I18N.download }}
 				</button>
 			</template>
 		</footer>
-		<!-- 特殊模型授权验证弹窗 (自绘, Teleport 到 body, 不依赖浏览器原生弹窗) -->
 		<Teleport to="body">
-		<Transition name="gate">
-			<div v-if="showGate" class="gate-overlay" @click.self="closeGate">
-				<div class="gate-panel">
-					<header class="gate-head">
-						<h3 class="gate-title">{{ I18N.gate.title }}</h3>
-						<button class="gate-close" @click="closeGate">✕</button>
-					</header>
-					<p class="gate-desc">{{ I18N.gate.desc }}</p>
-					<label class="gate-question">{{ I18N.gate.question }}</label>
-					<input
-						v-model="gateAnswer"
-						class="gate-input"
-						type="text"
-						:placeholder="I18N.gate.placeholder"
-						autocomplete="off"
-						@keyup.enter="submitGate"
-					/>
-					<p v-if="gateError" class="gate-error">{{ gateError }}</p>
-					<footer class="gate-actions">
-						<button class="gate-btn ghost" @click="closeGate">{{ I18N.gate.cancel }}</button>
-						<button class="gate-btn primary" :disabled="!gateAnswer.trim()" @click="submitGate">
-							{{ I18N.gate.submit }}
-						</button>
-					</footer>
-					<p class="gate-foot">{{ I18N.gate.foot }}</p>
+			<Transition name="import">
+				<div v-if="showImportDialog" class="import-overlay" @click.self="closeImportDialog">
+					<div class="import-dialog">
+						<header class="import-head">
+							<h3 class="import-title">{{ I18N.importDialogTitle }}</h3>
+							<button class="import-close" @click="closeImportDialog">✕</button>
+						</header>
+						<div class="import-options">
+							<!-- 方式一: 文件夹 -->
+							<button class="import-option" @click="pickImportFolder">
+								<span class="import-option-name">{{ I18N.importTypeFolder }}</span>
+								<span class="import-option-desc">{{ I18N.importTypeFolderDesc }}</span>
+							</button>
+							<!-- 方式二: zip -->
+							<button class="import-option" @click="pickImportZip">
+								<span class="import-option-name">{{ I18N.importTypeZip }}</span>
+								<span class="import-option-desc">{{ I18N.importTypeZipDesc }}</span>
+							</button>
+							<!-- 方式三: 单入口 json -->
+							<button class="import-option" @click="pickImportModel">
+								<span class="import-option-name">{{ I18N.importTypeModel }}</span>
+								<span class="import-option-desc">{{ I18N.importTypeModelDesc }}</span>
+							</button>
+						</div>
+						<footer class="import-actions">
+							<button class="import-cancel" @click="closeImportDialog">{{ I18N.importClose }}</button>
+						</footer>
+					</div>
 				</div>
-			</div>
-		</Transition>
-	</Teleport>
+			</Transition>
+		</Teleport>
+		<ModelGate
+			v-model:open="showGate"
+			:model-id="pendingDownloadId"
+			@confirm="onGateConfirm"
+		/>
+		<ConfirmDialog
+			v-model:open="showDeleteConfirm"
+			:title="I18N.deleteConfirmTitle"
+			:message="I18N.deleteConfirmMessage(pendingDeleteDisplayName)"
+			:confirm-text="I18N.delete"
+			danger
+			@confirm="doDelete"
+		/>
 	</section>
 </template>
 
@@ -691,6 +851,24 @@ onBeforeUnmount(() => {
 			color: var(--text-faint);
 			font-size: 1.25rem;
 		}
+
+		.card-loading {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.7rem;
+			color: var(--text-faint);
+			font-size: 1.15rem;
+		}
+
+		.spin {
+			animation: card-spin 1s linear infinite;
+		}
+
+		@keyframes card-spin {
+			to {
+				transform: rotate(360deg);
+			}
+		}
 	}
 }
 
@@ -767,7 +945,7 @@ onBeforeUnmount(() => {
 	}
 }
 
-.gate-overlay {
+.import-overlay {
 	position: fixed;
 	padding: 2rem;
 	inset: 0;
@@ -779,169 +957,131 @@ onBeforeUnmount(() => {
 	backdrop-filter: blur(0.4rem);
 }
 
-.gate-panel {
-	padding: 1.6rem 1.8rem 1.3rem;
-	width: min(40rem, 100%);
+.import-dialog {
+	padding: 1.5rem 1.7rem 1.2rem;
+	width: min(44rem, 100%);
 	display: flex;
 	flex-direction: column;
-	gap: 1rem;
+	gap: 1.2rem;
 	border: 0.1rem solid var(--line-strong);
 	border-radius: var(--radius-md);
 	background: linear-gradient(160deg, var(--bg-panel), var(--bg-abyss));
 	box-shadow: var(--shadow-soft), 0 0 3rem var(--glow-teal-soft);
 }
 
-.gate-head {
+.import-head {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 
-	.gate-title {
+	.import-title {
 		margin: 0;
-		font-size: 1.55rem;
+		font-size: 1.5rem;
 		font-weight: 700;
 		color: var(--deep-teal-bright);
 	}
+}
 
-	.gate-close {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 2.2rem;
-		height: 2.2rem;
-		border: none;
-		border-radius: 50%;
-		background-color: transparent;
-		color: var(--text-faint);
-		font-size: 1.3rem;
-		line-height: 1;
+.import-close {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.2rem;
+	height: 2.2rem;
+	border: none;
+	border-radius: 50%;
+	background-color: transparent;
+	color: var(--text-faint);
+	font-size: 1.3rem;
+	line-height: 1;
+	cursor: pointer;
+	transition: all 0.2s ease;
+
+	&:hover {
+		background-color: rgba(251, 44, 54, 0.12);
+		color: var(--danger);
+	}
+}
+
+.import-options {
+	display: flex;
+	flex-direction: column;
+	gap: 0.8rem;
+
+	.import-option {
+		padding: 1rem 1.2rem;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.4rem;
+		border: 0.1rem solid var(--line-subtle);
+		border-radius: var(--radius-sm);
+		background-color: rgba(255, 255, 255, 0.04);
+		font-family: inherit;
+		text-align: left;
 		cursor: pointer;
 		transition: all 0.2s ease;
 
 		&:hover {
-			background-color: rgba(251, 44, 54, 0.12);
-			color: var(--danger);
+			border-color: var(--deep-teal-soft);
+			background-color: rgba(125, 227, 255, 0.1);
+			transform: translateY(-0.1rem);
+		}
+
+		.import-option-name {
+			font-size: 1.3rem;
+			font-weight: 600;
+			color: var(--text-primary);
+		}
+
+		.import-option-desc {
+			font-size: 1.05rem;
+			line-height: 1.6;
+			color: var(--text-muted);
 		}
 	}
 }
 
-.gate-desc {
-	margin: 0;
-	font-size: 1.15rem;
-	line-height: 1.7;
-	color: var(--text-body);
-
-	b {
-		color: var(--deep-teal-bright);
-		font-weight: 600;
-	}
-}
-
-.gate-question {
-	font-size: 1.2rem;
-	font-weight: 600;
-	color: var(--text-primary);
-	letter-spacing: 0.02rem;
-}
-
-.gate-input {
-	padding: 0.7rem 1rem;
-	width: 100%;
-	border: 0.1rem solid var(--line-strong);
-	border-radius: var(--radius-sm);
-	background-color: rgba(255, 255, 255, 0.04);
-	color: var(--text-primary);
-	font-family: inherit;
-	font-size: 1.15rem;
-	transition: all 0.2s ease;
-
-	&::placeholder {
-		color: var(--text-faint);
-	}
-
-	&:focus {
-		outline: none;
-		border-color: var(--deep-teal);
-		box-shadow: 0 0 0 0.25rem var(--glow-teal-soft);
-	}
-}
-
-.gate-error {
-	margin: -0.4rem 0 0;
-	font-size: 1.05rem;
-	color: var(--danger);
-}
-
-.gate-actions {
+.import-actions {
 	display: flex;
 	align-items: center;
 	justify-content: flex-end;
-	gap: 0.9rem;
 
-	.gate-btn {
-		padding: 0.7rem 1.6rem;
+	.import-cancel {
+		padding: 0.7rem 1.5rem;
+		border: 0.1rem solid var(--line-strong);
 		border-radius: var(--radius-sm);
+		background-color: transparent;
+		color: var(--text-muted);
 		font-family: inherit;
 		font-size: 1.2rem;
-		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s ease;
 
-		&.ghost {
-			border: 0.1rem solid var(--line-strong);
-			background-color: transparent;
-			color: var(--text-muted);
-
-			&:hover {
-				border-color: var(--line-strong);
-				color: var(--text-body);
-				background-color: rgba(255, 255, 255, 0.04);
-			}
-		}
-
-		&.primary {
-			border: none;
-			color: #05121a;
-			background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
-
-			&:hover:not(:disabled) {
-				box-shadow: 0 0 1.4rem var(--glow-teal-soft);
-			}
-
-			&:disabled {
-				opacity: 0.4;
-				cursor: default;
-			}
+		&:hover {
+			color: var(--text-body);
+			background-color: rgba(255, 255, 255, 0.04);
 		}
 	}
 }
 
-.gate-foot {
-	padding-top: 0.7rem;
-	margin: 0;
-	border-top: 0.1rem solid var(--line-subtle);
-	font-size: 1.05rem;
-	line-height: 1.6;
-	color: var(--text-faint);
-}
-
-.gate-enter-active,
-.gate-leave-active {
+.import-enter-active,
+.import-leave-active {
 	transition: opacity 0.2s ease;
 }
 
-.gate-enter-active .gate-panel,
-.gate-leave-active .gate-panel {
+.import-enter-active .import-dialog,
+.import-leave-active .import-dialog {
 	transition: transform 0.2s ease;
 }
 
-.gate-enter-from,
-.gate-leave-to {
+.import-enter-from,
+.import-leave-to {
 	opacity: 0;
 }
 
-.gate-enter-from .gate-panel,
-.gate-leave-to .gate-panel {
+.import-enter-from .import-dialog,
+.import-leave-to .import-dialog {
 	transform: translateY(0.6rem) scale(0.98);
 }
 </style>

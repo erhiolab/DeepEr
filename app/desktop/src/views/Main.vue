@@ -3,9 +3,9 @@ import {computed, onMounted, ref} from "vue"
 import {useRouter} from "vue-router"
 import useLanguages from "../services/i18n/useLanguages"
 import {config} from "../services/config"
-import Icon from "../components/Icon.vue"
+import Icon from "../components/common/Icon.vue"
 import {IconName} from "../services/icon"
-import TitleBar from "../components/TitleBar.vue"
+import TitleBar from "../components/common/TitleBar.vue"
 import Live2D from "../components/Live2D.vue"
 import Home from "../components/main/Home.vue"
 import ModelSelect from "../components/main/ModelSelect.vue"
@@ -18,35 +18,62 @@ const I18N = computed(() => useLanguages().views.main)
 
 const ROUTER = useRouter()
 
-// 侧边导航项类型
-type NavType = "petGroup" | "settingGroup"
-
 // 侧边导航项
 type NavKey = "home" | "talk" | "language" | "model" | "llm" | "tts" | "touch" | "exception" | "about"
 
 // 侧边导航项
-const NAV_ITEMS: { type: NavType; key: NavKey; icon: IconName }[] = [
-	{type: "petGroup", key: "home", icon: "page"},
-	{type: "petGroup", key: "talk", icon: "send"},
-	{type: "settingGroup", key: "language", icon: "globe"},
-	{type: "settingGroup", key: "model", icon: "cube"},
-	{type: "settingGroup", key: "llm", icon: "robot"},
-	{type: "settingGroup", key: "tts", icon: "microphone"},
-	{type: "settingGroup", key: "touch", icon: "settings"},
-	{type: "settingGroup", key: "exception", icon: "error"},
-	{type: "settingGroup", key: "about", icon: "info"}
+interface NavItem {
+	key: NavKey
+	icon: IconName
+}
+
+// 侧边导航项分组
+interface NavGroup {
+	type: "petGroup" | "live2dGroup" | "agentGroup" | "settingGroup"
+	items: NavItem[]
+}
+
+// 侧边导航项分组
+const NAV_GROUPS: NavGroup[] = [
+	{
+		type: "petGroup",
+		items: [
+			{key: "home", icon: "page"},
+			{key: "talk", icon: "send"},
+		],
+	},
+	{
+		type: "live2dGroup",
+		items: [
+			{key: "model", icon: "cube"},
+			{key: "touch", icon: "settings"},
+		],
+	},
+	{
+		type: "agentGroup",
+		items: [
+			{key: "llm", icon: "robot"},
+			{key: "tts", icon: "volume"},
+		],
+	},
+	{
+		type: "settingGroup",
+		items: [
+			{key: "language", icon: "globe"},
+			{key: "exception", icon: "error"},
+			{key: "about", icon: "info"},
+		],
+	},
 ]
 
-// 按类别分组的侧边导航项
-const NAV_GROUPS: { type: NavType; items: typeof NAV_ITEMS }[] = (["petGroup", "settingGroup"] as NavType[])
-	.map((type) => ({type, items: NAV_ITEMS.filter((item) => item.type === type)}))
-	.filter((group) => group.items.length > 0)
+// 所有侧边导航项
+const ALL_NAV_ITEMS = computed(() => NAV_GROUPS.flatMap((group) => group.items))
 
 // 当前激活的导航项
 const activeNav = ref<NavKey>("home")
 
 // 判断是否为合法导航键
-const isNavKey = (value: string): value is NavKey => NAV_ITEMS.some((item) => item.key === value)
+const isNavKey = (value: string): value is NavKey => NAV_GROUPS.some((group) => group.items.some((item) => item.key === value))
 
 onMounted(async () => {
 	const SAVED = await config.get("main_active_nav")
@@ -59,8 +86,8 @@ const direction = ref(1)
 // 切换导航项
 const switchNav = (key: NavKey) => {
 	if (key === activeNav.value) return
-	const ACTIVE_INDEX = NAV_ITEMS.findIndex((item) => item.key === activeNav.value)
-	const TARGET_INDEX = NAV_ITEMS.findIndex((item) => item.key === key)
+	const ACTIVE_INDEX = ALL_NAV_ITEMS.value.findIndex((item) => item.key === activeNav.value)
+	const TARGET_INDEX = ALL_NAV_ITEMS.value.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
 	activeNav.value = key
 	config.set("main_active_nav", key)
@@ -161,7 +188,6 @@ const goToPet = () => {
 		font-weight: 500;
 		letter-spacing: 0.08rem;
 		color: var(--text-muted);
-		text-transform: uppercase;
 		user-select: none;
 	}
 

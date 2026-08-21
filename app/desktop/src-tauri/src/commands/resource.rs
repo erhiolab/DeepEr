@@ -248,6 +248,7 @@ fn record_index(app: &tauri::AppHandle, resource_type: ResourceType, name: &str,
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceSummary {
+    /// 资源名称 (等同模型目录名 / id, 用于定位)
     pub name: String,
     pub size: u64,
     /// 入口文件 (相对模型目录), 例如 "arg-nori.model3.json"
@@ -256,6 +257,12 @@ pub struct ResourceSummary {
     /// 是否为官方模型 (下载来源 = true, 用户导入 = false)
     #[serde(rename = "isOfficial")]
     pub is_official: bool,
+    /// 模型展示图标 (相对模型目录的图片路径, 来自模型配置顶层 image, 缺失为 None)
+    #[serde(rename = "image")]
+    pub image: Option<String>,
+    /// 模型显示名称 (来自模型配置顶层 name; 缺失/为空时回落模型 id/目录名)
+    #[serde(rename = "modelName")]
+    pub model_name: Option<String>,
 }
 
 #[tauri::command]
@@ -267,6 +274,7 @@ pub fn list_resources(
     let resource_type = parse_resource_type(&resource_type)?;
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let indexed = crate::resource::index::list(&conn, resource_type).map_err(|e| e.to_string())?;
+    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
     let _ = log::write(
         &app,
         &log::LogSource::Backend,
@@ -275,11 +283,27 @@ pub fn list_resources(
     );
     Ok(indexed
         .into_iter()
-        .map(|r| ResourceSummary {
-            name: r.name,
-            size: r.size,
-            entry_file: r.entry_file,
-            is_official: r.is_official,
+        .map(|r| {
+            // 展示元信息来自模型级配置 (model.config.json 顶层), 读取失败/缺失时回落, 不影响列表
+            let cfg = crate::resource::live2d::read_model_config(&data_dir, &r.name).ok();
+            let image = cfg
+                .as_ref()
+                .map(|c| c.image.clone())
+                .filter(|value| !value.is_empty());
+            // 模型显示名称: 配置顶层 name, 缺失/为空时回落模型 id/目录名
+            let model_name = cfg
+                .as_ref()
+                .map(|c| c.name.clone())
+                .filter(|value| !value.is_empty())
+                .or_else(|| Some(r.name.clone()));
+            ResourceSummary {
+                name: r.name,
+                size: r.size,
+                entry_file: r.entry_file,
+                is_official: r.is_official,
+                image,
+                model_name,
+            }
         })
         .collect())
 }
@@ -321,31 +345,47 @@ pub struct ImportedResource {
 }
 
 #[tauri::command]
-pub async fn import_live2d(app: tauri::AppHandle, source_path: String) -> Result<ImportedResource, String> {
+pub async fn import_live2d(
+    app: tauri::AppHandle,
+    source_path: String,
+    source_type: String,
+) -> Result<ImportedResource, String> {
     const EVENT: &str = "resource-import";
     let source = std::path::PathBuf::from(&source_path);
 
-    // 快速校验源目录 (尽早给错)
-    if !source.is_dir() {
-        return Err(format!("导入路径不是目录: {source_path}"));
+    // 归一化导入类型: dir(文件夹) / zip(压缩包) / model(单个入口 json)
+    let kind = match source_type.as_str() {
+        "dir" | "folder" => "dir",
+        "zip" => "zip",
+        "model" | "json" => "model",
+        other => return Err(format!("不支持的导入类型: {other}")),
+    };
+    if !source.exists() {
+        return Err(format!("所选路径不存在: {source_path}"));
     }
-    if crate::resource::live2d::find_entry_in_dir(&source).is_none() {
-        return Err("所选目录缺少 .model.json 或 .model3.json, 无法导入".to_string());
+    match kind {
+        "dir" if !source.is_dir() => return Err("导入模型文件夹需要选择目录".to_string()),
+        "zip" if !source.is_file() => return Err("导入模型 zip 需要选择 .zip 文件".to_string()),
+        "model" if !source.is_file() => return Err("导入入口文件需要选择 .json 文件".to_string()),
+        _ => {}
     }
 
     let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let temp_dir = crate::resource::temp_dir(&app).map_err(|e| e.to_string())?;
     let _ = log::write(
         &app,
         &log::LogSource::Backend,
         "info",
-        &format!("开始导入 Live2D: source={source_path}"),
+        &format!("开始导入 Live2D: source={source_path} type={kind}"),
     );
     emit_resource_event(&app, EVENT, "live2d", "importing", Some(0.0), Some(0), None, None);
 
-    // 复制耗时 → spawn_blocking, 进度靠事件
+    // 准备/复制/解压耗时 → spawn_blocking, 进度靠事件
     let work_app = app.clone();
     let work_data = data_dir.clone();
+    let work_temp = temp_dir.clone();
     let work_source = source.clone();
+    let work_kind = kind.to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let progress_app = work_app.clone();
         let progress_callback = move |total: u64, copied: u64| {
@@ -358,7 +398,36 @@ pub async fn import_live2d(app: tauri::AppHandle, source_path: String) -> Result
                 &progress_app, EVENT, "live2d", "importing", percent, Some(copied), Some(total), None,
             );
         };
-        match crate::resource::live2d::import(&work_data, &work_source, progress_callback) {
+
+        // 由导入类型解析出"就绪的源目录"与需清理的临时目录
+        let mut cleanup_dir: Option<std::path::PathBuf> = None;
+        let result = (|| {
+            match work_kind.as_str() {
+                "dir" => crate::resource::live2d::import_from_dir(&work_data, &work_source, progress_callback),
+                "model" => {
+                    // 单入口 json: 以其所在目录为源 (连同配套资产一起导入)
+                    let parent = work_source
+                        .parent()
+                        .ok_or_else(|| "无法获取入口文件所在目录".to_string())?;
+                    crate::resource::live2d::import_from_dir(&work_data, parent, progress_callback)
+                }
+                // zip: 解压到临时目录后按模型根平铺导入, 结束后清理
+                "zip" => {
+                    let stamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos())
+                        .unwrap_or(0);
+                    let unzip_dir = work_temp.join(format!("live2d_import_{stamp}"));
+                    crate::resource::downloader::extract_zip(&work_source, &unzip_dir)
+                        .map_err(|e| e.to_string())?;
+                    cleanup_dir = Some(unzip_dir.clone());
+                    crate::resource::live2d::import_from_dir(&work_data, &unzip_dir, progress_callback)
+                }
+                _ => Err(format!("不支持的导入类型: {work_kind}")),
+            }
+        })();
+
+        match result {
             Ok(info) => {
                 record_index(&work_app, ResourceType::Live2D, &info.name, false);
                 emit_resource_event(&work_app, EVENT, "live2d", "done", Some(100.0), None, None, None);
@@ -378,6 +447,10 @@ pub async fn import_live2d(app: tauri::AppHandle, source_path: String) -> Result
                 );
                 emit_resource_event(&work_app, EVENT, "live2d", "error", None, None, None, Some(error));
             }
+        }
+        // 清理 zip 解压的临时目录
+        if let Some(dir) = cleanup_dir {
+            let _ = std::fs::remove_dir_all(&dir);
         }
     });
 
@@ -455,6 +528,79 @@ pub fn write_model_config(
         &log::LogSource::Backend,
         "info",
         &format!("写入模型配置: name={name} touches={}", config.touches.len()),
+    );
+    Ok(())
+}
+
+/// 导出模型级配置到指定路径 (原样复制 model.config.json 文本)
+/// 前端先用 `save` 对话框拿到目标文件路径 (默认名为<模型显示名>.config.json), 再传入.
+/// invoke("export_model_config", { name: "ARGNori", targetPath: "C:/xx/哼.config.json" })
+#[tauri::command]
+pub fn export_model_config(
+    app: tauri::AppHandle,
+    name: String,
+    target_path: String,
+) -> Result<(), String> {
+    let name = validate_resource_name(&name)?;
+    let target = std::path::PathBuf::from(&target_path);
+    // 目标路径不能渲染为目录
+    if target.is_dir() {
+        return Err("导出目标不能是目录".to_string());
+    }
+    if let Some(parent) = target.parent() {
+        if !parent.as_os_str().is_empty() && !parent.is_dir() {
+            return Err(format!("导出目录不存在: {}", parent.display()));
+        }
+    }
+    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let source = crate::resource::live2d::model_config_path(&data_dir, name)?;
+    if !source.is_file() {
+        return Err(format!("模型没有配置文件: {name}"));
+    }
+    let content = std::fs::read_to_string(&source)
+        .map_err(|e| format!("读取模型配置失败: {e}"))?;
+    std::fs::write(&target, content).map_err(|e| format!("写入导出文件失败: {e}"))?;
+    let _ = log::write(
+        &app,
+        &log::LogSource::Backend,
+        "info",
+        &format!("导出模型配置: name={name} -> {}", target.display()),
+    );
+    Ok(())
+}
+
+/// 导入模型级配置到指定模型 (读取源文件, 校验 JSON 合法后写为 model.config.json)
+/// 前端先用 `open` 对话框选中配置文件, 再传入 sourcePath 与目标模型名.
+/// invoke("import_model_config", { name: "ARGNori", sourcePath: "C:/xx/导出.config.json" })
+#[tauri::command]
+pub fn import_model_config(
+    app: tauri::AppHandle,
+    name: String,
+    source_path: String,
+) -> Result<(), String> {
+    let name = validate_resource_name(&name)?;
+    let source = std::path::PathBuf::from(&source_path);
+    if !source.is_file() {
+        return Err("所选文件不存在".to_string());
+    }
+    let content = std::fs::read_to_string(&source)
+        .map_err(|e| format!("读取所选文件失败: {e}"))?;
+    // 按 ModelConfig 结构校验: 保证导入后能被正常反序列化读取
+    // (字段带 default, 合法 JSON 即使缺字段也不丢, 结构错误则拒绝导入避免配置整体失效)
+    serde_json::from_str::<crate::resource::live2d::ModelConfig>(&content)
+        .map_err(|e| format!("文件不是合法的模型配置文件: {e}"))?;
+    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let target = crate::resource::live2d::model_config_path(&data_dir, name)?;
+    let parent = target.parent().ok_or("模型目录不存在")?;
+    if !parent.is_dir() {
+        return Err(format!("Live2D 资源不存在: {name}"));
+    }
+    std::fs::write(&target, &content).map_err(|e| format!("写入模型配置失败: {e}"))?;
+    let _ = log::write(
+        &app,
+        &log::LogSource::Backend,
+        "info",
+        &format!("导入模型配置: {name} <- {}", source.display()),
     );
     Ok(())
 }

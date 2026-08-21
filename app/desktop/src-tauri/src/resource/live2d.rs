@@ -84,6 +84,14 @@ pub struct ModelConfig {
     /// 配置结构版本, 不兼容变更时 +1 用于迁移
     #[serde(default = "default_version")]
     pub version: i64,
+    /// 模型名称 (显示用, 用于模型列表等界面展示)
+    /// 缺失或为空时, 界面回落显示模型目录名 (id); 可随时修改
+    #[serde(default)]
+    pub name: String,
+    /// 模型展示图标 (相对模型目录的图片路径, 任意图片格式)
+    /// 例如 "哼.gif"; 用于模型列表封面展示, 缺失/加载失败时前端回落占位图标
+    #[serde(default)]
+    pub image: String,
     /// 渲染配置
     #[serde(default)]
     pub render: ModelRenderConfig,
@@ -96,6 +104,8 @@ impl Default for ModelConfig {
     fn default() -> Self {
         Self {
             version: default_version(),
+            name: String::new(),
+            image: String::new(),
             render: ModelRenderConfig::default(),
             touches: Vec::new(),
         }
@@ -240,70 +250,148 @@ pub fn find_entry_in_dir(dir: &Path) -> Option<String> {
     find_entry_file(dir)
 }
 
-/// 导入 Live2D 模型
-/// 把 `source_dir` 的模型复制一份到 data 的 resources/live2d/<id> 目录
-/// 校验源目录含 `.model.json` / `.model3.json`; 目标已存在时返回错误
-/// `progress_callback(total, copied)` 用于向外部推送复制进度 (字节)
-pub fn import<F>(
+/// 判断目标目录是否已经存在且包含有效入口
+fn target_exists_with_entry(target: &Path) -> bool {
+    target.is_dir() && find_entry_in_dir(target).is_some()
+}
+
+/// 从"已就绪的可导入路径"导入 Live2D 模型并平铺到 `resources/live2d/<模型名>/`.
+///
+/// 这是文件夹 / zip / 单个入口 json 三种导入方式共用的落盘逻辑:
+/// 1. 在 `source_root` 中递归定位入口文件 (`.model3.json` / `.model.json`);
+/// 2. 以入口文件所在的目录为「模型资产根」(可能比 `source_root` 深一层, 抹平外层包装目录),
+///    把该目录的全部内容复制到目标, 资产引用所需的子目录 (textures / motions 等) 原样保留;
+/// 3. 入口文件统一重命名为 `model3.json` / `model.json` 平铺在目标根下 —— 满足
+///    `resources/live2d/<模型名>/model3.json` 且不产生不必要的文件夹嵌套;
+/// 4. 模型名取入口文件名去掉 `.model3` / `.model` 与 `.json` 后的词干.
+pub fn import_from_dir<F>(
     data_dir: &Path,
-    source_dir: &Path,
+    source_root: &Path,
     progress_callback: F,
 ) -> Result<ResourceInfo, String>
 where
     F: Fn(u64, u64),
 {
-    // 校验源目录
-    if !source_dir.is_dir() {
+    if !source_root.is_dir() {
         return Err("导入路径不是目录".to_string());
     }
-    let entry = find_entry_in_dir(source_dir)
-        .ok_or_else(|| "所选目录缺少 .model.json 或 .model3.json, 无法导入".to_string())?;
-
-    // 模型 id 取源目录名 (含安全校验)
-    let source_name = source_dir
+    // 定位入口文件 (相对 source_root, 可能位于子层)
+    let entry_rel = find_entry_file(source_root)
+        .ok_or_else(|| "所选内容缺少 .model.json 或 .model3.json, 无法导入".to_string())?;
+    let entry_path = Path::new(&entry_rel);
+    let entry_file_name = entry_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("live2d_model");
-    validate_resource_name(source_name)?;
-    let mut name = source_name.to_string();
-    // 若 id 已存在, 追加序号避免覆盖
+        .ok_or_else(|| "无法识别入口文件名称".to_string())?;
+
+    // 模型资产根: 入口文件所在的目录 (相对 source_root)
+    let parent_rel = entry_path.parent().unwrap_or_else(|| Path::new(""));
+    let model_root = if parent_rel.as_os_str().is_empty() {
+        source_root.to_path_buf()
+    } else {
+        source_root.join(parent_rel)
+    };
+
+    // 归一化入口名与模型名
+    // - 字面量命名 (model.json / model3.json, 无模型名前缀): 标准名即它自身, 模型名取模型根目录名
+    // - 带前缀命名 (xxx.model3.json / xxx.model.json): 标准名为 model3.json/model.json, 模型名取文件名词干
+    let lower = entry_file_name.to_ascii_lowercase();
+    let (std_entry_name, name) = if lower.eq("model3.json") || lower.eq("model.json") {
+        let std = if lower.eq("model3.json") { "model3.json" } else { "model.json" };
+        // 字面量入口: 模型名取模型根目录名 (无模型名前缀可剥离)
+        (std, dir_file_name(&model_root).unwrap_or_else(|| "live2d_model".to_string()))
+    } else if lower.ends_with(".model3.json") {
+        ("model3.json", entry_file_name[..entry_file_name.len() - ".model3.json".len()].to_string())
+    } else if lower.ends_with(".model.json") {
+        ("model.json", entry_file_name[..entry_file_name.len() - ".model.json".len()].to_string())
+    } else {
+        return Err("无法识别的 Live2D 入口文件".to_string());
+    };
+
+    validate_resource_name(&name)?;
+
+    // 目标目录, 已存在则追加序号避免覆盖
     let target_root = root_dir(data_dir);
-    fs::create_dir_all(&target_root)
-        .map_err(|e| format!("创建 Live2D 资源目录失败: {e}"))?;
-    let mut target = target_root.join(&name);
+    fs::create_dir_all(&target_root).map_err(|e| format!("创建 Live2D 资源目录失败: {e}"))?;
+    let mut final_name = name.clone();
+    let mut target = target_root.join(&final_name);
     let mut index = 2;
     while target_exists_with_entry(&target) {
-        name = format!("{source_name}-{index}");
-        target = target_root.join(&name);
+        final_name = format!("{name}-{index}");
+        target = target_root.join(&final_name);
         index += 1;
     }
 
-    // 统计待复制总大小
-    let total = calculate_dir_size(source_dir).unwrap_or(0);
+    // 总大小 (用于进度)
+    let total = calculate_dir_size(&model_root).unwrap_or(0);
 
-    // 复制 (带进度)
+    // 先完整复制模型资产根到目标 (保留相对结构)
     let mut copied = 0u64;
-    copy_dir_progress(source_dir, &target, total, &mut copied, &progress_callback)
-        .map_err(|e| format!("导入失败: {e}"))?;
-    progress_callback(total, total);
+    if let Err(e) = copy_dir_progress(&model_root, &target, total, &mut copied, &progress_callback) {
+        // 复制失败时清理半成品, 避免残留无入口目录被下次导入复用
+        let _ = fs::remove_dir_all(&target);
+        return Err(format!("导入失败: {e}"));
+    }
+
+    // 把入口文件重命名归一为 model3.json / model.json, 平铺到目标根
+    let entry_actual = target.join(&entry_rel);
+    let std_target = target.join(std_entry_name);
+    if entry_actual != std_target {
+        if std_target.exists() {
+            std::fs::remove_file(&std_target).ok();
+        }
+        if let Err(e) = std::fs::rename(&entry_actual, &std_target) {
+            // 重命名失败时删除已复制的目标, 避免留下孤立模型目录
+            let _ = fs::remove_dir_all(&target);
+            return Err(format!("归一化入口文件失败: {e}"));
+        }
+    }
+    // 清理入口原所在目录留下的空父链
+    if let Some(parent) = entry_actual.parent() {
+        remove_empty_parents(parent, &target);
+    }
 
     // 校验
-    if !exists(data_dir, &name) {
+    if !exists(data_dir, &final_name) {
         let _ = fs::remove_dir_all(&target);
-        return Err("导入后校验失败: 复制结果缺少入口文件".to_string());
+        return Err("导入后校验失败: 缺少入口文件".to_string());
     }
+    let size = calculate_dir_size(&target).unwrap_or(total);
     Ok(ResourceInfo {
-        name,
+        name: final_name,
         resource_type: ResourceType::Live2D,
         path: target,
-        size: total,
-        entry_file: Some(entry),
+        size,
+        entry_file: Some(std_entry_name.to_string()),
     })
 }
 
-/// 判断目标目录是否已经存在且包含有效入口
-fn target_exists_with_entry(target: &Path) -> bool {
-    target.is_dir() && find_entry_in_dir(target).is_some()
+/// 取路径最后一级目录名 (纯文件名辅助), 失败时返回 None
+fn dir_file_name(path: &Path) -> Option<String> {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
+}
+
+/// 从 `dir` 向 `stop` 方向逐级删除空目录 (处理入口归一化后遗留的空父链)
+fn remove_empty_parents(mut dir: &Path, stop: &Path) {
+    loop {
+        let Ok(metadata) = fs::metadata(dir) else {
+            return;
+        };
+        if !metadata.is_dir() {
+            return;
+        }
+        if dir.starts_with(stop) && dir != stop {
+            let _ = fs::remove_dir(dir);
+        } else {
+            break;
+        }
+        let Some(parent) = dir.parent() else {
+            break;
+        };
+        dir = parent;
+    }
 }
 
 /// 带进度回调递归复制目录

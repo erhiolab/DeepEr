@@ -3,7 +3,7 @@ import {computed, ref} from "vue"
 import {toast} from "vue3-toastify"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
-import Icon from "../Icon.vue"
+import Icon from "../common/Icon.vue"
 import type {IconName} from "../../services/icon"
 
 const I18N = computed(() => useLanguages().components.main.exception)

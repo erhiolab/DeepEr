@@ -4,7 +4,8 @@ import useLanguages from "../../services/i18n/useLanguages.ts"
 import {logger} from "../../services/logger"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import {useTouchStore, type TouchArea, type TouchType} from "../../services/store/touch.ts"
-import Icon from "../Icon.vue"
+import Icon from "../common/Icon.vue"
+import ConfirmDialog from "../common/ConfirmDialog.vue"
 
 const I18N = computed(() => useLanguages().components.main.touch)
 
@@ -295,10 +296,26 @@ const cancelEdit = () => {
 	draft.value = null
 }
 
-// 删除触摸区域
-const remove = async (t: TouchArea) => {
-	await TOUCH.removeTouch(t.id)
-	await logger.info(`删除触摸区域: ${t.name}`)
+// 待删除的触摸区域 (二次确认弹窗确认后执行)
+const pendingRemove = ref<TouchArea | null>(null)
+
+// 删除触摸区域二次确认弹窗
+const showRemoveConfirm = ref(false)
+
+// 请求删除触摸区域 (打开确认弹窗)
+const remove = (t: TouchArea) => {
+	pendingRemove.value = t
+	showRemoveConfirm.value = true
+}
+
+// 确认删除触摸区域
+const doRemove = async () => {
+	const T = pendingRemove.value
+	pendingRemove.value = null
+	showRemoveConfirm.value = false
+	if (!T) return
+	await TOUCH.removeTouch(T.id)
+	await logger.info(`删除触摸区域: ${T.name}`)
 }
 
 onMounted(() => {
@@ -402,6 +419,14 @@ watch(() => L2D.currentModel, async m => {
 			</li>
 		</ul>
 		<p v-else class="touch-empty">{{ I18N.empty }}</p>
+		<ConfirmDialog
+			v-model:open="showRemoveConfirm"
+			:title="I18N.deleteConfirmTitle"
+			:message="I18N.deleteConfirmMessage(pendingRemove?.name || '')"
+			:confirm-text="I18N.delete"
+			danger
+			@confirm="doRemove"
+		/>
 	</section>
 </template>
 

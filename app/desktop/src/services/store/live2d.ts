@@ -566,16 +566,6 @@ export const useLive2DStore = defineStore("live2d", () => {
 			const TAG = T.type === "swipe" ? ` (${I18N.value.tagSwipe})` : T.type === "frenzy" ? ` (${I18N.value.tagFrenzy})` : ""
 			overlayCtx.fillText(`${T.name}${TAG}`, X + 4, Y + 28)
 		}
-		// 模型既无自带 Hit Areas 也无自定义区域: 绘制提示文字, 避免"无显示"造成困惑
-		if (BOUNDS.length === 0 && TOUCH.touches.length === 0 && isInitialized.value) {
-			overlayCtx.save()
-			overlayCtx.fillStyle = "rgba(255, 200, 0, 0.95)"
-			overlayCtx.font = `bold ${Math.max(13, Math.round(W / 30))}px "Microsoft YaHei", sans-serif`
-			overlayCtx.textAlign = "center"
-			overlayCtx.textBaseline = "middle"
-			overlayCtx.fillText(I18N.value.noTouchArea, W / 2, H / 2)
-			overlayCtx.restore()
-		}
 	}
 
 	/**

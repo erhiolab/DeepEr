@@ -40,6 +40,8 @@ export interface ModelRenderConfig {
 export interface ModelTouchConfig {
 	version: number
 	render: ModelRenderConfig
+	name: string
+	image: string
 	touches: TouchArea[]
 }
 
@@ -71,6 +73,8 @@ export const FRENZY_WINDOW_MS = 1200
 const defaultConfig = (): ModelTouchConfig => ({
 	version: 1,
 	render: {scale: 1.0, posX: 0.0, posY: 0.0},
+	name: "",
+	image: "",
 	touches: [],
 })
 
