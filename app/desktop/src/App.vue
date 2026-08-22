@@ -3,6 +3,7 @@ import {onMounted} from "vue"
 import {invoke} from "@tauri-apps/api/core"
 import {useRouter} from "vue-router"
 import {logger} from "./services/logger"
+import UnsavedGuardDialog from "./components/common/UnsavedGuardDialog.vue"
 
 const ROUTER = useRouter()
 
@@ -19,4 +20,5 @@ onMounted(async () => {
 
 <template>
 	<RouterView/>
+	<UnsavedGuardDialog/>
 </template>

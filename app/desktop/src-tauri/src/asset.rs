@@ -32,6 +32,11 @@ pub fn handle(
     if !is_safe_relative_path(relative) {
         return forbidden("非法资源路径");
     }
+    // 临时合成音频: 请求路径形如 `tts/tts_xxx.wav`, 实际存于 <app_data>/temp/tts
+    // (见 commands/tts.rs 的缓存目录). 这类临时产物不在 resources 内, 需单独映射到 temp 目录.
+    if let Some(sub) = relative.strip_prefix("tts/") {
+        return serve_tts_asset(ctx.app_handle(), sub);
+    }
     // 获取资源根目录 (data/resources, 所有下载资源存放于此)
     let data_root = match crate::resource::resources_dir(ctx.app_handle()) {
         Ok(path) => path,
@@ -74,6 +79,35 @@ pub fn handle(
         return serve_file(&file_path, &logical);
     }
     not_found(&format!("资源不存在: {}", relative))
+}
+
+/// 响应 `tts/...` 临时合成音频请求: 从 <app_data>/temp/tts 读取.
+/// 由 `tts_synthesize` 写入, 且会定期被 prune_cache 清理, 属于临时产物.
+fn serve_tts_asset(app: &tauri::AppHandle, sub: &str) -> Response<Cow<'static, [u8]>> {
+    let root = match crate::resource::temp_dir(app) {
+        Ok(path) => path.join("tts"),
+        Err(_) => return internal_error("临时目录不可用"),
+    };
+    let canonical_root = match root.canonicalize() {
+        Ok(path) => path,
+        Err(_) => return not_found("临时目录不存在"),
+    };
+    for candidate in path_candidates(sub) {
+        let candidate_path = canonical_root.join(&candidate);
+        let file_path = match candidate_path.canonicalize() {
+            Ok(path) => path,
+            Err(_) => continue,
+        };
+        // 防止路径穿越 / symlink 逃逸
+        if !file_path.starts_with(&canonical_root) {
+            continue;
+        }
+        if !file_path.is_file() {
+            continue;
+        }
+        return serve_file(&file_path, &candidate);
+    }
+    not_found(&format!("资源不存在: {}", sub))
 }
 
 /// 判断 URL 解码后的路径是否为安全的相对路径

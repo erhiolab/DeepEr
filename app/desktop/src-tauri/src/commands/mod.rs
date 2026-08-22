@@ -16,3 +16,4 @@ pub mod live2d;
 pub mod llm;
 pub mod log;
 pub mod resource;
+pub mod tts;
