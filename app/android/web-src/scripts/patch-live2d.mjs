@@ -38,8 +38,12 @@ const STOP_NEW = `  stopAllExpressions() {
     this._expressionManager.stopAllMotions();
   }`
 
-const GL_OLD = `getContext("webgl2")`
-const GL_NEW = `getContext("webgl2", { preserveDrawingBuffer: true })`
+const GL_OLD = `getContext("webgl2", { preserveDrawingBuffer: true })`
+const GL_NEW = `getContext("webgl2")`
+
+// 移动端性能: 背缓冲分辨率封顶 DPR=1.5, 避免 9x 像素填充导致动画卡顿
+const RESIZE_DPR_OLD = `this._canvas.width = this._canvas.clientWidth * window.devicePixelRatio, this._canvas.height = this._canvas.clientHeight * window.devicePixelRatio, this._gl.viewport(0, 0, this._gl.drawingBufferWidth, this._gl.drawingBufferHeight);`
+const RESIZE_DPR_NEW = `this._canvas.width = this._canvas.clientWidth * Math.min(window.devicePixelRatio || 1, 1), this._canvas.height = this._canvas.clientHeight * Math.min(window.devicePixelRatio || 1, 1), this._gl.viewport(0, 0, this._gl.drawingBufferWidth, this._gl.drawingBufferHeight);`
 
 const LOAD_ASSETS_OLD = `}).catch((e) => {
       F(` + "`Failed to load file ${this._modelHomeDir}.model3.json`" + `);
@@ -83,6 +87,19 @@ const TEX_NEW_NEW = `    const s = new Image();
     s.crossOrigin = "anonymous";
     s.addEventListener(`
 
+const MOTION_RESET_OLD = `    if (i == B.priorityForce)
+      this._motionManager.setReservePriority(i);`
+const MOTION_RESET_NEW = `    if (i == B.priorityForce) {
+      this._motionManager.setReservePriority(i);
+      // [patch] 强行动作前先清空所有动作并把参数复位到默认值,
+      // 避免上一个动作(如 Bow)未覆盖的肢体参数残留叠加(手臂重叠)
+      this._motionManager.stopAllMotions();
+      if (this._model != null) {
+        for (let p = 0; p < this._model.getParameterCount(); p++) this._model.setParameterValueByIndex(p, this._model.getParameterDefaultValue(p));
+        this._model.saveParameters();
+      }
+    }`
+
 let changed = false
 const apply = (n, o, n2) => {
 	if (source.includes(o)) { source = source.replace(o, n2); changed = true; console.log(`[patch-live2d] ${n} ok`) }
@@ -97,11 +114,14 @@ const applyAll = (n, o, n2) => {
 apply("多表情叠加", CLEANUP_OLD, CLEANUP_NEW)
 apply("表情参数还原", STOP_OLD, STOP_NEW)
 applyAll("preserveDrawingBuffer", GL_OLD, GL_NEW)
+apply("背缓冲DPR封顶", RESIZE_DPR_OLD, RESIZE_DPR_NEW)
 apply("加载失败标记", LOAD_ASSETS_OLD, LOAD_ASSETS_NEW)
 apply("加载超时reject", WAITING_OLD, WAITING_NEW)
 apply("纹理CORS1", TEX_IMG_OLD, TEX_IMG_NEW)
 apply("纹理CORS2", TEX_NEW_OLD, TEX_NEW_NEW)
 // CubismCore 从远程 CDN 改为本地内置, 避免离线/网络受限时挂起
 apply("本地CubismCore", CAMERA_CORE_OLD, CAMERA_CORE_NEW)
+// 强行动作前重置模型参数, 消除跨动作的肢体残留(手臂重叠)
+apply("动作前参数复位", MOTION_RESET_OLD, MOTION_RESET_NEW)
 
 if (changed) writeFileSync(TARGET, source)

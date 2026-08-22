@@ -13,6 +13,8 @@ export interface Settings {
 	model: string
 	/** 气泡缩放 */
 	bubbleScale: number
+	/** 渲染分辨率 */
+	renderScale: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -20,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	baseUrl: "https://api.openai.com/v1",
 	model: "",
 	bubbleScale: 1,
+	renderScale: 1,
 }
 
 export interface ChatMsg {
@@ -37,6 +40,7 @@ interface NoriChat {
 	readMemory: () => string
 	isStorageReady: () => boolean
 	requestStoragePermission: () => void
+	getStorageDir: () => string
 }
 
 declare global {
@@ -107,6 +111,10 @@ export const isStorageReady = (): boolean => {
 
 export const requestStoragePermission = (): void => {
 	try { bridge().requestStoragePermission() } catch { /* ignore */ }
+}
+
+export const getStorageDir = (): string => {
+	try { return bridge().getStorageDir() } catch { return "Download/NoriPet" }
 }
 
 /* ---------------- 聊天模型列表 / 会话 ---------------- */

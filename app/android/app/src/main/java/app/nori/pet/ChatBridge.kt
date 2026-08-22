@@ -1,12 +1,15 @@
 package app.nori.pet
 
 import android.app.Activity
+import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
+import android.provider.MediaStore
 import android.webkit.WebView
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,9 +21,9 @@ import java.util.concurrent.Executors
 
 /**
  * 聊天/设置/记忆桥: 由 WebView 注入为 window.NoriChat.
- * - fetchModels / chat 走 OpenAI 兼容接口 (原生调用, 无 CORS 限制)
- * - 网络请求在后台线程执行, 结果通过 JS 回调异步回传, 不阻塞主线程/JS 线程
- * - 聊天记录、记忆、设置写入 <公共 Documents>/NoriPet/, 卸载重装也不丢
+ * - fetchModels / chat 走 OpenAI 兼容接口 (原生调用, 无 CORS 限制; 后台线程异步回传)
+ * - 聊天记录、记忆、设置经 MediaStore 写入公共 Downloads/NoriPet, 卸载重装也不丢,
+ *   且不需要 "所有文件访问" 权限, 安装不会被拦截
  */
 class ChatBridge(private val appContext: Context) {
 
@@ -28,99 +31,120 @@ class ChatBridge(private val appContext: Context) {
     private var webView: WebView? = null
     private val ioExecutor: ExecutorService = Executors.newCachedThreadPool()
 
-    /** 绑定 WebView(用于把后台线程结果回调回 JS) */
+    private val cr get() = appContext.contentResolver
+
     fun attach(v: WebView) { webView = v }
-
-    private val storeDir: File
-        get() = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-            "NoriPet"
-        )
-
-    private fun fileOf(name: String): File = File(storeDir, name)
 
     @android.webkit.JavascriptInterface
     fun isStorageReady(): Boolean {
-        // Android 11+ 用"所有文件访问"是否开启判断; 老版本看 WRITE_EXTERNAL_STORAGE
-        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            appContext.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
+        // API29+ 用 MediaStore 写公共 Downloads 无需任何权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return true
+        return appContext.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
-    /** 跳转系统"所有文件访问"设置页, 引导授权 (存储未就绪时可调用) */
+    /** 仅老系统(API<=28)需要写权限, 用标准运行时弹窗申请; 新版无需任何权限 */
     @android.webkit.JavascriptInterface
     fun requestStoragePermission() {
         mainHandler.post {
-            runCatching {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                intent.data = android.net.Uri.parse("package:${appContext.packageName}")
-                if (appContext is Activity) appContext.startActivity(intent)
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                (appContext as? Activity)?.requestPermissions(
+                    arrayOf(
+                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        android.Manifest.permission.READ_EXTERNAL_STORAGE
+                    ),
+                    1001
+                )
             }
         }
     }
 
-    // ---------- 公共存储读写 ----------
+    /** 聊天/记忆/设置的公共存储相对路径 */
+    @android.webkit.JavascriptInterface
+    fun getStorageDir(): String = "Download/NoriPet"
+
+    // ---------- MediaStore 公共存储读写 (Downloads/NoriPet) ----------
+
+    private fun queryUri(name: String): Uri? {
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val sel = "${MediaStore.MediaColumns.DISPLAY_NAME}=?"
+        val cur = cr.query(collection, arrayOf(MediaStore.MediaColumns._ID), sel, arrayOf(name), "${MediaStore.MediaColumns.DATE_ADDED} DESC")
+        return cur.use { c ->
+            if (c != null && c.moveToFirst()) ContentUris.withAppendedId(collection, c.getLong(0)) else null
+        }
+    }
 
     @android.webkit.JavascriptInterface
     fun readFile(name: String): String {
+        val n = safeName(name)
         return runCatching {
-            val f = fileOf(safeName(name))
-            if (!f.isFile) return ""
-            f.readText()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val uri = queryUri(n) ?: return ""
+                cr.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+            } else {
+                val f = File(legacyDir(), n)
+                if (f.isFile) f.readText() else ""
+            }
         }.getOrElse { "" }
     }
 
     @android.webkit.JavascriptInterface
     fun writeFile(name: String, content: String): String {
+        val n = safeName(name)
         return runCatching {
-            storeDir.mkdirs()
-            fileOf(safeName(name)).writeText(content)
-            "ok"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                queryUri(n)?.let { cr.delete(it, null, null) }
+                val cv = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, n)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/NoriPet")
+                }
+                val uri = cr.insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), cv)
+                    ?: return "err:insert"
+                cr.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) } ?: return "err:stream"
+                "ok"
+            } else {
+                if (!isStorageReady()) return "err:perm"
+                val dir = legacyDir(); dir.mkdirs()
+                File(dir, n).writeText(content)
+                "ok"
+            }
         }.getOrElse { "err:${it.message}" }
     }
 
-    /** 追加一行到记忆文件 (行式文本, 永不覆盖) */
     @android.webkit.JavascriptInterface
     fun appendMemory(text: String): String {
-        return runCatching {
-            storeDir.mkdirs()
-            val f = fileOf("memory.txt")
-            val exist = if (f.isFile) f.readText().trim() else ""
-            f.writeText((if (exist.isEmpty()) "" else "$exist\n") + text.trim())
-            "ok"
-        }.getOrElse { "err:${it.message}" }
+        val cur = readFile(MEMORY_FILE).trim()
+        return writeFile(MEMORY_FILE, (if (cur.isEmpty()) "" else "$cur\n") + text.trim())
     }
 
     @android.webkit.JavascriptInterface
-    fun readMemory(): String {
-        return runCatching {
-            val f = fileOf("memory.txt")
-            if (!f.isFile) "" else f.readText()
-        }.getOrElse { "" }
-    }
+    fun readMemory(): String = readFile(MEMORY_FILE)
+
+    private fun legacyDir(): File = File(
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+        "NoriPet"
+    )
+
+    private fun safeName(name: String): String =
+        name.replace(Regex("[^A-Za-z0-9._-]"), "_").takeIf { it.isNotBlank() } ?: "data"
 
     // ---------- 异步网络接口 (后台线程 → 回调 JS) ----------
 
     @android.webkit.JavascriptInterface
     fun fetchModels(baseUrl: String, apiKey: String) {
         ioExecutor.execute {
-            val json = fetchModelsSync(baseUrl, apiKey)
-            postToJs("__noriModelsRes", json)
+            postToJs("__noriModelsRes", fetchModelsSync(baseUrl, apiKey))
         }
     }
 
     @android.webkit.JavascriptInterface
     fun chat(baseUrl: String, apiKey: String, model: String, messagesJson: String) {
         ioExecutor.execute {
-            val json = chatSync(baseUrl, apiKey, model, messagesJson)
-            postToJs("__noriChatRes", json)
+            postToJs("__noriChatRes", chatSync(baseUrl, apiKey, model, messagesJson))
         }
     }
 
-    /** 结果经主线程 evaluateJavascript 回传 JS, 避免并发/时序问题 */
     private fun postToJs(fn: String, json: String) {
         mainHandler.post {
             runCatching {
@@ -131,8 +155,6 @@ class ChatBridge(private val appContext: Context) {
             }
         }
     }
-
-    // ---------- OpenAI 兼容实现 ----------
 
     private fun fetchModelsSync(baseUrl: String, apiKey: String): String {
         return runCatching {
@@ -177,25 +199,16 @@ class ChatBridge(private val appContext: Context) {
         }
     }
 
-    // ---------- helpers ----------
-
     private fun normalizeBase(base: String): String {
         var b = base.trim()
         if (b.isEmpty()) b = "https://api.openai.com/v1"
         b = b.trimEnd('/')
-        // 兼容填了完整 chat/completions 的情况
         if (b.endsWith("/chat/completions")) b = b.removeSuffix("/chat/completions")
         if (!b.startsWith("http")) b = "https://$b"
         return b
     }
 
-    private fun open(
-        url: String,
-        method: String,
-        apiKey: String,
-        contentType: String?,
-        body: String?
-    ): HttpURLConnection {
+    private fun open(url: String, method: String, apiKey: String, contentType: String?, body: String?): HttpURLConnection {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
             readTimeout = 60_000
@@ -222,6 +235,7 @@ class ChatBridge(private val appContext: Context) {
         }
     }
 
-    private fun safeName(name: String): String =
-        name.replace(Regex("[^A-Za-z0-9._-]"), "_").takeIf { it.isNotBlank() } ?: "data"
+    companion object {
+        private const val MEMORY_FILE = "memory.txt"
+    }
 }

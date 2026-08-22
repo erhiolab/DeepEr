@@ -13,6 +13,7 @@
 	},
 	"dependencies": {
 		"fflate": "^0.8.3",
+		"l2d": "^2.1.1",
 		"live2d-easy-control": "^1.0.3",
 		"vue": "^3.5.13"
 	},

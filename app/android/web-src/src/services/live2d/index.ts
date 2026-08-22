@@ -9,6 +9,12 @@ import {
 } from "live2d-easy-control"
 import {live2dUrl} from "./config"
 
+declare global {
+	interface Window {
+		__noriRenderScale?: number
+	}
+}
+
 export interface Live2DModelSpec {
 	directory: string
 	fileBase: string
@@ -29,6 +35,8 @@ export const MOTION_PRIORITY = {
 export interface Live2DMountOptions {
 	canvasWidth?: string
 	canvasHeight?: string
+	/** 挂载 canvas 的容器元素(可选)。若提供会把 canvas 移入其中, 便于参与该容器的层叠上下文 */
+	host?: HTMLElement | null
 }
 
 // 库内部 modelHomeDir = resourcesPath + modelDir + "/",
@@ -56,9 +64,10 @@ export const createLive2D = () => {
 		didLoad = true
 		canvasEl = document.body.querySelector("canvas")
 		if (canvasEl) {
+			// 把 canvas 移入宿主容器内, 使其参与容器的层叠上下文,
+			// 而不是与 .stage-root 平级(导致总是盖在最上面)
+			if (options?.host) options.host.appendChild(canvasEl)
 			canvasEl.style.pointerEvents = "none"
-			// 让画布铺满整块可视区域: 库在竖屏画布内按模型比例 fit,
-			// 模型会完整显示并垂直居中, 不会再溢出屏幕外
 			canvasEl.style.position = "fixed"
 			canvasEl.style.left = "0"
 			canvasEl.style.top = "0"
@@ -67,6 +76,8 @@ export const createLive2D = () => {
 			canvasEl.style.width = "100%"
 			canvasEl.style.height = "100%"
 			canvasEl.style.transform = "none"
+			// 让模型在底层, 可被设置/对话/底栏等 UI 盖住
+			canvasEl.style.zIndex = "1"
 		}
 	}
 
@@ -81,6 +92,27 @@ export const createLive2D = () => {
 
 	const getMotions = async (): Promise<MotionGroup[] | null> => {
 		try { return await getAllMotionsInfo() } catch { return null }
+	}
+
+	// 动态调整渲染分辨率: 库在 onResize() 时读取 window.__noriRenderScale,
+	// 该 onResize 由 ResizeObserver 监听 canvas 尺寸变化触发, 因此先改全局值,
+	// 再轻微扰动 canvas 尺寸以触发重算(不影响实际显示尺寸)
+	const setRenderScale = (scale: number): void => {
+		try {
+			window.__noriRenderScale = scale
+			if (canvasEl) {
+				const w = canvasEl.style.width, h = canvasEl.style.height
+				canvasEl.style.width = "99.99%"
+				canvasEl.style.height = "99.99%"
+				// 触发 ResizeObserver 异步回调
+				requestAnimationFrame(() => {
+					requestAnimationFrame(() => {
+						canvasEl!.style.width = w
+						canvasEl!.style.height = h
+					})
+				})
+			}
+		} catch { /* ignore */ }
 	}
 
 	const playMotionByIndex = async (group: string, no: number, priority = MOTION_PRIORITY.force): Promise<boolean> => {
@@ -105,6 +137,7 @@ export const createLive2D = () => {
 		destroy,
 		canvas,
 		getMotions,
+		setRenderScale,
 		playMotionByIndex,
 		playMotionByName,
 	}

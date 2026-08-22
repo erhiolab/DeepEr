@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(modelBridge, "NoriBridge")
         webView.addJavascriptInterface(chatBridge, "NoriChat")
         chatBridge.attach(webView)
+        modelBridge.attach(webView)
 
         setupImmersive()
         setupWebView()

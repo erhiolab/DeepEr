@@ -11,6 +11,9 @@ importers:
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      l2d:
+        specifier: ^2.1.1
+        version: 2.1.1
       live2d-easy-control:
         specifier: ^1.0.3
         version: 1.0.3
@@ -500,6 +503,9 @@ packages:
   is-what@4.1.16:
     resolution: {integrity: sha512-ZhMwEosbFJkA0YhFnNDgTM4ZxDRsS6HqTo7qsZM08fehyRYIYa0yHu5R6mgo1n/8MgaPBXiPimPD77baVFYg+A==}
     engines: {node: '>=12.13'}
+
+  l2d@2.1.1:
+    resolution: {integrity: sha512-Q9Rp3uDPiZyS4SJZ/RJ+tuR1YQ75gKhGeS2gZNCO6KvydDB6okPQJk+zsKt8KyJ6Y5g0okVMtj3Sisjxr35ptA==}
 
   less@4.9.0:
     resolution: {integrity: sha512-umRhrCH7fCi8Uj2RcwKjJdvUORTjeWqkdKx0LbcZvjIwsAVsnIAGcxHaqowPeBFBjQuWOeC/bve0AlpFzF/+SQ==}
@@ -1018,6 +1024,8 @@ snapshots:
     optional: true
 
   is-what@4.1.16: {}
+
+  l2d@2.1.1: {}
 
   less@4.9.0:
     dependencies:
