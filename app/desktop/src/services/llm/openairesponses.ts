@@ -6,6 +6,7 @@
  */
 import {config} from "../config"
 import {logger} from "../logger"
+import {decryptSecret, encryptSecret} from "../secret"
 import type {LLMAdapter, LLMModelInfo, LLMGenerateRequest, LLMGenerateResult, LLMTestResult} from "./types"
 import {llmHttpRequest, readJsonField} from "./http"
 
@@ -143,7 +144,7 @@ export const loadConfig = async (): Promise<OpenAiResponsesConfig> => {
 	])
 	return {
 		baseUrl: baseUrl ?? DEFAULTS.baseUrl,
-		apiKey: apiKey ?? DEFAULTS.apiKey,
+		apiKey: await decryptSecret(apiKey ?? ""),
 		model: model || DEFAULTS.model,
 	}
 }
@@ -152,12 +153,29 @@ export const loadConfig = async (): Promise<OpenAiResponsesConfig> => {
  * 保存整份配置
  */
 export const saveConfig = async (cfg: OpenAiResponsesConfig): Promise<void> => {
+	const API_KEY_TO_STORE = cfg.apiKey ? await encryptSecret(cfg.apiKey) : (await config.getRaw(`${PREFIX}_api_key`)) ?? ""
 	await Promise.all([
 		config.setRaw(`${PREFIX}_base_url`, normalizeBaseUrl(cfg.baseUrl)),
-		config.setRaw(`${PREFIX}_api_key`, cfg.apiKey),
+		config.setRaw(`${PREFIX}_api_key`, API_KEY_TO_STORE),
 		config.setRaw(`${PREFIX}_model`, cfg.model),
 	])
 	await logger.info("保存 OpenAI Responses 配置")
+}
+
+/**
+ * 是否已保存过 API Key (只判断是否有密文, 不解密)
+ */
+export const hasApiKey = async (): Promise<boolean> => {
+	const SAVED = await config.getRaw(`${PREFIX}_api_key`)
+	return !!SAVED && SAVED !== ""
+}
+
+/**
+ * 清除已保存的 API Key
+ */
+export const clearApiKey = async (): Promise<void> => {
+	await config.setRaw(`${PREFIX}_api_key`, "")
+	await logger.info("清除 OpenAI Responses 的 API Key")
 }
 
 /**
@@ -208,6 +226,12 @@ export const openAiResponsesAdapter: LLMAdapter<OpenAiResponsesConfig> = {
 		} catch {
 			return []
 		}
+	},
+	async hasApiKey() {
+		return await hasApiKey()
+	},
+	async clearApiKey() {
+		await clearApiKey()
 	},
 	async generate(request): Promise<LLMGenerateResult> {
 		const CFG = await this.loadConfig()

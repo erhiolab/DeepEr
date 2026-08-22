@@ -53,11 +53,34 @@ watch(() => props.adapter, async () => {
 	await reload()
 }, {immediate: false})
 
-// 加载配置
+// 加载配置 (apiKey 不回显明文, 恒置空, 只判断是否已保存过 Key)
 const reload = async () => {
 	dirty.value = false
 	config.value = (await props.adapter.loadConfig()) as unknown as LLMConfigForm
+	// 只写不回读: 已保存的 Key 不填入输入框 (留空表示"不动")
+	config.value.apiKey = ""
+	keyConfigured.value = props.adapter.hasApiKey ? await props.adapter.hasApiKey() : false
 	loaded.value = true
+}
+
+// 是否已保存过 API Key
+const keyConfigured = ref(false)
+
+// 是否正在清除密钥
+const clearingKey = ref(false)
+
+// 清除已保存的 API Key
+const clearKey = async () => {
+	if (clearingKey.value) return
+	clearingKey.value = true
+	try {
+		if (props.adapter.clearApiKey) await props.adapter.clearApiKey()
+		keyConfigured.value = false
+		config.value.apiKey = ""
+		markDirty()
+	} finally {
+		clearingKey.value = false
+	}
 }
 
 // 标记修改
@@ -250,9 +273,9 @@ const filteredModels = computed(() => {
 							v-model="config[K.apiKey]"
 							class="input"
 							:type="showApiKey ? 'text' : 'password'"
-							autocomplete="off"
+							autocomplete="new-password"
 							spellcheck="false"
-							:placeholder="'sk-...'"
+							:placeholder="keyConfigured ? I18N.keyPlaceholderSet : I18N.keyPlaceholderEmpty"
 						>
 						<button
 							class="btn ghost icon-btn"
@@ -261,6 +284,19 @@ const filteredModels = computed(() => {
 						>
 							<Icon :name="showApiKey ? 'eye-off' : 'eye'" :size="16"/>
 						</button>
+						<button
+							v-if="keyConfigured"
+							class="btn ghost icon-btn key-clear"
+							:title="I18N.clearKey"
+							:disabled="clearingKey"
+							@click="clearKey"
+						>
+							<Icon v-if="clearingKey" name="loading" class="spin" :size="14"/>
+							<Icon v-else name="close" :size="14"/>
+						</button>
+					</span>
+					<span class="field-status" :class="keyConfigured ? 'set' : 'empty'">
+						{{ keyConfigured ? I18N.keySaved : I18N.keyNotSaved }}
 					</span>
 				</label>
 			</div>
@@ -387,6 +423,18 @@ const filteredModels = computed(() => {
 
 	.input {
 		flex: 1;
+	}
+}
+
+.field-status {
+	font-size: 0.98rem;
+
+	&.set {
+		color: var(--deep-teal-bright);
+	}
+
+	&.empty {
+		color: var(--text-faint);
 	}
 }
 

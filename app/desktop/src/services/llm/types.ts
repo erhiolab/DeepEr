@@ -131,6 +131,14 @@ export interface LLMAdapter<TConfig = unknown> {
 	 */
 	listModels(): Promise<LLMModelInfo[]>
 	/**
+	 * 是否已配置 (保存) 过 API Key
+	 */
+	hasApiKey?(): Promise<boolean>
+	/**
+	 * 清除已保存的 API Key
+	 */
+	clearApiKey?(): Promise<void>
+	/**
 	 * 生成 (按当前配置 + 请求参数调用平台协议)
 	 */
 	generate(request: LLMGenerateRequest): Promise<LLMGenerateResult>

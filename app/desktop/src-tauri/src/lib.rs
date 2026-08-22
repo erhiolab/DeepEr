@@ -4,6 +4,7 @@ mod config;
 mod db;
 mod log;
 mod resource;
+mod secret;
 mod tray;
 mod api;
 
@@ -76,6 +77,8 @@ pub fn run() {
             config::has_config,
             config::get_all_configs,
             config::get_init_config,
+            secret::secret_encrypt,
+            secret::secret_decrypt,
             commands::resource::check_resource,
             commands::resource::ensure_resource,
             commands::resource::list_resources,
