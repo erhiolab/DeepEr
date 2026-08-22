@@ -100,6 +100,11 @@ const MOTION_RESET_NEW = `    if (i == B.priorityForce) {
       }
     }`
 
+// 暴露模型自然画布尺寸到全局: 用于触摸区域通过 contain() 映射对齐到真实模型内容矩形,
+// 使框随模型缩放/位移而同步 (移动端的画布是 100% 全屏, 模型在内部等比适配, 尺寸会丢失)
+const MODEL_INFO_OLD = `this._model.saveParameters(), this._modelMatrix = new qi(`
+const MODEL_INFO_NEW = `window.__noriModelCanvas = { w: this._model.getCanvasWidth(), h: this._model.getCanvasHeight() }; this._model.saveParameters(), this._modelMatrix = new qi(`
+
 let changed = false
 const apply = (n, o, n2) => {
 	if (source.includes(o)) { source = source.replace(o, n2); changed = true; console.log(`[patch-live2d] ${n} ok`) }
@@ -119,9 +124,9 @@ apply("加载失败标记", LOAD_ASSETS_OLD, LOAD_ASSETS_NEW)
 apply("加载超时reject", WAITING_OLD, WAITING_NEW)
 apply("纹理CORS1", TEX_IMG_OLD, TEX_IMG_NEW)
 apply("纹理CORS2", TEX_NEW_OLD, TEX_NEW_NEW)
-// CubismCore 从远程 CDN 改为本地内置, 避免离线/网络受限时挂起
-apply("本地CubismCore", CAMERA_CORE_OLD, CAMERA_CORE_NEW)
 // 强行动作前重置模型参数, 消除跨动作的肢体残留(手臂重叠)
 apply("动作前参数复位", MOTION_RESET_OLD, MOTION_RESET_NEW)
+// 暴露模型自然画布尺寸
+apply("模型尺寸暴露", MODEL_INFO_OLD, MODEL_INFO_NEW)
 
 if (changed) writeFileSync(TARGET, source)

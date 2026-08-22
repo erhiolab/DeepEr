@@ -8,11 +8,11 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "app.nori.pet"
+        applicationId "app.deeper"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "0.1.0"
+        versionCode 2
+        versionName "1.1.0"
     }
 
     buildTypes {
@@ -21,6 +21,13 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // 用 debug keystore 签名, 产出可直接旁载安装的 release APK
             signingConfig signingConfigs.debug
+        }
+    }
+
+    // 自定义 APK 输出名, 不再使用默认的 app-debug.apk / app-release.apk
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "DeepEr-${variant.versionName}-${variant.buildType.name}.apk"
         }
     }
 
