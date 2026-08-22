@@ -9,6 +9,7 @@ import TitleBar from "../components/common/TitleBar.vue"
 import Live2D from "../components/Live2D.vue"
 import Home from "../components/main/Home.vue"
 import ModelSelect from "../components/main/ModelSelect.vue"
+import ModelConfig from "../components/main/ModelConfig.vue"
 import Touch from "../components/main/Touch.vue"
 import About from "../components/firstRun/About.vue"
 import LanguageSelect from "../components/main/LanguageSelect.vue"
@@ -74,6 +75,23 @@ const ALL_NAV_ITEMS = computed(() => NAV_GROUPS.flatMap((group) => group.items))
 // 当前激活的导航项
 const activeNav = ref<NavKey>("home")
 
+// 正在配置的模型 id (非 null 时, model 导航下改为展示 ModelConfig)
+const configModelId = ref<string | null>(null)
+
+// 从 ModelSelect 打开某模型的配置页
+const openModelConfig = (modelId: string) => {
+	configModelId.value = modelId
+	if (activeNav.value !== "model") {
+		activeNav.value = "model"
+		config.set("main_active_nav", "model")
+	}
+}
+
+// 关闭模型配置页, 回到模型选择
+const closeModelConfig = () => {
+	configModelId.value = null
+}
+
 // 判断是否为合法导航键
 const isNavKey = (value: string): value is NavKey => NAV_GROUPS.some((group) => group.items.some((item) => item.key === value))
 
@@ -92,6 +110,8 @@ const switchNav = (key: NavKey) => {
 	const TARGET_INDEX = ALL_NAV_ITEMS.value.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
 	activeNav.value = key
+	// 离开模型导航时关闭配置页回到模型列表
+	if (key !== "model") configModelId.value = null
 	config.set("main_active_nav", key)
 }
 
@@ -131,7 +151,8 @@ const goToPet = () => {
 				<Transition :name="direction > 0 ? 'page-next' : 'page-prev'" mode="out-in">
 					<Home v-if="activeNav === 'home'"/>
 
-					<ModelSelect v-else-if="activeNav === 'model'"/>
+					<ModelSelect v-else-if="activeNav === 'model' && !configModelId" @configure="openModelConfig"/>
+					<ModelConfig v-else-if="activeNav === 'model' && configModelId" :model-id="configModelId" @close="closeModelConfig"/>
 					<Touch v-else-if="activeNav === 'touch'"/>
 
 					<LLMAdapter v-else-if="activeNav === 'llm'"/>

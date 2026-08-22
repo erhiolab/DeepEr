@@ -532,6 +532,31 @@ pub fn write_model_config(
     Ok(())
 }
 
+/// 将用户选择的图片复制进模型目录作为模型封面
+/// 返回相对模型目录的路径 (如 `cover.png`), 前端应随后写入配置的 image 字段
+/// invoke("save_model_cover", { name: "arg-nori", sourcePath: "C:/xx/logo.png" })
+#[tauri::command]
+pub fn save_model_cover(
+    app: tauri::AppHandle,
+    name: String,
+    source_path: String,
+) -> Result<String, String> {
+    let name = validate_resource_name(&name)?;
+    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let relative = crate::resource::live2d::save_model_image(
+        &data_dir,
+        name,
+        std::path::Path::new(&source_path),
+    )?;
+    let _ = log::write(
+        &app,
+        &log::LogSource::Backend,
+        "info",
+        &format!("保存模型封面: name={name} <- {source_path} -> {relative}"),
+    );
+    Ok(relative)
+}
+
 /// 导出模型级配置到指定路径 (原样复制 model.config.json 文本)
 /// 前端先用 `save` 对话框拿到目标文件路径 (默认名为<模型显示名>.config.json), 再传入.
 /// invoke("export_model_config", { name: "ARGNori", targetPath: "C:/xx/哼.config.json" })

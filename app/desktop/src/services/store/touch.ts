@@ -42,6 +42,7 @@ export interface ModelTouchConfig {
 	render: ModelRenderConfig
 	name: string
 	image: string
+	quality: number
 	touches: TouchArea[]
 }
 
@@ -75,6 +76,7 @@ const defaultConfig = (): ModelTouchConfig => ({
 	render: {scale: 1.0, posX: 0.0, posY: 0.0},
 	name: "",
 	image: "",
+	quality: 1.0,
 	touches: [],
 })
 
@@ -102,6 +104,9 @@ export const useTouchStore = defineStore("touch", () => {
 
 	// 当前模型渲染配置
 	const render = computed(() => config.value.render)
+
+	// 当前模型显示质量 (渲染倍率)
+	const quality = computed(() => config.value.quality)
 
 	// 触摸触发锁定
 	// 触发回调后锁定整个触摸, 防止同一对手势无限触发, 由外部执行 unlock() 解锁 (如 AI 返回后), 并有 2 分钟自动解锁兜底
@@ -154,6 +159,7 @@ export const useTouchStore = defineStore("touch", () => {
 				...defaultConfig(),
 				...DATA,
 				render: {...defaultConfig().render, ...DATA?.render},
+				quality: Number.isFinite(DATA?.quality) ? DATA!.quality : 1.0,
 				touches: Array.isArray(DATA?.touches) ? DATA.touches : [],
 			}
 			modelName.value = name
@@ -179,6 +185,17 @@ export const useTouchStore = defineStore("touch", () => {
 		}
 	}
 
+
+	/**
+	 * 更新模型显示名称与封面图片 (基本信息) 并持久化
+	 * @param name 显示名称, 空串表示回落模型目录名
+	 * @param image 相对模型目录的图片路径, 空串表示移除封面
+	 */
+	const updateNameImage = async (name: string, image: string) => {
+		config.value.name = name
+		config.value.image = image
+		await save()
+	}
 
 	/**
 	 * 添加一个触摸区域
@@ -244,6 +261,16 @@ export const useTouchStore = defineStore("touch", () => {
 	}
 
 	/**
+	 * 更新模型显示质量 (渲染倍率)
+	 * @param quality 0.25 ~ 1.0
+	 */
+	const setQuality = async (quality: number) => {
+		const Q = Math.min(1.0, Math.max(0.25, quality))
+		config.value.quality = Q
+		await save()
+	}
+
+	/**
 	 * 触发一个自定义触摸回调
 	 * 触发后立即锁定 (防止同一手势无限触发), 需外部 `unlock` 解锁或等待 2 分钟自动解锁
 	 * 当前派发 `touch-triggered` 事件 + 日志, 未来接入 LLM 上下文
@@ -280,6 +307,7 @@ export const useTouchStore = defineStore("touch", () => {
 		config,
 		touches,
 		render,
+		quality,
 		lock,
 		unlock,
 		locked,
@@ -290,6 +318,8 @@ export const useTouchStore = defineStore("touch", () => {
 		moveTouch,
 		removeTouch,
 		setRender,
+		setQuality,
+		updateNameImage,
 		trigger,
 	}
 })

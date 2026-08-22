@@ -59,6 +59,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 	// 模型 Y 轴位置 -2 ~ 2
 	const modelY = ref<number>(0.0)
 
+	// 显示质量 (渲染倍率) 0.25 ~ 1.0
+	const modelQuality = ref<number>(1.0)
+
 	// 是否显示可触摸区域 (hit area) 边界调试覆盖层
 	const showHitAreas = ref(false)
 
@@ -158,6 +161,37 @@ export const useLive2DStore = defineStore("live2d", () => {
 	}
 
 	/**
+	 * 应用显示质量 (渲染倍率) 到 canvas 布局
+	 * 低倍率时把 canvas 的 CSS 布局尺寸缩小为容器的 quality 倍, 并用 transform 放大回视觉铺满
+	 * 这样 l2d 内部的渲染分辨率 (跟随 canvas 布局尺寸) 相应下降, 从而降低 GPU/内存开销, 画面会变模糊
+	 */
+	const applyRenderQuality = (): void => {
+		const CANVAS = canvasElement.value
+		const HOST = currentContainer
+		if (!CANVAS || !HOST) return
+		const W = HOST.clientWidth
+		const H = HOST.clientHeight
+		if (!W || !H) return
+		const Q = Math.min(1.0, Math.max(0.25, modelQuality.value))
+		if (Q >= 1 || Math.abs(Q - 1) < 0.001) {
+			// 全分辨率: 还原为普通布局铺满容器
+			CANVAS.style.position = ""
+			CANVAS.style.left = ""
+			CANVAS.style.top = ""
+			CANVAS.style.width = "100%"
+			CANVAS.style.height = "100%"
+			CANVAS.style.transform = ""
+		} else {
+			CANVAS.style.position = "absolute"
+			CANVAS.style.left = "50%"
+			CANVAS.style.top = "50%"
+			CANVAS.style.width = `${Math.round(W * Q)}px`
+			CANVAS.style.height = `${Math.round(H * Q)}px`
+			CANVAS.style.transform = `translate(-50%, -50%) scale(${1 / Q})`
+		}
+	}
+
+	/**
 	 * 将 canvas 挂载到指定容器
 	 * 用于路由切换时保留 canvas 实例
 	 */
@@ -173,6 +207,8 @@ export const useLive2DStore = defineStore("live2d", () => {
 		}
 		if (canvasElement.value.parentElement === container) {
 			setupResizeObserver(container)
+			// 已挂载同容器: 仍应用一次质量 (可能已切换)
+			applyRenderQuality()
 			return
 		}
 		// 清理旧的 observer
@@ -189,10 +225,13 @@ export const useLive2DStore = defineStore("live2d", () => {
 		canvasElement.value.style.height = "100%"
 		canvasElement.value.style.opacity = "1"
 		canvasElement.value.style.pointerEvents = "auto"
+		canvasElement.value.style.transform = ""
 		// 添加到新容器
 		container.appendChild(canvasElement.value)
 		// 记录当前容器
 		currentContainer = container
+		// 应用显示质量
+		applyRenderQuality()
 		// 设置 ResizeObserver 监听容器尺寸变化
 		setupResizeObserver(container)
 	}
@@ -209,6 +248,8 @@ export const useLive2DStore = defineStore("live2d", () => {
 			rafId = requestAnimationFrame(() => {
 				rafId = 0
 				l2dInstance.value?.resize()
+				// 容器尺寸变化后按质量倍率重新设置 canvas 布局 (维持居中缩放)
+				applyRenderQuality()
 			})
 		})
 		resizeObserver.observe(container)
@@ -260,8 +301,10 @@ export const useLive2DStore = defineStore("live2d", () => {
 			modelScale.value = R.scale || 1.0
 			modelX.value = R.posX || 0.0
 			modelY.value = R.posY || 0.0
+			modelQuality.value = Number.isFinite(TOUCH.quality) ? TOUCH.quality : 1.0
 			l2dInstance.value.setScale(modelScale.value)
 			l2dInstance.value.setPosition(modelX.value, modelY.value)
+			applyRenderQuality()
 		} catch (err) {
 			await logger.error("应用模型渲染配置失败:", err)
 		}
@@ -339,6 +382,26 @@ export const useLive2DStore = defineStore("live2d", () => {
 		} catch (err) {
 			await logger.error("保存模型位置配置失败:", err)
 		}
+	}
+
+	/**
+	 * 设置模型显示质量 (渲染倍率) 并保存配置
+	 * @param quality 0.25 ~ 1.0, 数值越低渲染分辨率越低, 越流畅但越模糊
+	 */
+	const setModelQuality = async (quality: number) => {
+		const Q = Math.min(1.0, Math.max(0.25, quality))
+		modelQuality.value = Q
+		applyRenderQuality()
+		await useTouchStore().setQuality(Q)
+	}
+
+	/**
+	 * 实时预览显示质量 (渲染倍率), 不落盘
+	 * 供配置页拖动滑块时即时预览, 松手后再调用 setModelQuality 持久化
+	 */
+	const previewQuality = (quality: number): void => {
+		modelQuality.value = Math.min(1.0, Math.max(0.25, quality))
+		applyRenderQuality()
 	}
 
 	/**
@@ -624,6 +687,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		currentContainer = null
 		currentModel.value = null
 		isInitialized.value = false
+		modelQuality.value = 1.0
 		loadedFiles.value = 0
 		totalFiles.value = 0
 		error.value = null
@@ -652,6 +716,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		modelScale,
 		modelX,
 		modelY,
+		modelQuality,
 
 		// 可触摸区域显示状态
 		showHitAreas,
@@ -672,6 +737,8 @@ export const useLive2DStore = defineStore("live2d", () => {
 		// 渲染控制方法
 		setModelScale,
 		setModelPosition,
+		setModelQuality,
+		previewQuality,
 		setShowHitAreas,
 	}
 })

@@ -88,7 +88,8 @@ pub fn run() {
             commands::resource::read_model_config,
             commands::resource::write_model_config,
             commands::resource::export_model_config,
-            commands::resource::import_model_config
+            commands::resource::import_model_config,
+            commands::resource::save_model_cover
         ])
         .run(tauri::generate_context!())
         .expect("运行应用时出错")

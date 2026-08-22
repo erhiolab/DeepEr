@@ -17,6 +17,9 @@ import ConfirmDialog from "../common/ConfirmDialog.vue"
 
 const I18N = computed(() => useLanguages().components.main.modelSelect)
 
+// 请求打开某模型的配置页 (ModelConfig)
+const emit = defineEmits<{(e: "configure", modelId: string): void}>()
+
 const L2D = useLive2DStore()
 
 // 官方模型 (来自后端 /live2d/list)
@@ -614,6 +617,9 @@ onBeforeUnmount(() => {
 				</button>
 				<button v-if="selectedInstalled" class="bar-btn" @click.stop="handleImportConfig">
 					{{ I18N.importConfig }}
+				</button>
+				<button v-if="selectedInstalled" class="bar-btn" @click.stop="emit('configure', selected!)">
+					{{ I18N.configure }}
 				</button>
 				<button v-if="!selectedInstalled" class="bar-btn" @click.stop="handleDownload">
 					{{ I18N.download }}

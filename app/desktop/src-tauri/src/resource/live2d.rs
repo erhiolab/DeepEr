@@ -95,9 +95,19 @@ pub struct ModelConfig {
     /// 渲染配置
     #[serde(default)]
     pub render: ModelRenderConfig,
+    /// 显示质量 (渲染倍率), 范围 0.25 ~ 1.0
+    /// 1.0 为原始输出分辨率 (跟随设备像素比), 越小渲染分辨率越低, 越节省 GPU/内存
+    /// 低性能设备可调低该值以避免卡顿, 画面会相应变得模糊
+    #[serde(default = "default_quality")]
+    pub quality: f64,
     /// 自定义可触摸区域
     #[serde(default)]
     pub touches: Vec<TouchArea>,
+}
+
+/// 默认显示质量
+fn default_quality() -> f64 {
+    1.0
 }
 
 impl Default for ModelConfig {
@@ -107,6 +117,7 @@ impl Default for ModelConfig {
             name: String::new(),
             image: String::new(),
             render: ModelRenderConfig::default(),
+            quality: default_quality(),
             touches: Vec::new(),
         }
     }
@@ -334,7 +345,9 @@ where
     }
 
     // 把入口文件重命名归一为 model3.json / model.json, 平铺到目标根
-    let entry_actual = target.join(&entry_rel);
+    // 注意: 复制的是入口所在目录 (model_root) 的内容到 target, 故入口一定位于 target 根,
+    // 不能用相对 source_root 的 entry_rel (含外层目录前缀, 套层时会指向不存在的路径)
+    let entry_actual = target.join(entry_file_name);
     let std_target = target.join(std_entry_name);
     if entry_actual != std_target {
         if std_target.exists() {
@@ -469,4 +482,45 @@ pub fn write_model_config(
     let content = serde_json::to_string_pretty(config)
         .map_err(|e| format!("序列化模型配置失败: {e}"))?;
     fs::write(&path, content).map_err(|e| format!("写入模型配置失败: {}: {e}", path.display()))
+}
+
+/// 将一张图片复制进模型目录作为模型封面, 返回相对模型目录的路径
+/// 目标文件名为 `cover.<ext>`, 会覆盖同目录下已有的 cover 文件
+/// 校验: 源文件必须存在且为目标目录之外的文件, 目标目录必须是合法模型目录
+pub fn save_model_image(
+    data_dir: &Path,
+    name: &str,
+    source_path: &Path,
+) -> Result<String, String> {
+    let resource_dir = model_dir(data_dir, name)?;
+    if !resource_dir.is_dir() {
+        return Err(format!("Live2D 资源不存在: {name}"));
+    }
+    let root = root_dir(data_dir);
+    ensure_inside(&root, &resource_dir)?;
+    if !source_path.is_file() {
+        return Err(format!("所选文件不存在: {}", source_path.display()));
+    }
+    // 只允许常见图片扩展名
+    let ext = source_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .filter(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"))
+        .ok_or_else(|| "仅支持 png/jpg/gif/webp/bmp 图片".to_string())?;
+    let target = resource_dir.join(format!("cover.{ext}"));
+    // 覆盖旧封面 (其他扩展名) 避免残留
+    for old in ["cover.png", "cover.jpg", "cover.jpeg", "cover.gif", "cover.webp", "cover.bmp"] {
+        if old != target.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default() {
+            let old_path = resource_dir.join(old);
+            if old_path.is_file() {
+                let _ = fs::remove_file(&old_path);
+            }
+        }
+    }
+    fs::copy(source_path, &target).map_err(|e| format!("复制图片失败: {e}"))?;
+    Ok(format!(
+        "cover.{}",
+        target.extension().and_then(|e| e.to_str()).unwrap_or(&ext)
+    ))
 }
