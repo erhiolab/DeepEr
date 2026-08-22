@@ -29,7 +29,7 @@ export const applyCanvasLayout = (
 	} else {
 		canvas.style.left = "0"; canvas.style.top = "0"
 		canvas.style.width = "100%"; canvas.style.height = "100%"
-		canvas.style.zIndex = "auto"
+		canvas.style.zIndex = options.zIndex || "1"
 	}
 	canvas.style.transform = `scale(${options.scale}) translate(${options.offsetX}px, ${options.offsetY}px)`
 	canvas.style.opacity = "1"

@@ -1,21 +1,32 @@
 package app.nori.pet
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.webkit.WebView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.zip.ZipInputStream
 
 /**
  * 原生模型桥: 由 WebView 注入为 window.NoriBridge.
  * 提供 -> 网关 download_url 下载 ZIP -> 解压到 filesDir/models/<id>/<entryBase>/.
  * 模型文件随后由 shouldInterceptRequest 拦截 "live2d/" 前缀请求从磁盘返回.
- * 全程只用 Android 自带 API, 不依赖浏览器 OPFS / Service Worker.
+ * 下载/解压在后台线程执行, 结果经 JS 回调异步回传, 不占用主线程.
  */
 class ModelBridge(private val appContext: Context) {
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var webView: WebView? = null
+    private val ioExecutor: ExecutorService = Executors.newCachedThreadPool()
+
+    fun attach(v: WebView) { webView = v }
 
     companion object {
         private const val API_BASE = "https://api.elake.top/deeper"
@@ -23,27 +34,32 @@ class ModelBridge(private val appContext: Context) {
     }
 
     val modelsDir: File
+        // 模型存应用私有目录(免权限); 重装后重新下载
         get() = File(appContext.filesDir, MODELS_ROOT)
 
-    /** 下载并安装模型, 返回 {"ok":true,"entryBase":"Haru"} 或 {"ok":false,"message":"..."} */
+    /** 下载并安装模型(异步), 经 window.__noriModelRes(json) 回调: {"ok":true,"entryBase":...} */
     @android.webkit.JavascriptInterface
-    fun download(id: String): String {
-        return runCatching {
-            val modelDir = modelsDir.resolve(safeSegment(id))
-            // 已安装则直接复用
-            val existing = findEntryBase(modelDir)
-            if (existing != null) {
-                return ok(existing)
+    fun download(id: String) {
+        ioExecutor.execute {
+            val json = runCatching {
+                val modelDir = modelsDir.resolve(safeSegment(id))
+                val existing = findEntryBase(modelDir)
+                if (existing != null) return@runCatching ok(existing)
+                val url = getDownloadUrl(id)
+                val zipBytes = fetchBytes(url)
+                ok(installZip(id, zipBytes))
+            }.getOrElse { e ->
+                err(e.message ?: "下载失败")
             }
-            // 1. 获取签名下载链接
-            val url = getDownloadUrl(id)
-            // 2. 下载 ZIP 到内存
-            val zipBytes = fetchBytes(url)
-            // 3. 安全解压
-            val installed = installZip(id, zipBytes)
-            ok(installed)
-        }.getOrElse { e ->
-            err(e.message ?: "下载失败")
+            postToJs("__noriModelRes", json)
+        }
+    }
+
+    private fun postToJs(fn: String, json: String) {
+        mainHandler.post {
+            runCatching {
+                webView?.evaluateJavascript("window.$fn && window.$fn(${JSONObject.quote(json)})", null)
+            }
         }
     }
 

@@ -12,7 +12,7 @@ interface InstalledMeta {
 }
 
 interface Bridge {
-	download: (id: string) => string
+	download: (id: string) => void
 	listInstalled: () => string
 }
 
@@ -20,6 +20,7 @@ interface Bridge {
 declare global {
 	interface Window {
 		NoriBridge?: Bridge
+		__noriModelRes?: (json: string) => void
 	}
 }
 
@@ -55,15 +56,20 @@ export const listInstalled = async (): Promise<InstalledMeta[]> => {
 export const getInstalled = async (id: string): Promise<InstalledMeta | undefined> =>
 	(await listInstalled()).find((i) => i.id === id)
 
-/** 确保模型已安装到磁盘, 返回入口文件基础名; 已存在则直接返回 */
+/** 确保模型已安装到磁盘(原生后台下载/解压, 异步回调), 返回入口文件基础名 */
 export const ensureModel = async (id: string, _name: string, _onProgress: ProgressFn): Promise<string> => {
 	const cached = await getInstalled(id)
 	if (cached?.entryBase) return cached.entryBase
 	if (!window.NoriBridge) throw new Error("NoriBridge 未注入")
-	const res = parseBridgeResult(bridge().download(id))
-	if (!res.ok) throw new Error(res.message ?? "模型下载失败")
-	if (!res.entryBase) throw new Error("模型下载成功但缺少入口信息")
-	return res.entryBase
+	return new Promise((resolve, reject) => {
+		window.__noriModelRes = (json) => {
+			delete window.__noriModelRes
+			const res = parseBridgeResult(json)
+			if (res.ok && res.entryBase) resolve(res.entryBase)
+			else reject(new Error(res.message || "模型下载失败"))
+		}
+		try { bridge().download(id) } catch (e: any) { reject(e) }
+	})
 }
 
 /** 原生桥暴露的模型根目录 (供调试 / 拦截使用) */

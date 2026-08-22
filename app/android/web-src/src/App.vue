@@ -9,6 +9,9 @@
 		<!-- 涟漪层 -->
 		<div ref="rippleHost" class="ripple-host"></div>
 
+		<!-- Live2D 渲染层: 固定在底层, 可被设置/对话/底栏等 UI 盖住 -->
+		<div ref="l2dHost" class="l2d-host"></div>
+
 		<div class="topbar">
 			<div class="tag" @click="panel = panel === 'model' ? '' : 'model'">{{ currentModel?.name ?? "—" }}</div>
 			<div v-if="error" class="err" @click="error = ''">{{ error }} ✕</div>
@@ -102,7 +105,7 @@
 							</div>
 							<div class="settings-row">
 								<label>API Key</label>
-								<input v-model="cfg.apiKey" type="password" autocomplete="off" />
+								<input v-model="cfg.apiKey" type="text" autocomplete="off" spellcheck="false" />
 							</div>
 							<div class="settings-row">
 								<label>模型</label>
@@ -120,13 +123,13 @@
 								<input type="range" min="0.7" max="1.8" step="0.05" v-model.number="cfg.bubbleScale" />
 							</div>
 							<div class="settings-row">
-								<label>聊天记录存储</label>
-								<div class="model-pick">
-									<span class="hint" :class="{ok: storageReady, bad: !storageReady}">
-										{{ storageReady ? "已写入公共存储（卸载也不丢）" : "未授权，记录只在本机临时保存" }}
-									</span>
-									<button v-if="!storageReady" class="mini ripple" @click="grantStorage">去授权</button>
-								</div>
+								<label>渲染分辨率 {{ renderScaleNum.toFixed(1) }}x</label>
+								<input type="range" min="0.5" max="2.0" step="0.1" v-model.number="cfg.renderScale" @change="applyRenderScale" />
+								<div class="hint">越高越清晰但越耗电，卡顿时建议调低到 1.0x 以下</div>
+							</div>
+							<div class="settings-row">
+								<label>聊天记录存储位置</label>
+								<div class="hint ok">公共下载目录：{{ storagePath }}（卸载重装也不丢）</div>
 							</div>
 							<button class="btn ripple" @click="saveSettingsNow">保存设置</button>
 						</template>
@@ -161,10 +164,13 @@ import {
 	isStorageReady,
 	requestStoragePermission,
 	PERSONA_PROMPT,
+	getStorageDir,
 	type ChatMsg,
 } from "./services/chat"
 
 type P = "model" | "motion" | "expression" | "settings" | ""
+
+const l2dHost = ref<HTMLElement | null>(null)
 
 const l2d = createLive2D()
 const loading = ref(false)
@@ -204,7 +210,7 @@ const loadModel = async () => {
 		const entryBase = await ensureModel(id, model.name, () => {})
 		loadingMsg.value = "加载中…"
 		await l2d.destroy()
-		await l2d.mount({directory: id, fileBase: entryBase}, {canvasWidth: "100%", canvasHeight: "100%"})
+		await l2d.mount({directory: id, fileBase: entryBase}, {canvasWidth: "100%", canvasHeight: "100%", host: l2dHost.value})
 		scale.value = (await readModelConfig(id, "l2d_scale", (v) => (typeof v === "number" ? v : parseFloat(String(v))), 1)) || 1
 		offsetX.value = (await readModelConfig(id, "l2d_offset_x", (v) => (typeof v === "number" ? v : parseFloat(String(v))), 0)) || 0
 		offsetY.value = (await readModelConfig(id, "l2d_offset_y", (v) => (typeof v === "number" ? v : parseFloat(String(v))), 0)) || 0
@@ -252,8 +258,15 @@ const openPanel = (p: P) => { panel.value = panel.value === p ? "" : p }
 const gesture = reactive<Record<number, {x: number; y: number}>>({})
 let pinchBase = {dist: 0, midX: 0, midY: 0, scale: 1, ox: 0, oy: 0}
 
+// 命中 UI 覆盖层(设置/对话/底栏/顶栏)的触摸不参与模型缩放位移
+const isUI = (t: Touch): boolean =>
+	!!(t.target as HTMLElement)?.closest?.(".sheet, .chat-panel, .dock, .topbar")
+
 const onTouchStart = (e: TouchEvent) => {
-	for (const t of Array.from(e.touches)) gesture[t.identifier] = {x: t.clientX, y: t.clientY}
+	for (const t of Array.from(e.touches)) {
+		if (isUI(t)) continue
+		gesture[t.identifier] = {x: t.clientX, y: t.clientY}
+	}
 	if (Object.keys(gesture).length === 2) {
 		const [a, b] = Object.values(gesture)
 		pinchBase = {
@@ -338,16 +351,23 @@ const cfg = reactive({
 	baseUrl: "https://api.openai.com/v1",
 	model: "",
 	bubbleScale: 1,
+	renderScale: 1,
 })
 
 /** 气泡字号随设置实时变化 */
 const chatFontPX = computed(() => `${14 * (Number(cfg.bubbleScale) || 1)}px`)
 /** 气泡大小数值显示 */
 const bubbleScaleNum = computed(() => Number(cfg.bubbleScale) || 1)
+/** 渲染分辨率数值显示 */
+const renderScaleNum = computed(() => Number(cfg.renderScale) || 1)
+
+/** 应用渲染分辨率到 Live2D 渲染层 */
+const applyRenderScale = () => l2d.setRenderScale(renderScaleNum.value)
 
 const curModelName = computed(() => cfg.model || "未配置模型")
 
 const storageReady = ref(false)
+const storagePath = ref("Download/NoriPet")
 
 const modelReady = computed(() => !!cfg.apiKey.trim() && !!cfg.model)
 
@@ -490,11 +510,10 @@ const triggerEmotion = (text: string) => {
 const grantStorage = () => requestStoragePermission()
 
 const saveSettingsNow = () => {
-	saveSettings({apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, bubbleScale: Number(cfg.bubbleScale) || 1})
+	saveSettings({apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, bubbleScale: Number(cfg.bubbleScale) || 1, renderScale: renderScaleNum.value})
+	applyRenderScale()
 	modelLoadMsg.value = ""
 }
-
-/* ================= 生命周期 ================= */
 
 const onResize = () => relayout()
 
@@ -511,7 +530,15 @@ onMounted(async () => {
 	cfg.baseUrl = s.baseUrl || "https://api.openai.com/v1"
 	cfg.model = s.model
 	cfg.bubbleScale = s.bubbleScale || 1
+	cfg.renderScale = s.renderScale || 1
+	window.__noriRenderScale = renderScaleNum.value
+	storagePath.value = getStorageDir()
 	storageReady.value = isStorageReady()
+	// 首次启动自动弹出存储权限申请(仅弹一次)
+	if (!storageReady.value && !localStorage.getItem("storage_asked")) {
+		localStorage.setItem("storage_asked", "1")
+		setTimeout(grantStorage, 1200)
+	}
 	messages.value = loadChat()
 	if (cfg.apiKey.trim()) refreshModels()
 
@@ -549,6 +576,15 @@ onBeforeUnmount(async () => {
 }
 
 .ripple-host { display: none; }
+
+/* Live2D 渲染层: 占满全屏、在底层, UI 元素 z-index 均高于它 */
+.l2d-host {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+	overflow: hidden;
+}
 
 .topbar {
 	position: absolute;
