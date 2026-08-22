@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed, ref} from "vue"
 import {toast} from "vue3-toastify"
+import {invoke} from "@tauri-apps/api/core"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import Icon from "../common/Icon.vue"
@@ -47,6 +48,19 @@ const handleToggleHitAreas = () => {
 	L2D.setShowHitAreas(!L2D.showHitAreas)
 }
 
+// 开发者工具开/关状态
+const devtoolsOpen = ref(false)
+
+// 切换开发者工具 (调用后端命令, 以其返回状态为准)
+const handleToggleDevtools = async () => {
+	try {
+		devtoolsOpen.value = await invoke<boolean>("toggle_devtools")
+	} catch (error) {
+		console.error("切换开发者工具失败:", error)
+		toast.error(I18N.value.toggleDevtoolsFailed)
+	}
+}
+
 const ACTIONS: ExceptionAction[] = [
 	{
 		icon: "refresh",
@@ -67,6 +81,16 @@ const ACTIONS: ExceptionAction[] = [
 		loading: () => false,
 		actionIcon: "eye",
 		actionLabel: () => (L2D.showHitAreas ? I18N.value.hide : I18N.value.show),
+	},
+	{
+		icon: "settings",
+		name: I18N.value.openDevtools,
+		desc: I18N.value.openDevtoolsDesc,
+		action: handleToggleDevtools,
+		disabled: () => L2D.isLoading,
+		loading: () => false,
+		actionIcon: "settings",
+		actionLabel: () => (devtoolsOpen.value ? I18N.value.close : I18N.value.open),
 	},
 ]
 </script>

@@ -49,3 +49,18 @@ void import("./services/window").then(({resetPetWindow}) => {
 })
 
 APP.mount("#app")
+
+// 禁用 WebView 默认右键菜单 (含其中的"检查"入口)
+window.addEventListener("contextmenu", (e) => {
+	e.preventDefault()
+})
+
+// 禁用 Ctrl+滚轮 页面临时缩放 (同时消除缩放时的百分比浮层)
+// 以及 Ctrl+加号/减号/0 的缩放快捷键
+window.addEventListener("wheel", (e) => {
+	if (e.ctrlKey) e.preventDefault()
+}, {passive: false})
+
+window.addEventListener("keydown", (e) => {
+	if (e.ctrlKey && ["+", "-", "=", "0"].includes(e.key)) e.preventDefault()
+})

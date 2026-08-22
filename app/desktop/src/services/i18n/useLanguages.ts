@@ -195,6 +195,11 @@ export default () => {
 					refresh: t("common.label.refresh"),
 					refreshFailed: t("common.toast.refreshFailed"),
 					noModel: t("components.main.exception.noModel"),
+					openDevtools: t("components.main.exception.openDevtools"),
+					openDevtoolsDesc: t("components.main.exception.openDevtoolsDesc"),
+					open: t("components.main.exception.open"),
+					close: t("components.main.exception.close"),
+					toggleDevtoolsFailed: t("components.main.exception.toggleDevtoolsFailed"),
 				},
 				touch: {
 					title: t("components.main.touch.title"),

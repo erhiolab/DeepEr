@@ -26,7 +26,8 @@
 				"shadow": false,
 				"alwaysOnTop": false,
 				"skipTaskbar": false,
-				"center": true
+				"center": true,
+				"devtools": false
 			}
 		],
 		"security": {

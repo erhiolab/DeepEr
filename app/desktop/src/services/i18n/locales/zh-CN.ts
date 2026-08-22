@@ -205,6 +205,11 @@ export default {
 				show: "显示",
 				hide: "隐藏",
 				noModel: "尚未应用任何 Live2D 模型",
+				openDevtools: "打开开发者工具",
+				openDevtoolsDesc: "打开浏览器调试面板，用于检查页面与网络请求",
+				open: "打开",
+				close: "关闭",
+				toggleDevtoolsFailed: "切换开发者工具失败",
 			},
 			touch: {
 				title: "触摸区域",

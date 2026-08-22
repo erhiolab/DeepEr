@@ -17,3 +17,4 @@ pub mod llm;
 pub mod log;
 pub mod resource;
 pub mod tts;
+pub mod devtools;

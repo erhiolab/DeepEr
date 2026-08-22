@@ -81,6 +81,7 @@ pub fn run() {
             commands::resource::list_resources,
             commands::resource::delete_resource,
             commands::resource::import_live2d,
+            commands::devtools::toggle_devtools,
             commands::resource::read_model_config,
             commands::resource::write_model_config,
             commands::resource::export_model_config,
