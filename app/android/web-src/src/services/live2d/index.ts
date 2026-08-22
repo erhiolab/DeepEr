@@ -57,6 +57,15 @@ export const createLive2D = () => {
 
 	const canvas = (): HTMLCanvasElement | null => canvasEl
 
+	/** 模型渲染的原始逻辑尺寸(backing store), 用于触摸坐标归一化 */
+	const srcSize = (): {w: number; h: number} | null => {
+		if (!canvasEl) return null
+		const w = canvasEl.width
+		const h = canvasEl.height
+		if (!w || !h) return null
+		return {w, h}
+	}
+
 	const mount = async (model: Live2DModelSpec, options?: Live2DMountOptions): Promise<void> => {
 		if (canvasEl && canvasEl.isConnected) canvasEl.remove()
 		canvasEl = null
@@ -136,6 +145,7 @@ export const createLive2D = () => {
 		stopExpression: () => stopExpression(),
 		destroy,
 		canvas,
+		srcSize,
 		getMotions,
 		setRenderScale,
 		playMotionByIndex,

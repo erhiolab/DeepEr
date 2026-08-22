@@ -12,7 +12,19 @@
 		<!-- Live2D 渲染层: 固定在底层, 可被设置/对话/底栏等 UI 盖住 -->
 		<div ref="l2dHost" class="l2d-host"></div>
 
-		<div class="topbar">
+		<!-- 触摸触发气泡 -->
+		<transition name="fade">
+			<div v-if="touchBubble" class="touch-bubble">{{ touchBubble }}</div>
+		</transition>
+
+		<!-- AI 触摸回应气泡(仅气泡) -->
+		<transition name="ai">
+			<div v-if="aiBubble" class="ai-bubble">
+				<div class="ai-bubble-txt">{{ aiBubble }}</div>
+			</div>
+		</transition>
+
+		<div class="topbar" v-show="panel !== 'touch'">
 			<div class="tag" @click="panel = panel === 'model' ? '' : 'model'">{{ currentModel?.name ?? "—" }}</div>
 			<div v-if="error" class="err" @click="error = ''">{{ error }} ✕</div>
 			<div v-else-if="loading" class="loading">{{ loadingMsg }}</div>
@@ -49,16 +61,50 @@
 			</div>
 		</transition>
 
-		<div class="dock">
+		<div class="dock" v-show="panel !== 'touch'">
 			<button class="fab ripple" @click="playRand" :disabled="!ready">动作</button>
 			<button class="fab ripple primary" @click="playExpr" :disabled="!ready">表情</button>
 			<button class="fab ripple" @click="openPanel('model')">模型</button>
+			<button class="fab ripple" @click="openPanel('touch')">触摸</button>
 			<button class="fab ripple" @click="openPanel('settings')">设置</button>
 			<button class="fab ripple" @click="toggleChat">对话</button>
 		</div>
 
+		<!-- 自定义触摸: 独立全屏页面, 模型可见可在其上直接框选 (桌面端风格) -->
+		<Transition name="fade">
+		<div v-if="panel === 'touch'" class="touch-page">
+			<!-- 触摸区域叠加框: 铺满全屏画在模型上, 不拦截指针 -->
+			<div class="touch-overlay" :class="{drawing: touchDrawing}">
+				<div v-for="(t, i) in touchAreas" :key="t.id" class="touch-area-box" :class="t.type" :style="[boxStyle(t), {zIndex: i + 1}]">
+					<span class="ba-name">{{ t.name }}</span>
+				</div>
+				<div v-if="touchDraft" class="touch-area-box draft" :style="boxStyle(touchDraft)"></div>
+			</div>
+			<!-- 顶部栏 -->
+			<div class="touch-top">
+				<span class="touch-title">自定义触摸</span>
+				<button class="x" @click="panel = ''">✕</button>
+			</div>
+			<!-- 底部编辑器 -->
+			<div class="touch-editor">
+				<TouchManager
+					:touches="touchAreas"
+					:drawing="touchDrawing"
+					:adjusting="touchAdjusting"
+					:has-draft="draftReady"
+					@toggle-draw="toggleTouchDraw"
+					@toggle-adjust="toggleTouchAdjust"
+					@add="onTouchAdd"
+					@update="onTouchUpdate"
+					@remove="onTouchRemove"
+					@reset-draft="resetTouchDraft"
+				/>
+			</div>
+		</div>
+		</Transition>
+
 		<transition name="sheet">
-			<div v-if="panel" class="sheet-mask" @click.self="panel = ''">
+			<div v-if="panel && panel !== 'touch'" class="sheet-mask" @click.self="panel = ''">
 				<div class="sheet">
 					<div class="sheet-head">
 						<span class="sheet-title">{{ panelTitle(panel) }}</span>
@@ -123,9 +169,9 @@
 								<input type="range" min="0.7" max="1.8" step="0.05" v-model.number="cfg.bubbleScale" />
 							</div>
 							<div class="settings-row">
-								<label>渲染分辨率 {{ renderScaleNum.toFixed(1) }}x</label>
-								<input type="range" min="0.5" max="2.0" step="0.1" v-model.number="cfg.renderScale" @change="applyRenderScale" />
-								<div class="hint">越高越清晰但越耗电，卡顿时建议调低到 1.0x 以下</div>
+								<label>渲染分辨率 {{ renderScaleNum.toFixed(1) }}x（推荐用手机原生 {{ nativeDpr.toFixed(1) }}x）</label>
+								<input type="range" min="0.5" max="3.0" step="0.1" v-model.number="cfg.renderScale" @change="applyRenderScale" />
+								<div class="hint">越接近手机原生分辨率越清晰，耗电和发热越高；卡顿时调低即可</div>
 							</div>
 							<div class="settings-row">
 								<label>聊天记录存储位置</label>
@@ -153,6 +199,14 @@ import {readMotionGroups, readExpressionNames} from "./services/live2d/motions"
 import {coverUrl} from "./services/gateway/api"
 import {fetchModelList, ensureModel, listInstalled} from "./services/live2d/modelStore"
 import {
+	loadTouchConfig,
+	saveTouchConfig,
+	newTouchId,
+	type TouchArea,
+} from "./services/live2d/touch"
+import {TouchDetector, toModelPoint, modelLayout} from "./services/live2d/touchDetection"
+import TouchManager from "./components/TouchManager.vue"
+import {
 	loadSettings,
 	saveSettings,
 	loadChat,
@@ -168,7 +222,7 @@ import {
 	type ChatMsg,
 } from "./services/chat"
 
-type P = "model" | "motion" | "expression" | "settings" | ""
+type P = "model" | "motion" | "expression" | "touch" | "settings" | ""
 
 const l2dHost = ref<HTMLElement | null>(null)
 
@@ -180,24 +234,383 @@ const panel = ref<P>("")
 const currentModelId = ref<string>("")
 const motions = ref<MotionGroup[]>([])
 const expressions = ref<string[]>([])
+// 触摸区域
+const touchAreas = ref<TouchArea[]>([])
+// 框选编辑模式: true 时主模型上的单指拖动用于画矩形区域, 不触发生效的触摸
+const touchDrawing = ref(false)
+// 调整/移动模式: true 时只有"点中已有框"才能拖动它, 不能画新框
+const touchAdjusting = ref(false)
+// 框选中的草稿区域(归一化坐标) 与 触发气泡
+const touchDraft = ref<{x: number; y: number; w: number; h: number} | null>(null)
+// 是否已画完一个有效矩形(松手后为 true), 控制表单弹出
+const draftReady = ref(false)
+// 框选模式下正在拖动调整的已有区域 id
+const drawingTarget = ref<string | null>(null)
+const touchBubble = ref("")
+let touchBubbleTimer: ReturnType<typeof setTimeout> | null = null
 const scale = ref(1)
 const offsetX = ref(0)
 const offsetY = ref(0)
+// 布局版本号: 每次模型缩放/位移/加载后自增, 用于强制触摸叠加层重新读取 canvas 显示矩形, 保证框随模型移动
+const layoutVer = ref(0)
 const loadingMsg = ref("加载中…")
 const modelList = ref<{id: string; name: string}[]>([])
 const listError = ref("")
 
 const currentModel = computed(() => modelList.value.find((m) => m.id === currentModelId.value))
-const panelTitle = (p: P) => ({model: "选择模型", motion: "动作列表", expression: "表情列表", settings: "设置"} as Record<string, string>)[p] ?? ""
+const panelTitle = (p: P) => ({model: "选择模型", motion: "动作列表", expression: "表情列表", touch: "自定义触摸", settings: "设置"} as Record<string, string>)[p] ?? ""
 
 const hideThumb = (e: Event) => { (e.currentTarget as HTMLElement).style.visibility = "hidden" }
 
 /* ================= 模型展示与布局 ================= */
 
-const relayout = () =>
+const relayout = () => {
 	applyCanvasLayout(l2d.canvas(), undefined, {
 		zIndex: "1", scale: scale.value, offsetX: offsetX.value, offsetY: offsetY.value, animate: false,
 	})
+	// 自增版本号, 触发触摸叠加层重新读取 canvas 显示矩形 → 框紧跟模型
+	layoutVer.value++
+}
+
+/* ================= 触摸区域 ================= */
+
+// 触摸命中检测器: 单击=戳, 滑动=摸 → 触发区域回调, 由 handleTouchTrigger 交给 AI 并弹气泡
+const detector = new TouchDetector((area, type) => {
+	handleTouchTrigger(area, type)
+})
+// 区域触发冷却固定 2 秒, 防止频繁触摸过度消耗 token/性能
+detector.setCooldown(2000)
+
+const configureTouchDetector = () => {
+	// 用 canvas 元素（应用后边界含缩放/位移）做坐标基准, 并传入模型自然宽高使 hit 与框一致 contain 对齐
+	const ms = modelSize()
+	detector.configure(touchAreas.value, l2d.canvas(), ms?.w ?? 0, ms?.h ?? 0)
+}
+
+/** 模型的自然画布尺寸(由 live2d 库补丁暴露), 用于 contain() 把归一化坐标对齐到真实模型内容矩形 */
+const modelSize = (): {w: number; h: number} | null => {
+	const m = (window as unknown as {__noriModelCanvas?: {w: number; h: number}}).__noriModelCanvas
+	return m && m.w > 0 && m.h > 0 ? {w: m.w, h: m.h} : null
+}
+
+const loadTouchForModel = (id: string) => {
+	touchAreas.value = loadTouchConfig(id).touches
+	touchDrawing.value = false
+	nextTick(configureTouchDetector)
+}
+
+const saveTouch = () => {
+	if (currentModelId.value) {
+		const cfg = loadTouchConfig(currentModelId.value)
+		cfg.touches = touchAreas.value
+		saveTouchConfig(currentModelId.value, cfg)
+	}
+	configureTouchDetector()
+}
+
+const onTouchAdd = (t: {name: string; prompt: string}) => {
+	const d = touchDraft.value
+	if (!d || d.w < 0.06 || d.h < 0.06) { triggerBubble("请先在模型上框选一个矩形区域"); return }
+	touchAreas.value.push({
+		id: newTouchId(), name: t.name || "未命名", type: "tap",
+		x: d.x, y: d.y, w: d.w, h: d.h, image: "", prompt: t.prompt,
+	})
+	saveTouch()
+	touchDraft.value = null
+	draftReady.value = false
+	drawingTarget.value = null
+	triggerBubble("已添加触摸区域")
+}
+
+const onTouchUpdate = (id: string, patch: Partial<TouchArea>) => {
+	touchAreas.value = touchAreas.value.map(t => t.id === id ? {...t, ...patch} : t)
+	saveTouch()
+}
+
+const onTouchRemove = (id: string) => {
+	touchAreas.value = touchAreas.value.filter(t => t.id !== id)
+	saveTouch()
+}
+
+// 画新模式开关: 空白处画新矩形, 不拖动已有框
+const toggleTouchDraw = () => {
+	touchDrawing.value = !touchDrawing.value
+	if (touchDrawing.value) touchAdjusting.value = false
+	touchDraft.value = null
+	draftReady.value = false
+	drawingTarget.value = null
+	drawStart = null
+	drawDragged = false
+	if (touchDrawing.value) triggerBubble("在模型上按住拖动画新矩形")
+}
+
+// 调整/移动模式开关: 只有点中已有框才能拖动它
+const toggleTouchAdjust = () => {
+	touchAdjusting.value = !touchAdjusting.value
+	if (touchAdjusting.value) touchDrawing.value = false
+	touchDraft.value = null
+	draftReady.value = false
+	drawingTarget.value = null
+	drawStart = null
+	drawDragged = false
+	if (touchAdjusting.value) triggerBubble("点住已有区域可拖动位置")
+}
+
+const resetTouchDraft = () => {
+	touchDraft.value = null
+	draftReady.value = false
+	drawingTarget.value = null
+	drawDragged = false
+}
+
+// 关闭触摸面板时一并退出画框/调整模式, 防止叠加层残留在屏幕上
+import {watch as __watch} from "vue"
+__watch(() => panel.value, (newVal) => {
+	if (newVal !== 'touch') {
+		touchDrawing.value = false
+		touchAdjusting.value = false
+		draftReady.value = false
+		touchDraft.value = null
+		drawingTarget.value = null
+		drawStart = null
+		drawDragged = false
+	}
+})
+// 模型缩放/位移或加载完成后强制重算触摸框, 保证始终贴合模型当前显示位置
+__watch([scale, offsetX, offsetY, ready], () => {
+	nextTick(() => configureTouchDetector())
+})
+
+/** 临时气泡提示(显示 2 秒) */
+const triggerBubble = (msg: string) => {
+	touchBubble.value = msg
+	if (touchBubbleTimer) clearTimeout(touchBubbleTimer)
+	touchBubbleTimer = setTimeout(() => { touchBubble.value = "" }, 2000)
+}
+
+/* ================= AI 触摸回应 ================= */
+
+// 触摸触发后 AI 回复的纯聊天气泡(仅气泡, 不弹出对话面板)
+const aiBubble = ref("")
+let aiBubbleTimer: ReturnType<typeof setTimeout> | null = null
+
+const showAiBubble = (t: string) => {
+	aiBubble.value = t
+	if (aiBubbleTimer) clearTimeout(aiBubbleTimer)
+	aiBubbleTimer = setTimeout(() => { aiBubble.value = "" }, 9000)
+}
+
+/**
+ * 触摸触发: 开放、随机的互动描述发给 AI, 只把 AI 的回复显示到对话里。
+ * - 随机措辞(每次都不一样), 若区域写了提示词则直接采用, 否则用名称
+ * - 不把"用户 摸了…"写进聊天记录, 对话里只显示 AI 的话
+ */
+const TAP_VERBS = ["戳了戳", "点了点", "轻轻点了一下", "碰了碰", "戳了一下"]
+const SWIPE_VERBS = ["摸了摸", "轻轻摸了摸", "蹭了蹭", "抚摸了好几下", "揉了揉"]
+// 触摸场景附加指令: 强调彻底自由发挥, 不要机械复读, 也不要只报身体部位
+const TOUCH_DIRECTIVE = [
+	"这一次是触摸互动：",
+	"1. 你已经是一个感觉灵敏的人, 完全按自己的方式来反应, 不许复读之前说过的话, 不许每次都说同一句类似的话。",
+	"2. 被摸到什么地方不重要, 重点是营造当下真实、鲜活、有戏的氛围——害羞、舒服、痒、逗趣、傲娇、躲开……随你发挥, 越有趣越好。",
+	"3. AI 不要把「什么被摸」这件事机械地复述成一成不变的固定台词, 当作一次自然发生的互动来回应。",
+	"4. 仍然遵守上面的句式和标点规则。",
+].join("\n")
+
+// 触摸互动结果统一出口: 打开聊天栏时融入聊天栏, 否则浮出气泡
+const surface = (content: string) => {
+	messages.value.push({role: "assistant", content, ts: Date.now()})
+	persistChat(messages.value)
+	if (chatOpen.value) scrollChatBottom()
+	else showAiBubble(content)
+}
+
+const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
+	const desc = (area.prompt && area.prompt.trim()) ? area.prompt.trim() : (area.name || "未知")
+	const pool = type === "swipe" ? SWIPE_VERBS : TAP_VERBS
+	const verb = pool[Math.floor(Math.random() * pool.length)]
+	const text = `用户 ${verb} Nori的 ${desc}`
+	if (!modelReady.value) { surface("请先在「设置」里配置 API Key 和模型"); return }
+	if (!chatOpen.value) showAiBubble("…")
+	const memory = readMemory()
+	const context: ChatMsg[] = [
+		{role: "system", content: PERSONA_PROMPT} as ChatMsg,
+		{role: "system", content: DIRECTIVE} as ChatMsg,
+		{role: "system", content: TOUCH_DIRECTIVE} as ChatMsg,
+	]
+	if (memory.trim()) context.push({role: "system", content: `(长期记忆，按需参考)\n${memory.trim()}`} as ChatMsg)
+	const hist = messages.value.slice(-14).map(({role, content}) => ({role, content}) as ChatMsg)
+	// 触摸描述只作为当前这轮的用户消息发给 AI, 不写入聊天记录
+	const payload: ChatMsg[] = [...context, ...hist, {role: "user", content: text, ts: Date.now()}]
+	try {
+		const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
+		if (res.ok) {
+			surface(res.content ?? "")
+			triggerEmotion(res.content ?? "")
+		} else {
+			surface(`⚠ ${res.message ?? "请求失败"}`)
+		}
+	} catch (e: any) {
+		surface(`⚠ ${e?.message ?? "请求失败"}`)
+	}
+}
+
+/** 把屏幕点映射为模型归一化坐标(基于 canvas 应用后边界 + 模型自然宽高 contain 适配, 随缩放位移自动适配) */
+const toModel = (clientX: number, clientY: number): {x: number; y: number} | null => {
+	const el = l2d.canvas()
+	const ms = modelSize()
+	if (!el) return null
+	return toModelPoint(clientX, clientY, el, ms?.w ?? 0, ms?.h ?? 0)
+}
+
+// 框选/拖动状态
+let drawStart: {x: number; y: number} | null = null
+// 手指是否真正拖动了一段距离(区分"轻触"与"画框")
+let drawDragged = false
+// 移动已有区域时的起始值
+let movingOrigin: {x: number; y: number} | null = null
+
+/** 判定手指是否已真正拖动画框(避免轻触/抖动就把配置栏弹出来) */
+const markDrawDragged = (P: {x: number; y: number}) => {
+	if (drawDragged || !drawStart) return
+	if (Math.abs(P.x - drawStart.x) > 0.025 || Math.abs(P.y - drawStart.y) > 0.025) drawDragged = true
+}
+
+// 命中判断: 点是否落在某个已有区域左上角一定容差内(用于"点已有框调整位置")
+const hitTouch = (p: {x: number; y: number}): {id: string; t: TouchArea} | null => {
+	for (let i = touchAreas.value.length - 1; i >= 0; i--) {
+		const t = touchAreas.value[i]
+		if (p.x >= t.x && p.x <= t.x + t.w && p.y >= t.y && p.y <= t.y + t.h) return {id: t.id, t}
+	}
+	return null
+}
+
+/** 画框/调整模式下指针按下 */
+const onDrawDown = (e: PointerEvent) => {
+	if (!touchDrawing.value && !touchAdjusting.value) return
+	const P = toModel(e.clientX, e.clientY)
+	if (!P) return
+	drawStart = P
+	// 调整模式: 只有点中已有区域才进入移动, 否则不做任何事
+	if (touchAdjusting.value) {
+		const HIT = hitTouch(P)
+		if (HIT) {
+			drawingTarget.value = HIT.id
+			movingOrigin = {x: HIT.t.x, y: HIT.t.y}
+			touchDraft.value = null
+			draftReady.value = false
+		}
+		return
+	}
+	// 画新模式: 总是开始画新矩形, 不拖动已有框(也不互相关联)
+	drawingTarget.value = null
+	movingOrigin = null
+	drawDragged = false
+	draftReady.value = false
+	touchDraft.value = {x: P.x, y: P.y, w: 0, h: 0}
+}
+
+/** 画框/调整模式下指针移动 */
+const onDrawMove = (e: PointerEvent) => {
+	if (!touchDrawing.value && !touchAdjusting.value) return
+	const P = toModel(e.clientX, e.clientY)
+	if (!P) return
+	if (!drawStart) return
+	markDrawDragged(P)
+	// 移动已有区域
+	if (drawingTarget.value && movingOrigin) {
+		const dx = P.x - drawStart.x
+		const dy = P.y - drawStart.y
+		const t = touchAreas.value.find(v => v.id === drawingTarget.value)
+		if (t) {
+			const nx = Math.max(0, Math.min(1 - t.w, movingOrigin.x + dx))
+			const ny = Math.max(0, Math.min(1 - t.h, movingOrigin.y + dy))
+			touchAreas.value = touchAreas.value.map(v => v.id === t.id ? {...v, x: nx, y: ny} : v)
+		}
+		return
+	}
+	// 仅在画新模式时更新草稿
+	if (!touchDrawing.value) return
+	touchDraft.value = {
+		x: Math.min(drawStart.x, P.x),
+		y: Math.min(drawStart.y, P.y),
+		w: Math.abs(P.x - drawStart.x),
+		h: Math.abs(P.y - drawStart.y),
+	}
+}
+
+/** 画框/调整模式下指针松开 */
+const onDrawUp = () => {
+	drawStart = null
+	// 移动过已有区域 → 保存
+	if (drawingTarget.value) { saveTouch(); drawingTarget.value = null; movingOrigin = null; drawDragged = false; return }
+	drawingTarget.value = null
+	movingOrigin = null
+	// 调整模式松手且未拖动任何框 → 直接返回
+	if (touchAdjusting.value) { drawDragged = false; return }
+	// 画出了一个有效新矩形(真正拖动过 + 尺寸足够) 才弹出填写表单, 轻触/抖动不触发
+	const d = touchDraft.value
+	if (d && drawDragged && d.w >= 0.06 && d.h >= 0.06) {
+		draftReady.value = true
+		// 自动退出画框模式, 让用户直接填表
+		touchDrawing.value = false
+	} else {
+		touchDraft.value = null
+	}
+	drawDragged = false
+}
+
+/** 把模型归一化坐标映射为叠加层像素样式(渲染触摸区域框, 锚定模型内容矩形, 随模型缩放位移而动) */
+const boxStyle = (t: {x: number; y: number; w: number; h: number}) => {
+	void layoutVer.value // 依赖布局版本号: 模型缩放/位移/加载后强制重算, 使框跟随模型
+	const el = l2d.canvas()
+	const ms = modelSize()
+	if (!el) return {}
+	const R = el.getBoundingClientRect()
+	if (R.width <= 0 || R.height <= 0) return {}
+	const L = modelLayout(el, ms?.w ?? 0, ms?.h ?? 0)
+	if (!L) return {}
+	// 叠加层与 canvas 同在 viewport 坐标系, 直接给出像素坐标
+	return {
+		left: `${R.left + L.x + t.x * L.w}px`,
+		top: `${R.top + L.y + t.y * L.h}px`,
+		width: `${t.w * L.w}px`,
+		height: `${t.h * L.h}px`,
+	}
+}
+
+/* 舞台指针委托: 优先框选模式, 否则交给触摸命中检测 */
+let stagePointers = 0
+
+const onStagePointerDown = (e: PointerEvent) => {
+	stagePointers++
+	// 共享: 判断触摸是否落在面板/底栏/触摸页编辑器等 UI 上
+	const onUI = (elm: EventTarget | null): boolean =>
+		!!(elm as HTMLElement)?.closest?.(".sheet, .dock, .topbar, .pet-fab, .chat-panel, .touch-editor, .touch-top")
+	// 画框/调整模式: 仅在模型区域(非面板)按下才处理
+	if (touchDrawing.value || touchAdjusting.value) {
+		if (onUI(e.target)) return
+		onDrawDown(e)
+		return
+	}
+	// 面板打开 / 双指缩放时不触发模型触摸命中
+	if (panel.value !== "" || stagePointers > 1) return
+	// 点到底栏/顶栏/对话等 UI 组件也不触发模型的 摸/点
+	if (onUI(e.target)) return
+	detector.onPointerDown(e)
+}
+
+const onStagePointerMove = (e: PointerEvent) => {
+	if (touchDrawing.value || touchAdjusting.value) { onDrawMove(e); return }
+	if (panel.value !== "" || stagePointers > 1) return
+	detector.onPointerMove(e)
+}
+
+const onStagePointerUp = (e: PointerEvent) => {
+	stagePointers = Math.max(0, stagePointers - 1)
+	if (touchDrawing.value || touchAdjusting.value) { onDrawUp(); return }
+	if (panel.value !== "") return
+	detector.onPointerUp(e)
+}
 
 const loadModel = async () => {
 	const id = currentModelId.value
@@ -221,6 +634,7 @@ const loadModel = async () => {
 		const runtime = await l2d.getMotions()
 		if (runtime && runtime.length) motions.value = runtime
 		ready.value = true
+		loadTouchForModel(id)
 	} catch (e: any) {
 		error.value = e?.message ?? String(e)
 	} finally {
@@ -360,6 +774,8 @@ const chatFontPX = computed(() => `${14 * (Number(cfg.bubbleScale) || 1)}px`)
 const bubbleScaleNum = computed(() => Number(cfg.bubbleScale) || 1)
 /** 渲染分辨率数值显示 */
 const renderScaleNum = computed(() => Number(cfg.renderScale) || 1)
+/** 手机原生 DPR(作为推荐渲染档位): 设为该值时模型分辨率与屏幕 1:1 最清晰 */
+const nativeDpr = computed(() => Math.max(1.5, Math.min(window.devicePixelRatio || 2, 3)))
 
 /** 应用渲染分辨率到 Live2D 渲染层 */
 const applyRenderScale = () => l2d.setRenderScale(renderScaleNum.value)
@@ -519,6 +935,11 @@ const onResize = () => relayout()
 
 onMounted(async () => {
 	window.addEventListener("resize", onResize)
+	// 触摸框选 + 触摸命中检测的指针委托 (桌面触摸逻辑移植)
+	document.addEventListener("pointerdown", onStagePointerDown)
+	document.addEventListener("pointermove", onStagePointerMove)
+	document.addEventListener("pointerup", onStagePointerUp)
+	document.addEventListener("pointercancel", onStagePointerUp)
 	// 从系统"所有文件访问"设置页返回后重新检测授权状态
 	const refreshStorage = () => { storageReady.value = isStorageReady() }
 	window.addEventListener("focus", refreshStorage)
@@ -530,7 +951,7 @@ onMounted(async () => {
 	cfg.baseUrl = s.baseUrl || "https://api.openai.com/v1"
 	cfg.model = s.model
 	cfg.bubbleScale = s.bubbleScale || 1
-	cfg.renderScale = s.renderScale || 1
+	cfg.renderScale = s.renderScale || nativeDpr.value
 	window.__noriRenderScale = renderScaleNum.value
 	storagePath.value = getStorageDir()
 	storageReady.value = isStorageReady()
@@ -560,6 +981,12 @@ onMounted(async () => {
 
 onBeforeUnmount(async () => {
 	window.removeEventListener("resize", onResize)
+	document.removeEventListener("pointerdown", onStagePointerDown)
+	document.removeEventListener("pointermove", onStagePointerMove)
+	document.removeEventListener("pointerup", onStagePointerUp)
+	document.removeEventListener("pointercancel", onStagePointerUp)
+	if (touchBubbleTimer) clearTimeout(touchBubbleTimer)
+	detector.destroy()
 	await l2d.destroy()
 })
 </script>
@@ -585,6 +1012,125 @@ onBeforeUnmount(async () => {
 	pointer-events: none;
 	overflow: hidden;
 }
+
+/* 触摸区域叠加层 */
+.touch-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+}
+.touch-overlay.drawing { z-index: 40; cursor: crosshair; }
+.touch-area-box {
+	position: absolute;
+	box-sizing: border-box;
+	border: 2px solid rgba(80, 160, 255, 0.95);
+	background: rgba(80, 160, 255, 0.15);
+	border-radius: 3px;
+	&.swipe { border-color: rgba(255,170,60,0.95); background: rgba(255,170,60,0.15); }
+	&.frenzy { border-color: rgba(255,80,200,0.95); background: rgba(255,80,200,0.15); }
+	&.draft { border-style: dashed; border-color: rgba(125,227,255,0.95); background: rgba(125,227,255,0.15); }
+}
+
+/* ===== 触摸配置独立全屏页面 ===== */
+.touch-page {
+	position: fixed;
+	inset: 0;
+	z-index: 15;
+	background: rgba(2, 6, 23, 0.35);
+	pointer-events: none; /* 整页对指针透明, 让模型区域可直接触摸 */
+	touch-action: none;
+}
+.touch-page .touch-overlay.drawing { cursor: crosshair; }
+.touch-top {
+	position: absolute;
+	top: 0; left: 0; right: 0;
+	z-index: 1;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
+	pointer-events: auto;
+	background: linear-gradient(180deg, rgba(2,6,23,0.7) 0%, rgba(2,6,23,0) 100%);
+}
+.touch-title {
+	font-size: 16px; font-weight: 600; color: #f1f5f9;
+	text-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+.touch-editor {
+	position: absolute;
+	left: 0; right: 0; bottom: 0;
+	z-index: 1;
+	max-height: 48vh;
+	overflow-y: auto;
+	pointer-events: auto;
+	padding: 12px 14px calc(16px + env(safe-area-inset-bottom));
+	background: linear-gradient(180deg, rgba(2,6,23,0.75) 0%, rgba(2,6,23,0.97) 100%);
+	border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+.ba-name {
+	position: absolute;
+	left: 4px; top: 4px;
+	font-size: 10px;
+	line-height: 1;
+	color: #fff;
+	padding: 2px 5px;
+	border-radius: 4px;
+	background: rgba(0,0,0,0.45);
+	max-width: calc(100% - 8px);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* 触摸触发气泡 */
+.touch-bubble {
+	position: absolute;
+	left: 50%;
+	top: 18%;
+	transform: translateX(-50%);
+	z-index: 60;
+	padding: 10px 16px;
+	border-radius: 999px;
+	background: rgba(15, 23, 42, 0.85);
+	border: 1px solid rgba(56, 189, 248, 0.5);
+	color: #e2e8f0;
+	font-size: 14px;
+	backdrop-filter: blur(10px);
+	box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+	white-space: nowrap;
+	max-width: 80%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
+
+/* AI 触摸回应气泡 */
+.ai-bubble {
+	position: absolute;
+	left: 12px; right: 12px;
+	bottom: calc(92px + env(safe-area-inset-bottom));
+	z-index: 58;
+	max-height: 34vh;
+	overflow-y: auto;
+	padding: 12px 16px;
+	border-radius: 16px;
+	background: rgba(15, 23, 42, 0.92);
+	border: 1px solid rgba(56, 189, 248, 0.45);
+	box-shadow: 0 10px 32px rgba(0,0,0,0.45);
+	backdrop-filter: blur(14px);
+	pointer-events: none;
+}
+.ai-bubble-txt {
+	color: #e2e8f0;
+	font-size: 15px;
+	line-height: 1.55;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+.ai-enter-active, .ai-leave-active { transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.ai-enter-from, .ai-leave-to { opacity: 0; transform: translateY(14px) scale(0.98); }
 
 .topbar {
 	position: absolute;
@@ -710,7 +1256,7 @@ onBeforeUnmount(async () => {
 	left: 0; right: 0; bottom: 0;
 	padding: 10px 10px calc(12px + env(safe-area-inset-bottom));
 	display: grid;
-	grid-template-columns: repeat(5, 1fr);
+	grid-template-columns: repeat(6, 1fr);
 	gap: 8px;
 	z-index: 5;
 	background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(2,6,23,0.7) 45%, rgba(2,6,23,0.95) 100%);
