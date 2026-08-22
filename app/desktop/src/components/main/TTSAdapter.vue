@@ -96,8 +96,9 @@ const options = computed(() => [
 .adapter-bar {
 	flex-shrink: 0;
 	display: flex;
-	flex-wrap: wrap;
+	align-items: center;
 	gap: 0.8rem;
+	overflow-x: auto;
 }
 
 .adapter-item {
@@ -105,6 +106,7 @@ const options = computed(() => [
 	display: flex;
 	align-items: center;
 	gap: 0.7rem;
+	flex-shrink: 0;
 	border: 0.1rem solid var(--line-subtle);
 	border-radius: var(--radius-sm);
 	background-color: rgba(255, 255, 255, 0.03);
@@ -155,16 +157,19 @@ const options = computed(() => [
 		display: flex;
 		flex-direction: column;
 		gap: 0.2rem;
+		white-space: nowrap;
 	}
 
 	.adapter-label {
 		font-size: 1.2rem;
 		font-weight: 600;
 		color: var(--text-primary);
+		white-space: nowrap;
 	}
 
 	.adapter-desc {
 		font-size: 0.95rem;
+		white-space: nowrap;
 		color: var(--text-faint);
 	}
 }

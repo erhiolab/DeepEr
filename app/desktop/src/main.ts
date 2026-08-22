@@ -40,4 +40,12 @@ void import("./services/window").then(({restoreCursor}) => {
 	})
 })
 
+// 托盘"复位": 跳到桌宠视图, 居中显示窗口, 并重置数据库中的桌宠位置/大小记录
+void import("./services/window").then(({resetPetWindow}) => {
+	void listen("tray-reset", () => {
+		void router.push({name: "Pet"})
+		void resetPetWindow()
+	})
+})
+
 APP.mount("#app")

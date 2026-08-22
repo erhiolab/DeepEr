@@ -1,4 +1,5 @@
 import {getCurrentWindow, LogicalSize, LogicalPosition} from "@tauri-apps/api/window"
+import {emit} from "@tauri-apps/api/event"
 import {config} from "../config"
 
 const appWindow = getCurrentWindow()
@@ -76,6 +77,9 @@ export const restoreCursor = async () => {
 // 防抖定时器
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
+// 复位进行中禁止持久化 (复位会移动/缩放窗口, 触发 onMoved/onResized 会误写回数据库)
+let resetting = false
+
 /**
  * 读取上次保存的桌宠窗口位置/大小
  */
@@ -141,9 +145,11 @@ export const persistWindowState = async (delay = 500) => {
 export const watchWindowState = async (): Promise<() => void> => {
 	const STOPS: (() => void)[] = []
 	STOPS.push(await appWindow.onMoved(() => {
+		if (resetting) return
 		void persistWindowState()
 	}))
 	STOPS.push(await appWindow.onResized(() => {
+		if (resetting) return
 		void persistWindowState()
 	}))
 	return () => {
@@ -213,4 +219,44 @@ export const setPetWindow = async () => {
 	await appWindow.show()
 	// 获取焦点
 	await appWindow.setFocus()
+}
+
+/**
+ * 复位桌宠窗口: 居中显示窗口, 并重置数据库里的桌宠位置/大小记录
+ *
+ * 由托盘菜单"复位"触发. 复位期间的移动/缩放不写回数据库,
+ * 且删除 pet_window_x/y/pet_width/pet_height, 使下次进入桌宠恢复默认大小与居中.
+ */
+export const resetPetWindow = async (): Promise<void> => {
+	// 复位期间标记, 抑制 onMoved/onResized 的自动持久化
+	resetting = true
+	try {
+		// 清除可能挂起的防抖写库
+		if (persistTimer) {
+			clearTimeout(persistTimer)
+			persistTimer = null
+		}
+		// 恢复鼠标交互
+		await restoreCursor()
+		// 恢复默认桌宠大小 300x300
+		await appWindow.setSize(new LogicalSize(300, 300))
+		// 不允许调整大小
+		await appWindow.setResizable(false)
+		// 窗口置顶
+		await appWindow.setAlwaysOnTop(true)
+		// 居中显示窗口
+		await appWindow.center()
+		// 显示窗口并获取焦点
+		await appWindow.show()
+		await appWindow.setFocus()
+		// 重置数据库中的桌宠位置/大小记录 (下次进入桌宠时恢复默认并居中)
+		await config.delete("pet_window_x")
+		await config.delete("pet_window_y")
+		await config.delete("pet_width")
+		await config.delete("pet_height")
+	} finally {
+		resetting = false
+	}
+	// 通知后端复位已完成, 重新启用托盘"复位"菜单项
+	await emit("tray-reset-done")
 }

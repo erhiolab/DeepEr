@@ -25,6 +25,10 @@ const EVT_SET_VIEW: &str = "tray-set-view";
 const EVT_SET_PASSTHROUGH: &str = "pet-passthrough";
 /// 事件名: 后端"取消穿透"通知前端恢复鼠标
 const EVT_CANCEL_PASSTHROUGH: &str = "tray-cancel-passthrough";
+/// 事件名: 通知前端"复位" (窗口居中显示, 并重置数据库中的窗口位置/大小)
+const EVT_RESET: &str = "tray-reset";
+/// 事件名: 前端回传复位已完成 (重新启用"复位"菜单项)
+const EVT_RESET_DONE: &str = "tray-reset-done";
 
 /// 菜单项 ID: 显示主界面 / 回到桌宠
 const MENU_SHOW_MAIN: &str = "tray.show_main";
@@ -32,6 +36,8 @@ const MENU_SHOW_MAIN: &str = "tray.show_main";
 const MENU_TOGGLE: &str = "tray.toggle";
 /// 菜单项 ID: 取消点击穿透 (穿透时可用)
 const MENU_CANCEL_PASSTHROUGH: &str = "tray.cancel_passthrough";
+/// 菜单项 ID: 复位 (窗口居中显示, 重置桌宠位置/大小记录)
+const MENU_RESET: &str = "tray.reset";
 /// 菜单项 ID: 退出应用
 const MENU_QUIT: &str = "tray.quit";
 
@@ -59,11 +65,12 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         false,
         None::<&str>,
     )?;
+    let reset = MenuItem::with_id(app_handle, MENU_RESET, "复位", true, None::<&str>)?;
     let quit = MenuItem::with_id(app_handle, MENU_QUIT, "退出", true, None::<&str>)?;
     // 创建菜单
     let menu = Menu::with_items(
         app_handle,
-        &[&show_main, &toggle, &cancel_passthrough, &quit],
+        &[&show_main, &toggle, &cancel_passthrough, &reset, &quit],
     )?;
 
     // 克隆一份供闭包内动态更新文字
@@ -78,6 +85,12 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let _ = app_handle.listen(EVT_SET_PASSTHROUGH, move |event| {
         let passthrough = event.payload() == "true";
         let _ = cancel_pt_evt.set_enabled(passthrough);
+    });
+
+    // 前端复位完成后回传, 重新启用"复位"菜单项
+    let reset_evt = reset.clone();
+    let _ = app_handle.listen(EVT_RESET_DONE, move |_event| {
+        let _ = reset_evt.set_enabled(true);
     });
 
     // 克隆一份供前端视图回传事件监听使用
@@ -106,6 +119,8 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("无法获取应用图标")?
         .clone();
     // 构建托盘图标
+    // 克隆一份供菜单事件回调使用
+    let reset_menu = reset.clone();
     let _tray = TrayIconBuilder::new()
         .icon(icon.clone())
         .menu(&menu)
@@ -117,6 +132,7 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 &show_main_menu,
                 &toggle_menu,
                 &cancel_pt_menu,
+                &reset_menu,
                 &in_main_menu,
             );
         })
@@ -151,6 +167,7 @@ fn handle_menu_event(
     show_main: &MenuItem<Wry>,
     toggle: &MenuItem<Wry>,
     cancel_passthrough: &MenuItem<Wry>,
+    reset: &MenuItem<Wry>,
     in_main: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match menu_id {
@@ -172,6 +189,16 @@ fn handle_menu_event(
             // 恢复窗口鼠标交互 (前端收到事件后 setIgnoreCursorEvents(false))
             app.emit(EVT_CANCEL_PASSTHROUGH, ())?;
             cancel_passthrough.set_enabled(false)?;
+        }
+        MENU_RESET => {
+            let _ = log::write(app, &log::LogSource::Backend, "info", "托盘菜单：复位窗口");
+            // 复位期间禁用该菜单项, 防止重复触发 (前端完成后恢复)
+            reset.set_enabled(false)?;
+            // 显示主窗口, 居中显示并重置数据库中的桌宠位置/大小记录 (由前端完成)
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                window.show()?;
+            }
+            app.emit(EVT_RESET, ())?;
         }
         MENU_QUIT => {
             let _ = log::write(app, &log::LogSource::Backend, "info", "托盘菜单：退出应用");
