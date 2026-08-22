@@ -271,7 +271,6 @@ export const useTouchStore = defineStore("touch", () => {
 			touchId: touch.id,
 		}
 		await logger.info(`[touch] 触发: ${JSON.stringify(PAYLOAD)}`)
-		console.log(`[touch] 触发: ${JSON.stringify(PAYLOAD)}`)
 		void emit("touch-triggered", PAYLOAD)
 	}
 

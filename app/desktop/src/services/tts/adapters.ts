@@ -33,8 +33,6 @@ export const TTS_ADAPTERS: TTSAdapterDefinition[] = [
 		label: "GPT-SoVITS",
 		description: "本地部署的开源克隆音色引擎 (API V2, 需参考音频)",
 	},
-	// 未来在此追加其它适配器定义, 例如:
-	// { id: "edge-tts", label: "Edge TTS", description: "微软在线多语音" },
 ]
 
 /**
