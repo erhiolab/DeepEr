@@ -25,6 +25,18 @@ const switchAdapter = async (id: TTSAdapterId | null) => {
 	await setActiveAdapter(id)
 }
 
+// 适配器横向滚动栏: 支持鼠标滚轮 (纵向) 滚动, 无需拖动滚动条
+const adapterBar = ref<HTMLElement | null>(null)
+
+// 适配器横向滚动栏: 鼠标滚轮 (纵向) 滚动
+const onAdapterBarWheel = (e: WheelEvent) => {
+	const EL = adapterBar.value
+	if (!EL || EL.scrollWidth <= EL.clientWidth) return
+	const DELTA = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
+	EL.scrollLeft += DELTA
+	e.preventDefault()
+}
+
 // 渲染用的可选项
 const options = computed(() => [
 	{id: null, label: I18N.value.disabledLabel, description: I18N.value.disabledDesc},
@@ -40,7 +52,7 @@ const options = computed(() => [
 				<p class="tts-sub">{{ I18N.subtitle }}</p>
 			</div>
 		</header>
-		<nav class="adapter-bar">
+		<nav class="adapter-bar" ref="adapterBar" @wheel="onAdapterBarWheel">
 			<button
 				v-for="option in options"
 				:key="option.id || 'none'"

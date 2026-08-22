@@ -129,24 +129,6 @@ pub fn fetch_download_url(resource_type: &str, name: &str) -> Result<String, Api
     Ok(response.into_body()?.url)
 }
 
-/// 拉取 OpenAI-compatible `/models` (LLM 模型列表)
-/// 注意: 这是用户自配的第三方接口, 不走 [`API_BASE_URL`]
-/// async 版本, 不阻塞渲染线程.
-pub async fn fetch_llm_models_async(base_url: &str, api_key: &str) -> Result<Vec<String>, ApiError> {
-    let url = format!("{}/models", base_url.trim_end_matches('/'));
-    let response = reqwest::Client::new()
-        .get(&url)
-        .bearer_auth(api_key)
-        .send()
-        .await
-        .map_err(|e| ApiError::Request(e.to_string()))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(ApiError::Http(status.as_u16()));
-    }
-    parse_model_list(response.json().await.map_err(|e| ApiError::InvalidResponse(e.to_string()))?)
-}
-
 /// 发起 GET 请求并解析为 JSON (blocking)
 /// 供下载流程使用, 运行在 spawn_blocking 中
 fn get<T>(url: &str, query: &[(&str, &str)]) -> Result<T, ApiError>
@@ -195,32 +177,6 @@ where
         .json()
         .await
         .map_err(|e| ApiError::InvalidResponse(e.to_string()))
-}
-
-/// 从 OpenAI-compatible `/models` 响应中解析模型 id 列表
-fn parse_model_list(body: serde_json::Value) -> Result<Vec<String>, ApiError> {
-    let data = body
-        .get("data")
-        .and_then(|value| value.as_array())
-        .ok_or_else(|| ApiError::InvalidResponse("接口返回成功, 但缺少 data 字段".to_string()))?;
-    let mut models = Vec::with_capacity(data.len());
-    for item in data {
-        if let Some(id) = item.as_str() {
-            models.push(id.to_string());
-            continue;
-        }
-        if let Some(id) = item.get("id").and_then(|value| value.as_str()) {
-            models.push(id.to_string());
-        }
-    }
-    models.sort();
-    models.dedup();
-    if models.is_empty() {
-        return Err(ApiError::InvalidResponse(
-            "接口返回成功, 但没有解析到任何模型".to_string(),
-        ));
-    }
-    Ok(models)
 }
 
 /// 对查询参数值做 URL 百分号编码 (仅转义非 URL-安全字符, 零第三方依赖)

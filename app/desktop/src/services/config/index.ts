@@ -4,6 +4,7 @@ import {logger} from "../logger"
 export type ConfigKey =
 	"language" | "main_active_nav" |
 	"llm_api_base" | "llm_api_key" | "llm_model" |
+	"llm_adapter" |
 	"tts_adapter" |
 	"live2d_model" |
 	"pet_window_x" | "pet_window_y" | "pet_width" | "pet_height"

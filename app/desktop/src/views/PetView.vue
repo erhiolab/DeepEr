@@ -115,6 +115,12 @@ const sendMessage = () => {
 // 是否悬浮在窗口上
 const hovered = ref(false)
 
+// 输入框是否聚焦 (聚焦期间即使鼠标移开也保持控制栏显示)
+const inputFocused = ref(false)
+
+// 控制栏是否显示: 鼠标悬浮 或 输入框聚焦
+const controlsVisible = computed(() => hovered.value || inputFocused.value)
+
 // 是否处于调整大小模式 (显示四角)
 const resizing = ref(false)
 
@@ -139,6 +145,8 @@ const openMainView = () => {
 const enablePassthrough = () => {
 	// 先收起悬浮 UI
 	hovered.value = false
+	// 结束输入框聚焦, 避免控制栏残留
+	inputFocused.value = false
 	// 若处于调整大小模式, 一并退出调整模式
 	if (resizing.value) {
 		resizing.value = false
@@ -221,7 +229,7 @@ let stopWatchFn: (() => void) | null = null
 			</TransitionGroup>
 		</div>
 		<Transition name="controls" :duration="{enter: 420, leave: 420}">
-			<div v-if="hovered" class="pet-controls" :class="{resizing}">
+			<div v-if="controlsVisible" class="pet-controls" :class="{resizing}">
 				<!--左按钮组-->
 				<div class="btn-col btn-col-left">
 					<button class="pet-btn" :title="I18N.home" @mousedown.stop @click.stop="openMainView">
@@ -245,7 +253,13 @@ let stopWatchFn: (() => void) | null = null
 				</div>
 				<!--输入框-->
 				<form class="pet-input" @submit.prevent="sendMessage" @mousedown.stop>
-					<input v-model="inputText" type="text" placeholder="..."/>
+					<input
+						v-model="inputText"
+						type="text"
+						placeholder="..."
+						@focus="inputFocused = true"
+						@blur="inputFocused = false"
+					/>
 					<button class="pet-btn pet-btn-send" type="submit" :disabled="!inputText.trim()">
 						<Icon name="send" :size="14"/>
 					</button>

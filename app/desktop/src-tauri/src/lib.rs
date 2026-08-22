@@ -64,7 +64,7 @@ pub fn run() {
             commands::first_run::complete_first_run,
             commands::log::write_log,
             commands::language::get_system_language,
-            commands::llm::fetch_llm_models,
+            commands::llm::llm_http_request,
             commands::tts::tts_test_connection,
             commands::tts::tts_synthesize,
             commands::tts::tts_list_audio_files,
