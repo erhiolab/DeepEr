@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nori_bg">#0F172A</color>
+    <color name="nori_primary">#38BDF8</color>
+    <color name="nori_primary_dark">#6366F1</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>
