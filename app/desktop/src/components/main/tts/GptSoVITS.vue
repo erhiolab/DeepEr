@@ -4,19 +4,10 @@ import {invoke} from "@tauri-apps/api/core"
 import {open} from "@tauri-apps/plugin-dialog"
 import useLanguages from "../../../services/i18n/useLanguages.ts"
 import {logger} from "../../../services/logger"
-import {
-	buildBaseUrl,
-	buildTtsUrl,
-	buildParams,
-	defaultConfig,
-	GPT_SOVITS_LANGUAGES,
-	GPT_SOVITS_SPLIT_METHODS,
-	loadConfig,
-	saveConfig,
-	type GptSoVitsConfig,
-} from "../../../services/tts/gptsovits"
+import {defaultConfig, GPT_SOVITS_LANGUAGES, GPT_SOVITS_SPLIT_METHODS, loadConfig, saveConfig, type GptSoVitsConfig,} from "../../../services/tts/gptsovits"
 import {assetUrl} from "../../../services/asset.ts"
 import {useUnsavedGuard} from "../../../services/store/unsaved.ts"
+import {useTTSStore} from "../../../services/store/tts.ts"
 import Icon from "../../common/Icon.vue"
 import type {TTSVoiceEntry} from "../../../services/tts/types"
 
@@ -27,6 +18,9 @@ const TTS_I18N = computed(() => useLanguages().components.main.tts)
 const COMMON_I18N = computed(() => useLanguages().common.label)
 
 const GUARD = useUnsavedGuard()
+
+// TTS 统一状态入口 (合成 / 测试按激活适配器路由)
+const TTS_STORE = useTTSStore()
 
 // 配置
 const config = ref<GptSoVitsConfig>(defaultConfig())
@@ -41,6 +35,7 @@ const dirty = ref(false)
 onMounted(async () => {
 	config.value = await loadConfig()
 	loaded.value = true
+	await TTS_STORE.init()
 })
 
 // 标记修改
@@ -66,39 +61,30 @@ onBeforeUnmount(() => {
 })
 
 // 测试连接状态
-const testing = ref(false)
+const testing = computed(() => TTS_STORE.testing)
 
 // 测试连接结果
 const testResult = ref<{ ok: boolean; message: string } | null>(null)
 
-// 测试连接
+// 测试连接 (统一走 store, 由激活适配器按其协议测试)
 const testConnection = async () => {
-	testResult.value = null
-	testing.value = true
-	try {
-		// 报错说没参数, 这正是连接成功的证明
-		const URL = buildBaseUrl(config.value)
-		const STATUS = await invoke<number>("tts_test_connection", {url: URL})
-		testResult.value = classifyTtsStatus(STATUS)
-	} catch (error) {
-		// 网络层错误 (连接被拒/超时/DNS 失败) 才真正说明服务不可达
-		testResult.value = {ok: false, message: String(error)}
-		await logger.error("TTS 测试连接失败", error)
-	} finally {
-		testing.value = false
+	if (dirty.value) {
+		if (saving.value) return
+		const OK = await save()
+		if (!OK) return
 	}
-}
-
-// 判定服务状态: 「能拿到任意 HTTP 响应」即证明服务在线.
-// - 网络层错误 (无法连接/超时) 由上方 catch 捕获, 才是真正失败.
-// - 2xx/3xx: 正常.
-// - 408等客户端栈属正常; 404 是根路径无映射但服务健康 (TTS 端点 /tts 可用).
-// - 5xx (如 502): 服务在线但网关/反向代理异常, 给出提示.
-function classifyTtsStatus(status: number): { ok: boolean; message: string } {
-	if (status >= 200 && status < 400) return {ok: true, message: `${status}`}
-	if (status >= 500) return {ok: true, message: `${status} · ${TTS_I18N.value.gatewayHint}`}
-	// 4xx: HTTP 层面正常响应 (含根路径 404), 服务在线
-	return {ok: true, message: `${status} · ${TTS_I18N.value.endpointReachable}`}
+	testResult.value = null
+	const RESULT = await TTS_STORE.testConnection()
+	if (!RESULT) {
+		testResult.value = {ok: false, message: "未启用 TTS 适配器"}
+		return
+	}
+	if (RESULT.ok) {
+		const HINT = typeof RESULT.status === "number" && RESULT.status >= 500 ? TTS_I18N.value.gatewayHint : ""
+		testResult.value = {ok: true, message: HINT ? `${RESULT.status} · ${HINT}` : `${RESULT.status}`}
+	} else {
+		testResult.value = {ok: false, message: RESULT.error || "连接失败"}
+	}
 }
 
 // 情绪参考音频
@@ -272,8 +258,8 @@ const testText = ref("")
 // 测试情绪索引
 const testEmotionIndex = ref(-1)
 
-// 是否正在合成
-const synthesizing = ref(false)
+// 是否正在合成 (统一由 store 管理)
+const synthesizing = computed(() => TTS_STORE.synthesizing)
 
 // 合成的 asset 路径
 const synthAudio = ref("")
@@ -281,10 +267,13 @@ const synthAudio = ref("")
 // 合成错误
 const synthError = ref("")
 
-// 合成音频试听播放 (自定义播放器, 替代浏览器原生 <audio controls>)
+// 合成音频播放元素
 const synthAudioEl = ref<HTMLAudioElement | null>(null)
+
+// 是否正在播放合成音频
 const synthPlaying = ref(false)
 
+// 切换合成音频播放状态
 const toggleSynthPlay = () => {
 	const EL = synthAudioEl.value
 	if (!EL) return
@@ -380,36 +369,26 @@ const audioMime = (path: string): string => {
 // 是否可以合成
 const canSynthesize = computed(() => !!testText.value.trim() && testEmotionIndex.value >= 0 && config.value.emotions[testEmotionIndex.value]?.audioPath.trim())
 
-// 合成测试
+// 合成测试 (统一走 store, 由激活适配器按其协议合成)
 const synthesize = async () => {
 	if (!canSynthesize.value) return
 	synthAudio.value = ""
 	synthError.value = ""
 	synthPlaying.value = false
-	// 先保存: 若存在未保存修改, 先落库再合成, 保证按最新配置生成
 	if (dirty.value) {
 		if (saving.value) return
 		const OK = await save()
 		if (!OK) return
 	}
-	synthesizing.value = true
-	try {
-		const ENTRY = config.value.emotions[testEmotionIndex.value]
-		const PARAMS = buildParams(config.value, testText.value.trim(), ENTRY)
-		const RESULT = await invoke<{ assetPath: string }>("tts_synthesize", {
-			url: buildTtsUrl(config.value),
-			params: PARAMS,
-			extension: "wav",
-		})
-		synthAudio.value = assetUrl(RESULT.assetPath)
-	} catch (error) {
-		// invoke 抛出的字符串通常已包含后端返回的具体原因
-		// (如 GPT-SoVITS 的 "参考音频在3~10秒范围外，请更换！"), 直接透传给用户.
-		const REASON = typeof error === "string" && error.trim() ? error.trim() : ""
-		synthError.value = REASON || TTS_I18N.value.synthFail
-		await logger.error("TTS 合成失败", error)
-	} finally {
-		synthesizing.value = false
+	const VOICE = config.value.emotions[testEmotionIndex.value]?.name
+	const RESULT = await TTS_STORE.synthesize({
+		text: testText.value.trim(),
+		voice: VOICE,
+	})
+	if (RESULT.ok && RESULT.audioAssetPath) {
+		synthAudio.value = assetUrl(RESULT.audioAssetPath)
+	} else {
+		synthError.value = RESULT.error || TTS_I18N.value.synthFail
 	}
 }
 
@@ -419,7 +398,7 @@ const saving = ref(false)
 // 保存错误
 const saveError = ref("")
 
-// 保存配置; 返回是否保存成功
+// 保存配置, 返回是否保存成功
 const save = async (): Promise<boolean> => {
 	saving.value = true
 	saveError.value = ""
@@ -428,6 +407,7 @@ const save = async (): Promise<boolean> => {
 		config.value.batchSize = Math.max(1, normalizeInt(config.value.batchSize, 1))
 		await saveConfig(config.value)
 		dirty.value = false
+		void TTS_STORE.refreshVoices()
 		return true
 	} catch (error) {
 		saveError.value = String(error)
@@ -452,11 +432,7 @@ const normalizeInt = (value: number, fallback: number): number => {
 			<div class="gsp-row">
 				<label class="field grow">
 					<span class="field-label">{{ COMMON_I18N.url }}</span>
-					<input v-model="config.url" class="input" type="text" placeholder="127.0.0.1" spellcheck="false">
-				</label>
-				<label class="field port">
-					<span class="field-label">{{ COMMON_I18N.port }}</span>
-					<input v-model="config.port" class="input" type="text" placeholder="9880" spellcheck="false">
+					<input v-model="config.baseUrl" class="input" type="text" placeholder="http://127.0.0.1:9880" spellcheck="false">
 				</label>
 				<button class="btn test-btn" :disabled="testing" @click="testConnection">
 					<Icon v-if="testing" name="loading" class="spin" :size="14"/>
@@ -769,10 +745,6 @@ const normalizeInt = (value: number, fallback: number): number => {
 
 	.grow {
 		flex: 1;
-	}
-
-	.port {
-		width: 10rem;
 	}
 }
 

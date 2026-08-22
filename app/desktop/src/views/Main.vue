@@ -13,6 +13,7 @@ import Touch from "../components/main/Touch.vue"
 import About from "../components/firstRun/About.vue"
 import LanguageSelect from "../components/main/LanguageSelect.vue"
 import Exception from "../components/main/Exception.vue"
+import LLMAdapter from "../components/main/LLMAdapter.vue"
 import TTSAdapter from "../components/main/TTSAdapter.vue"
 
 const I18N = computed(() => useLanguages().views.main)
@@ -133,6 +134,7 @@ const goToPet = () => {
 					<ModelSelect v-else-if="activeNav === 'model'"/>
 					<Touch v-else-if="activeNav === 'touch'"/>
 
+					<LLMAdapter v-else-if="activeNav === 'llm'"/>
 					<TTSAdapter v-else-if="activeNav === 'tts'"/>
 
 					<LanguageSelect v-else-if="activeNav === 'language'"/>

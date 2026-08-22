@@ -16,7 +16,7 @@
 				"title": "澄渊",
 				"width": 300,
 				"height": 300,
-				"minWidth": 300,
+				"minWidth": 150,
 				"minHeight": 300,
 				"visible": false,
 				"resizable": true,

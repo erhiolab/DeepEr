@@ -15,7 +15,6 @@ export default () => {
 				redraw: t("common.label.redraw"),
 				browse: t("common.label.browse"),
 				url: t("common.label.url"),
-				port: t("common.label.port"),
 				test: t("common.label.test"),
 				topK: t("common.label.topK"),
 				topP: t("common.label.topP"),

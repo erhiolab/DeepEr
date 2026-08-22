@@ -30,7 +30,6 @@ export default {
 			cancel: "取消",
 			browse: "浏览",
 			url: "地址",
-			port: "端口",
 			test: "测试",
 			topK: "Top K",
 			topP: "Top P",
