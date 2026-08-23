@@ -8,10 +8,7 @@ use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_6;
 #[cfg(windows)]
 use windows::core::Interface;
 
-/// Opens the browser task manager window.
-///
-/// The WebView2 controller can only be touched from the webview (main) thread, so we
-/// run the actual call inside `with_webview` and wait for its result over a channel.
+
 #[tauri::command]
 pub fn open_task_manager(app: AppHandle) -> Result<(), String> {
     #[cfg(windows)]
