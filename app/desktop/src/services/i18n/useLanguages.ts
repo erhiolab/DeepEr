@@ -281,6 +281,7 @@ export default () => {
 					statusServerError: t("components.main.tts.statusServerError"),
 					statusClientError: t("components.main.tts.statusClientError"),
 					endpointReachable: t("components.main.tts.endpointReachable"),
+					statusNotFound: t("components.main.tts.statusNotFound"),
 					gatewayHint: t("components.main.tts.gatewayHint"),
 					paramsTitle: t("components.main.tts.paramsTitle"),
 					synthTitle: t("components.main.tts.synthTitle"),

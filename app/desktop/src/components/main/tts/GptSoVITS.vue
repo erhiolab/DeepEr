@@ -79,8 +79,14 @@ const testConnection = async () => {
 		return
 	}
 	if (RESULT.ok) {
-		const HINT = typeof RESULT.status === "number" && RESULT.status >= 500 ? TTS_I18N.value.gatewayHint : ""
-		testResult.value = {ok: true, message: HINT ? `${RESULT.status} · ${HINT}` : `${RESULT.status}`}
+		let hint = ""
+		if (typeof RESULT.status === "number") {
+			if (RESULT.status >= 500) hint = TTS_I18N.value.gatewayHint
+			else if (RESULT.status === 404) hint = TTS_I18N.value.statusNotFound
+			else if (RESULT.status >= 400) hint = TTS_I18N.value.statusClientError
+			else hint = TTS_I18N.value.endpointReachable
+		}
+		testResult.value = {ok: true, message: hint ? `${RESULT.status} · ${hint}` : `${RESULT.status}`}
 	} else {
 		testResult.value = {ok: false, message: RESULT.error || "连接失败"}
 	}

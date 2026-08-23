@@ -285,6 +285,7 @@ export default {
 				statusServerError: "服务端错误 (网关反向代理异常)",
 				statusClientError: "请求错误 (检查地址或端口)",
 				endpointReachable: "服务在线，TTS 端点可访问",
+				statusNotFound: "服务在线（根路径无接口，返回 404 属正常）",
 				gatewayHint: "服务在线，但网关/反向代理返回了异常",
 				paramsTitle: "采样参数",
 				synthTitle: "合成测试",
