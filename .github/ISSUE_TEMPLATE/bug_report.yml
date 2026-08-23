@@ -1,27 +1,27 @@
-name: 🐛 Bug Report
-description: Submit a bug to help us improve the project
+name: 🐛 Bug 报告 / Bug Report
+description: 提交发现的 Bug, 帮助我们改进项目 / Create a report to help us improve
 title: "[Bug]: "
 labels: ["bug", "triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        ## 中文 | English
         感谢你的反馈! 在提交之前, 请确保你已经搜索过现有的 Issue, 确认这是一个新问题. 
-        Thanks for your feedback! Before submitting, please make sure you have searched existing issues and confirmed this is a new one.
+        
+        Thanks for your feedback! Before submitting, please search existing issues to confirm this is a new problem.
 
   - type: dropdown
     id: os
     attributes:
       label: 操作系统 / Operating System
-      description: 你遇到 Bug 的操作系统是什么? / What OS did you encounter the bug on?
+      description: 你遇到 Bug 的操作系统是什么?  / Which operating system are you using?
       options:
         - Windows
         - macOS
         - Linux
         - iOS
         - Android
-        - 其他(请在下方说明)/ Other (please specify below)
+        - 其他 / Other (please specify below)
     validations:
       required: true
 
@@ -29,28 +29,28 @@ body:
     id: version
     attributes:
       label: 项目版本 / Project Version
-      description: 你使用的是哪个版本的项目? (例如: v1.2.0 或 commit hash)/ Which version of the project are you using? (e.g., v1.2.0 or commit hash)
+      description: 你使用的是哪个版本? (例如: v1.2.0 或 commit hash) / Which version are you using? (e.g., v1.2.0 or commit hash)
       placeholder: v1.0.0
     validations:
       required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: 浏览器 / Browser (如适用 / if applicable)
+      description: 如果是前端问题, 请提供浏览器及版本 / If this is a frontend issue, provide your browser and version
+      placeholder: Chrome 114.0, Firefox 115.0, Safari 16.5
 
   - type: textarea
     id: reproduce
     attributes:
       label: 复现步骤 / Steps to Reproduce
-      description: 请提供详细的步骤, 让我们能在本地重现这个问题. / Please provide detailed steps so we can reproduce this issue locally.
+      description: 请提供详细的步骤, 让我们能在本地重现这个问题 / Provide detailed steps so we can reproduce this locally
       placeholder: |
-        中文: 
-        1. 进入 '...' 页面
-        2. 点击 '....' 按钮
-        3. 滚动到 '....'
-        4. 看到报错
-
-        English:
-        1. Go to '...' page
-        2. Click on '....' button
-        3. Scroll to '....'
-        4. See error
+        1. 进入 '...' 页面 / Go to page '...'
+        2. 点击 '....' 按钮 / Click on button '....'
+        3. 滚动到 '....' / Scroll to '....'
+        4. 看到报错 / See the error
     validations:
       required: true
 
@@ -58,7 +58,8 @@ body:
     id: expected
     attributes:
       label: 期望的行为 / Expected Behavior
-      description: 你原本期望发生什么? / What did you expect to happen?
+      description: 你原本期望发生什么?  / What did you expect to happen?
+      placeholder: 描述你期望看到的结果 / Describe what you expected to see
     validations:
       required: true
 
@@ -66,23 +67,34 @@ body:
     id: actual
     attributes:
       label: 实际的行为 / Actual Behavior
-      description: 实际上发生了什么? (如果有报错日志, 请粘贴在这里)/ What actually happened? (If there are error logs, please paste them here)
+      description: 实际上发生了什么? (如果有报错日志, 请粘贴在这里) / What actually happened? (If there are error logs, paste them here)
+      placeholder: 描述实际发生的情况, 附上错误信息 / Describe what actually happened, include error messages
       render: shell
     validations:
       required: true
 
   - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / Screenshots
+      description: 如果适用, 添加截图以帮助解释你的问题 / If applicable, add screenshots to help explain your problem
+      placeholder: 你可以直接拖拽图片到这里 / You can drag and drop images here
+
+  - type: textarea
     id: extra
     attributes:
-      label: 附加信息 / Additional Information
-      description: 任何能帮助我们定位问题的额外上下文/截图或视频链接. / Any additional context, screenshots, or video links that could help us locate the issue.
+      label: 附加信息 / Additional Context
+      description: 任何能帮助我们定位问题的额外上下文 / Add any other context about the problem here
+      placeholder: 例如: 网络环境/特殊配置等 / e.g., network environment, special configurations
 
   - type: checkboxes
     id: terms
     attributes:
-      label: 确认事项 / Confirmation
+      label: 确认事项 / Acknowledgements
       options:
-        - label: 我已经搜索过现有的 Issue, 确认没有重复. / I have searched existing issues and confirmed this is not a duplicate.
+        - label: 我已经搜索过现有的 Issue, 确认没有重复 / I have searched existing issues and confirmed this is not a duplicate
           required: true
-        - label: 我已经阅读了项目的贡献指南 (CONTRIBUTING.md). / I have read the project's contribution guidelines (CONTRIBUTING.md).
+        - label: 我已经阅读了项目的贡献指南 / I have read the project's contributing guidelines
           required: true
+        - label: 我愿意协助解决这个问题(可选)/ I am willing to help resolve this issue (optional)
+          required: false
