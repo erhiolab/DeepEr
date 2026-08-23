@@ -1,14 +1,56 @@
-import {ref, computed} from "vue"
+import {computed, ref} from "vue"
 import {defineStore} from "pinia"
 import {invoke} from "@tauri-apps/api/core"
 import {init} from "l2d"
 import {logger} from "../logger"
 import {assetUrl} from "../asset.ts"
 import useLanguages from "../i18n/useLanguages.ts"
-import {useTouchStore, TAP_MAX_DISTANCE, SWIPE_MIN_DISTANCE, FRENZY_MIN_CLICKS, FRENZY_WINDOW_MS, type TouchType} from "./touch"
+import {
+	FRENZY_MIN_CLICKS,
+	FRENZY_WINDOW_MS,
+	SWIPE_MIN_DISTANCE,
+	TAP_MAX_DISTANCE,
+	type TouchArea,
+	type TouchType,
+	useTouchStore
+} from "./touch"
 
 // Live2D 实例类型
 type L2DInstance = ReturnType<typeof init>
+
+/**
+ * 模型渲染配置
+ */
+export interface ModelRenderConfig {
+	scale: number
+	posX: number
+	posY: number
+	rotation: number
+}
+
+/**
+ * 模型配置 (渲染 / 名称 / 封面 / 质量 / 触摸区域)
+ * 每个模型在模型目录下维护一份 `model.config.json`
+ */
+export interface ModelTouchConfig {
+	version: number
+	render: ModelRenderConfig
+	name: string
+	image: string
+	quality: number
+	touches: TouchArea[]
+}
+
+const defaultConfig = (): ModelTouchConfig => ({
+	version: 1,
+	render: {scale: 1.0, posX: 0.0, posY: 0.0, rotation: 0},
+	name: "",
+	image: "",
+	quality: 1.0,
+	touches: [],
+})
+
+const uid = () => `t-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
 /**
  * Live2D 模型状态管理
@@ -62,6 +104,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 	// 显示质量 (渲染倍率) 0.25 ~ 1.0
 	const modelQuality = ref<number>(1.0)
 
+	// 模型整体旋转角度 (度) 0 ~ 360
+	const modelRotation = ref<number>(0)
+
 	// 是否显示可触摸区域 (hit area) 边界调试覆盖层
 	const showHitAreas = ref(false)
 
@@ -83,6 +128,113 @@ export const useLive2DStore = defineStore("live2d", () => {
 	// 已安装模型的入口文件映射: 模型名 -> 入口文件相对路径 (如 "arg-nori.model3.json")
 	// 用于支持 Cubism2 (.model.json) 与 Cubism3 (.model3.json) 的加载
 	const modelEntryFiles = ref<Record<string, string>>({})
+
+	// 当前配置所属模型名 (与渲染/触摸数据保持一致)
+	const configModelName = ref<string | null>(null)
+
+	// 当前模型配置
+	const config = ref<ModelTouchConfig>(defaultConfig())
+
+	// 当前模型触摸区域
+	const touches = computed(() => config.value.touches)
+
+	// 当前模型渲染配置
+	const render = computed(() => config.value.render)
+
+	// 当前模型显示质量 (渲染倍率)
+	const quality = computed(() => config.value.quality)
+
+	// 读取模型的配置, 缺失回落默认
+	const loadConfig = async (name: string): Promise<void> => {
+		try {
+			const DATA = await invoke<ModelTouchConfig>("read_model_config", {name})
+			config.value = {
+				...defaultConfig(),
+				...DATA,
+				render: {...defaultConfig().render, ...DATA?.render},
+				quality: Number.isFinite(DATA?.quality) ? DATA!.quality : 1.0,
+				touches: Array.isArray(DATA?.touches) ? DATA.touches : [],
+			}
+			configModelName.value = name
+			await logger.info(`已加载模型配置: ${name}, touches=${config.value.touches.length}`)
+		} catch (err) {
+			await logger.error(`读取模型配置失败: ${name}`, err)
+		}
+	}
+
+	// 写回当前配置
+	const saveConfig = async (): Promise<boolean> => {
+		if (!configModelName.value) return false
+		try {
+			await invoke("write_model_config", {name: configModelName.value, config: config.value})
+			await logger.info(`已保存模型配置: ${configModelName.value}`)
+			return true
+		} catch (err) {
+			await logger.error("保存模型配置失败:", err)
+			return false
+		}
+	}
+
+	// 更新模型显示名称与封面图片 (基本信息) 并持久化
+	const updateNameImage = async (name: string, image: string) => {
+		config.value.name = name
+		config.value.image = image
+		await saveConfig()
+	}
+
+	// 添加一个触摸区域
+	const addTouch = async (data: Omit<TouchArea, "id" | "image" | "prompt">) => {
+		config.value.touches.push({
+			...data,
+			id: uid(),
+			image: "",
+			prompt: "",
+		})
+		await saveConfig()
+	}
+
+	// 更新一个触摸区域
+	const updateTouch = async (id: string, patch: Partial<TouchArea>) => {
+		config.value.touches = config.value.touches.map((t) =>
+			t.id === id ? {...t, ...patch} : t,
+		)
+		await saveConfig()
+	}
+
+	// 拖动中实时更新某个触摸区域的位置/尺寸 (仅改内存, 不落盘)
+	// 松手后再调用 `saveConfig` / `updateTouch` 持久化, 避免拖动过程中反复写盘
+	const moveTouch = (id: string, patch: Partial<Pick<TouchArea, "x" | "y">>) => {
+		config.value.touches = config.value.touches.map((t) => {
+			if (t.id !== id) return t
+			const next = {
+				...t,
+				...patch,
+			}
+			// 数值防御: 越界/非有限数兜底到合理值, 避免把区域"画没"
+			const fin = (v: number, d: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d)
+			next.x = fin(next.x, t.x)
+			next.y = fin(next.y, t.y)
+			return next
+		})
+	}
+
+	// 删除一个触摸区域
+	const removeTouch = async (id: string) => {
+		config.value.touches = config.value.touches.filter((t) => t.id !== id)
+		await saveConfig()
+	}
+
+	// 更新模型渲染配置并持久化
+	const setConfigRender = async (patch: Partial<ModelRenderConfig>) => {
+		config.value.render = {...config.value.render, ...patch}
+		await saveConfig()
+	}
+
+	// 更新模型显示质量 (渲染倍率) 并持久化
+	const setConfigQuality = async (quality: number) => {
+		config.value.quality = Math.min(1.0, Math.max(0.25, quality))
+		await saveConfig()
+	}
 
 	// 刷新已安装模型入口文件映射 (调用 list_resources)
 	const refreshInstalled = async (): Promise<void> => {
@@ -164,6 +316,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 	 * 应用显示质量 (渲染倍率) 到 canvas 布局
 	 * 低倍率时把 canvas 的 CSS 布局尺寸缩小为容器的 quality 倍, 并用 transform 放大回视觉铺满
 	 * 这样 l2d 内部的渲染分辨率 (跟随 canvas 布局尺寸) 相应下降, 从而降低 GPU/内存开销, 画面会变模糊
+	 * 同时叠加模型整体旋转: 以画布中心为轴 rotate 角度, 并等比缩放外接矩形, 保证旋转后完整可见不裁剪
 	 */
 	const applyRenderQuality = (): void => {
 		const CANVAS = canvasElement.value
@@ -173,21 +326,37 @@ export const useLive2DStore = defineStore("live2d", () => {
 		const H = HOST.clientHeight
 		if (!W || !H) return
 		const Q = Math.min(1.0, Math.max(0.25, modelQuality.value))
+		// 旋转角度 (0 ~ 360)
+		const R = Math.min(360, Math.max(0, modelRotation.value || 0))
+		const RAD = (R * Math.PI) / 180
+		// 旋转后外接矩形尺寸 (含溢出), 计算等比缩放使完整可见
+		const BW = Math.abs(W * Math.cos(RAD)) + Math.abs(H * Math.sin(RAD))
+		const BH = Math.abs(W * Math.sin(RAD)) + Math.abs(H * Math.cos(RAD))
+		const FIT = Math.min(1, W / (BW || 1), H / (BH || 1))
+		// 超过 180° 时水平镜像: 旋转半圈后模型左右颠倒 (鼠标在左模型却看右),
+		// 叠加 scaleX(-1) 让模型保持合理朝向; 水平翻转不改变外接矩形, FIT 无需重算
+		const MIRROR = R > 180 ? " scaleX(-1)" : ""
+		const ROT = R ? ` rotate(${R}deg)` : ""
+		const FIT_S = FIT < 0.999 ? ` scale(${FIT})` : ""
 		if (Q >= 1 || Math.abs(Q - 1) < 0.001) {
-			// 全分辨率: 还原为普通布局铺满容器
+			// 全分辨率 + 旋转
+			CANVAS.style.transformOrigin = "center center"
 			CANVAS.style.position = ""
 			CANVAS.style.left = ""
 			CANVAS.style.top = ""
 			CANVAS.style.width = "100%"
 			CANVAS.style.height = "100%"
-			CANVAS.style.transform = ""
+			CANVAS.style.transform = `${ROT}${FIT_S}${MIRROR}`
 		} else {
+			// 降分辨率: 居中 + 放大回视觉尺寸 + 旋转
+			CANVAS.style.transformOrigin = "center center"
 			CANVAS.style.position = "absolute"
 			CANVAS.style.left = "50%"
 			CANVAS.style.top = "50%"
 			CANVAS.style.width = `${Math.round(W * Q)}px`
 			CANVAS.style.height = `${Math.round(H * Q)}px`
-			CANVAS.style.transform = `translate(-50%, -50%) scale(${1 / Q})`
+			const TOTAL = (1 / Q) * FIT
+			CANVAS.style.transform = ROT ? `translate(-50%, -50%)${ROT} scale(${TOTAL})${MIRROR}` : `translate(-50%, -50%) scale(${TOTAL})${MIRROR}`
 		}
 	}
 
@@ -290,18 +459,18 @@ export const useLive2DStore = defineStore("live2d", () => {
 	const applyModelTransform = async () => {
 		if (!l2dInstance.value) return
 		try {
-			const TOUCH = useTouchStore()
-			// 确保已加载当前模型的触摸配置
-			if (TOUCH.modelName !== currentModel.value) {
+			// 确保已加载当前模型的配置
+			if (configModelName.value !== currentModel.value) {
 				if (currentModel.value) {
-					await TOUCH.load(currentModel.value)
+					await loadConfig(currentModel.value)
 				}
 			}
-			const R = TOUCH.render
+			const R = render.value
 			modelScale.value = R.scale || 1.0
 			modelX.value = R.posX || 0.0
 			modelY.value = R.posY || 0.0
-			modelQuality.value = Number.isFinite(TOUCH.quality) ? TOUCH.quality : 1.0
+			modelRotation.value = Math.min(360, Math.max(0, R.rotation || 0))
+			modelQuality.value = Number.isFinite(quality.value) ? quality.value : 1.0
 			l2dInstance.value.setScale(modelScale.value)
 			l2dInstance.value.setPosition(modelX.value, modelY.value)
 			applyRenderQuality()
@@ -366,7 +535,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		modelScale.value = scale
 		l2dInstance.value.setScale(scale)
 		// 渲染配置写入模型级配置文件 (随模型一起保存), 不再写全局数据库
-		await useTouchStore().setRender({scale})
+		await setConfigRender({scale})
 	}
 
 	/**
@@ -378,7 +547,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		modelY.value = y
 		l2dInstance.value.setPosition(x, y)
 		try {
-			await useTouchStore().setRender({posX: x, posY: y})
+			await setConfigRender({posX: x, posY: y})
 		} catch (err) {
 			await logger.error("保存模型位置配置失败:", err)
 		}
@@ -392,7 +561,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		const Q = Math.min(1.0, Math.max(0.25, quality))
 		modelQuality.value = Q
 		applyRenderQuality()
-		await useTouchStore().setQuality(Q)
+		await setConfigQuality(Q)
 	}
 
 	/**
@@ -401,6 +570,27 @@ export const useLive2DStore = defineStore("live2d", () => {
 	 */
 	const previewQuality = (quality: number): void => {
 		modelQuality.value = Math.min(1.0, Math.max(0.25, quality))
+		applyRenderQuality()
+	}
+
+	/**
+	 * 设置模型整体旋转角度 (渲染倍率 0 ~ 360) 并保存配置
+	 * @param rotation 角度 (度), 0 ~ 360
+	 */
+	const setModelRotation = async (rotation: number) => {
+		const R = Math.min(360, Math.max(0, rotation))
+		modelRotation.value = R
+		applyRenderQuality()
+		await setConfigRender({rotation: R})
+	}
+
+	/**
+	 * 实时预览模型整体旋转角度 (渲染倍率 0 ~ 360), 不落盘
+	 * 供配置页拖动滑块时即时预览, 松手后再调用 setModelRotation 持久化
+	 * @param rotation 角度 (度), 0 ~ 360
+	 */
+	const previewRotation = (rotation: number): void => {
+		modelRotation.value = Math.min(360, Math.max(0, rotation))
 		applyRenderQuality()
 	}
 
@@ -460,7 +650,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 	 */
 	const dispatchTouch = async (type: TouchType, x: number, y: number) => {
 		const TOUCH = useTouchStore()
-		for (const AREA of TOUCH.touches) {
+		for (const AREA of touches.value) {
 			if (AREA.type !== type) continue
 			if (hitTouchArea(x, y, AREA.x, AREA.y, AREA.w, AREA.h)) {
 				await TOUCH.trigger(AREA)
@@ -507,7 +697,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		// 狂点: 命中任意 frenzy 区域且窗口期内连续点击达到次数 → 触发
 		const TOUCH = useTouchStore()
 		let frenzyFired = false
-		for (const AREA of TOUCH.touches) {
+		for (const AREA of touches.value) {
 			if (AREA.type !== "frenzy") continue
 			if (!hitTouchArea(P.x, P.y, AREA.x, AREA.y, AREA.w, AREA.h)) continue
 			const S = frenzyState.get(AREA.id)
@@ -611,8 +801,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 			overlayCtx.fillText(B.name, X + 4, Y + 14)
 		}
 		// 叠加绘制用户自定义触摸区域 (蓝色)
-		const TOUCH = useTouchStore()
-		for (const T of TOUCH.touches) {
+		for (const T of touches.value) {
 			const X = T.x * W
 			const Y = T.y * H
 			const BW = T.w * W
@@ -688,9 +877,13 @@ export const useLive2DStore = defineStore("live2d", () => {
 		currentModel.value = null
 		isInitialized.value = false
 		modelQuality.value = 1.0
+		modelRotation.value = 0
 		loadedFiles.value = 0
 		totalFiles.value = 0
 		error.value = null
+		// 清空模型级配置与触摸状态
+		config.value = defaultConfig()
+		configModelName.value = null
 	}
 
 	/**
@@ -717,6 +910,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		modelX,
 		modelY,
 		modelQuality,
+		modelRotation,
 
 		// 可触摸区域显示状态
 		showHitAreas,
@@ -739,6 +933,24 @@ export const useLive2DStore = defineStore("live2d", () => {
 		setModelPosition,
 		setModelQuality,
 		previewQuality,
+		setModelRotation,
+		previewRotation,
 		setShowHitAreas,
+
+		// 模型级配置 (l2d 统一持有 model.config.json)
+		config,
+		configModelName,
+		touches,
+		render,
+		quality,
+		loadConfig,
+		saveConfig,
+		updateNameImage,
+		addTouch,
+		updateTouch,
+		moveTouch,
+		removeTouch,
+		setConfigRender,
+		setConfigQuality,
 	}
 })

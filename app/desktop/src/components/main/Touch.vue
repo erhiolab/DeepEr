@@ -3,15 +3,13 @@ import {computed, onMounted, onBeforeUnmount, ref, watch} from "vue"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {logger} from "../../services/logger"
 import {useLive2DStore} from "../../services/store/live2d.ts"
-import {useTouchStore, type TouchArea, type TouchType} from "../../services/store/touch.ts"
+import type {TouchArea, TouchType} from "../../services/store/touch.ts"
 import Icon from "../common/Icon.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 
 const I18N = computed(() => useLanguages().components.main.touch)
 
 const L2D = useLive2DStore()
-
-const TOUCH = useTouchStore()
 
 // 触摸区域画布
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -108,8 +106,8 @@ const contains = (p: { x: number, y: number }, t: {
 
 // 查找触摸点所属触摸触摸区域
 const hit = (p: { x: number, y: number }) => {
-	for (let i = TOUCH.touches.length - 1; i >= 0; i--) {
-		const T = TOUCH.touches[i]
+	for (let i = L2D.touches.length - 1; i >= 0; i--) {
+		const T = L2D.touches[i]
 		if (contains(p, T)) return T
 	}
 	return null
@@ -169,9 +167,9 @@ const move = (e: PointerEvent) => {
 			return
 		}
 		if (movingId) {
-			const T = TOUCH.touches.find(v => v.id === movingId)
+			const T = L2D.touches.find(v => v.id === movingId)
 			if (!T) return
-			TOUCH.moveTouch(T.id, {
+			L2D.moveTouch(T.id, {
 				x: Math.max(0, Math.min(1 - T.w, origin.x + P.x - start.x)),
 				y: Math.max(0, Math.min(1 - T.h, origin.y + P.y - start.y))
 			})
@@ -194,7 +192,7 @@ const up = async (e: PointerEvent) => {
 	const EL = e.currentTarget as HTMLElement
 	if (EL.hasPointerCapture(e.pointerId)) EL.releasePointerCapture(e.pointerId)
 	if (mode === "move") {
-		if (movingId) await TOUCH.save()
+		if (movingId) await L2D.saveConfig()
 		resetPointer()
 		return
 	}
@@ -213,7 +211,7 @@ const up = async (e: PointerEvent) => {
 				h: draft.value.h
 			}
 		} else {
-			editName.value = I18N.value.defaultName(TOUCH.touches.length + 1)
+			editName.value = I18N.value.defaultName(L2D.touches.length + 1)
 			editType.value = "tap"
 			editPrompt.value = ""
 			editing.value = {
@@ -278,7 +276,7 @@ const confirmEdit = async () => {
 	if (!editing.value) return
 	const NAME = editName.value.trim() || I18N.value.untitled
 	if (editingIndex.value < 0) {
-		await TOUCH.addTouch({
+		await L2D.addTouch({
 			name: NAME,
 			type: editType.value,
 			x: editing.value.x,
@@ -288,7 +286,7 @@ const confirmEdit = async () => {
 		})
 		await logger.info(`添加触摸区域: ${NAME}`)
 	} else {
-		await TOUCH.updateTouch(editing.value.id, {
+		await L2D.updateTouch(editing.value.id, {
 			name: NAME,
 			type: editType.value,
 			prompt: editPrompt.value
@@ -328,7 +326,7 @@ const doRemove = async () => {
 	pendingRemove.value = null
 	showRemoveConfirm.value = false
 	if (!T) return
-	await TOUCH.removeTouch(T.id)
+	await L2D.removeTouch(T.id)
 	await logger.info(`删除触摸区域: ${T.name}`)
 }
 
@@ -341,7 +339,7 @@ onBeforeUnmount(() => {
 })
 
 watch(() => L2D.currentModel, async m => {
-	if (m) await TOUCH.load(m)
+	if (m) await L2D.loadConfig(m)
 }, {immediate: true})
 </script>
 
@@ -368,7 +366,7 @@ watch(() => L2D.currentModel, async m => {
 				>
 					<canvas ref="canvas" class="touch-model-preview"/>
 					<div
-						v-for="t in TOUCH.touches"
+						v-for="t in L2D.touches"
 						:key="t.id"
 						class="touch-box saved"
 						:class="t.type"
@@ -383,8 +381,8 @@ watch(() => L2D.currentModel, async m => {
 				</div>
 			</div>
 			<aside class="touch-right">
-				<ul v-if="TOUCH.touches.length" class="touch-list">
-					<li v-for="(t, i) in TOUCH.touches" :key="t.id" class="touch-item">
+				<ul v-if="L2D.touches.length" class="touch-list">
+					<li v-for="(t, i) in L2D.touches" :key="t.id" class="touch-item">
 						<span class="touch-item-type" :class="t.type">
 							{{t.type === "tap" ? I18N.typeTap : t.type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy}}
 						</span>

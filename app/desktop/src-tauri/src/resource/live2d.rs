@@ -25,6 +25,9 @@ pub struct ModelRenderConfig {
     /// Y 轴偏移 -2 ~ 2
     #[serde(default)]
     pub pos_y: f64,
+    /// 模型整体旋转角度 (度) 0 ~ 360
+    #[serde(default)]
+    pub rotation: f64,
 }
 
 impl Default for ModelRenderConfig {
@@ -33,6 +36,7 @@ impl Default for ModelRenderConfig {
             scale: default_scale(),
             pos_x: 0.0,
             pos_y: 0.0,
+            rotation: 0.0,
         }
     }
 }

@@ -122,7 +122,6 @@ const switchNav = async (key: NavKey) => {
 	const TARGET_INDEX = ALL_NAV_ITEMS.value.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
 	activeNav.value = key
-	console.log(direction.value, activeNav.value)
 	// 离开模型导航时关闭配置页回到模型列表
 	if (key !== "model") configModelId.value = null
 	await config.set("main_active_nav", key)

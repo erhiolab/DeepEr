@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
 import {invoke} from "@tauri-apps/api/core"
-import {open, save} from "@tauri-apps/plugin-dialog"
+import {open} from "@tauri-apps/plugin-dialog"
 import {toast} from "vue3-toastify"
 import {logger} from "../../services/logger"
 import {config} from "../../services/config"
@@ -45,7 +45,6 @@ const displayOfficialModels = computed<Live2dModel[]>(() => {
 interface CustomModel {
 	id: string
 	image?: string
-	/** 显示名称 (来自模型配置顶层 name, 后端已回落为模型目录名/id) */
 	name: string
 }
 
@@ -424,59 +423,6 @@ watch(() => IMPORT.state.step, (step) => {
 	}
 })
 
-// 当前选中模型的显示名称 (用于导出文件名; 找不到时回落模型 id)
-const selectedModelName = computed(() => {
-	const id = selected.value
-	if (!id) return ""
-	return customAll.value.find(m => m.id === id)?.name || id
-})
-
-// 导出当前选中模型的配置文件
-const handleExportConfig = async (): Promise<void> => {
-	if (!selected.value) return
-	const ID = selected.value
-	// 导出文件名默认用模型显示名称 (用模型名称命名), 无显示名时回落 id
-	const BASE = selectedModelName.value || ID
-	const TARGET = await save({
-		title: I18N.value.exportConfig,
-		defaultPath: `${BASE}.config.json`,
-		filters: [{name: "DeepEr 模型配置", extensions: ["json"]}],
-	})
-	if (!TARGET) return
-	try {
-		await invoke("export_model_config", {name: ID, targetPath: TARGET})
-		toast.success(I18N.value.exportConfigDone)
-		await logger.info(`导出模型配置: ${ID} -> ${TARGET}`)
-	} catch (error) {
-		await logger.error("导出模型配置失败:", error)
-		toast.error(I18N.value.exportConfigFailed)
-	}
-}
-
-// 导入配置文件到当前选中模型 (导入后写为 model.config.json)
-const handleImportConfig = async (): Promise<void> => {
-	if (!selected.value) return
-	const ID = selected.value
-	const SOURCE = await open({
-		multiple: false,
-		directory: false,
-		title: I18N.value.importConfig,
-		filters: [{name: "DeepEr 模型配置", extensions: ["json"]}],
-	})
-	if (!SOURCE) return
-	const PATH = Array.isArray(SOURCE) ? SOURCE[0] : SOURCE
-	try {
-		await invoke("import_model_config", {name: ID, sourcePath: PATH})
-		toast.success(I18N.value.importConfigDone)
-		await logger.info(`导入模型配置: ${ID} <- ${PATH}`)
-		// 导入可能改了显示名/图标, 刷新列表
-		await loadInstalled()
-	} catch (error) {
-		await logger.error("导入模型配置失败:", error)
-		toast.error(I18N.value.importConfigFailed)
-	}
-}
-
 onBeforeUnmount(() => {
 	DOWNLOAD.stop()
 	IMPORT.stop()
@@ -611,12 +557,6 @@ onBeforeUnmount(() => {
 				</button>
 				<button v-if="selectedInstalled" class="bar-btn danger" @click.stop="handleDelete">
 					{{ I18N.delete }}
-				</button>
-				<button v-if="selectedInstalled" class="bar-btn" @click.stop="handleExportConfig">
-					{{ I18N.exportConfig }}
-				</button>
-				<button v-if="selectedInstalled" class="bar-btn" @click.stop="handleImportConfig">
-					{{ I18N.importConfig }}
 				</button>
 				<button v-if="selectedInstalled" class="bar-btn" @click.stop="emit('configure', selected!)">
 					{{ I18N.configure }}

@@ -170,6 +170,13 @@ const toggleResize = async () => {
 	}
 }
 
+// 按下 ESC 退出调整/移动模式
+const onKeydown = (event: KeyboardEvent) => {
+	if (event.key !== "Escape") return
+	if (!resizing.value) return
+	void toggleResize()
+}
+
 // 四角开始调整大小 (Tauri 原生对角缩放, 系统接管拖拽, 自由比例)
 const onCornerMouseDown = (event: MouseEvent, direction: ResizeDirection) => {
 	event.preventDefault()
@@ -199,6 +206,8 @@ onMounted(async () => {
 	window.addEventListener("resize", onWindowResize)
 	// 注册窗口移动/缩放监听, 结束操作后防抖保存窗口大小与位置
 	stopWatchFn = await watchWindowState()
+	// 按 ESC 退出调整/移动模式
+	window.addEventListener("keydown", onKeydown)
 	// 进入桌宠即保存一次, 确保首次有数据落库
 	await persistWindowState(0)
 })
@@ -206,6 +215,8 @@ onMounted(async () => {
 onUnmounted(() => {
 	// 注销窗口监听
 	if (stopWatchFn) stopWatchFn()
+	// 移除 ESC 按键监听
+	window.removeEventListener("keydown", onKeydown)
 	// 移除窗口大小监听
 	window.removeEventListener("resize", onWindowResize)
 	// 清理气泡定时器

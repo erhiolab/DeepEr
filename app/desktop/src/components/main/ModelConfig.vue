@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import {computed, onBeforeUnmount, onMounted, ref} from "vue"
 import {invoke} from "@tauri-apps/api/core"
-import {open} from "@tauri-apps/plugin-dialog"
+import {open, save} from "@tauri-apps/plugin-dialog"
 import {logger} from "../../services/logger"
 import {assetUrl} from "../../services/asset"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
-import {useTouchStore} from "../../services/store/touch.ts"
 import {useUnsavedGuard} from "../../services/store/unsaved.ts"
 import Icon from "../common/Icon.vue"
 
@@ -17,8 +16,6 @@ const emit = defineEmits<{(e: "close"): void}>()
 const I18N = computed(() => useLanguages().components.main.modelConfig)
 
 const L2D = useLive2DStore()
-
-const TOUCH = useTouchStore()
 
 const GUARD = useUnsavedGuard()
 
@@ -40,6 +37,9 @@ const draftPosX = ref(0.0)
 // 草稿: 模型在画布上的 Y 坐标
 const draftPosY = ref(0.0)
 
+// 草稿: 模型整体旋转角度 (度)
+const draftRotation = ref(0.0)
+
 // 草稿: 模型质量
 const draftQuality = ref(1.0)
 
@@ -51,6 +51,7 @@ const initial = ref({
 	scale: 1.0,
 	posX: 0.0,
 	posY: 0.0,
+	rotation: 0.0,
 	quality: 1.0,
 })
 
@@ -61,6 +62,7 @@ const hasUnsaved = computed(() =>
 	Math.abs(draftScale.value - initial.value.scale) > 1e-6 ||
 	Math.abs(draftPosX.value - initial.value.posX) > 1e-6 ||
 	Math.abs(draftPosY.value - initial.value.posY) > 1e-6 ||
+	Math.abs(draftRotation.value - initial.value.rotation) > 1e-6 ||
 	Math.abs(draftQuality.value - initial.value.quality) > 1e-6
 )
 
@@ -74,14 +76,15 @@ const ensureModel = async () => {
 	}
 }
 
-// 从 TOUCH 配置提取快照对象 (进入时的初始状态用)
+// 从 L2D 配置提取快照对象 (进入时的初始状态用)
 const snapshotFromConfig = () => ({
-	name: TOUCH.config.name,
-	image: TOUCH.config.image,
-	scale: TOUCH.config.render.scale || 1.0,
-	posX: TOUCH.config.render.posX || 0.0,
-	posY: TOUCH.config.render.posY || 0.0,
-	quality: Number.isFinite(TOUCH.quality) ? TOUCH.quality : 1.0,
+	name: L2D.config.name,
+	image: L2D.config.image,
+	scale: L2D.config.render.scale || 1.0,
+	posX: L2D.config.render.posX || 0.0,
+	posY: L2D.config.render.posY || 0.0,
+	rotation: L2D.config.render.rotation || 0.0,
+	quality: Number.isFinite(L2D.quality) ? L2D.quality : 1.0,
 })
 
 // 从 store 配置装载草稿
@@ -92,13 +95,14 @@ const syncFromConfig = () => {
 	draftScale.value = S.scale
 	draftPosX.value = S.posX
 	draftPosY.value = S.posY
+	draftRotation.value = S.rotation
 	draftQuality.value = S.quality
 }
 
 // 从 store 配置装载草稿 (进入时)
 const loadDraft = async () => {
-	if (TOUCH.modelName !== currentId.value) {
-		await TOUCH.load(currentId.value)
+	if (L2D.configModelName !== currentId.value) {
+		await L2D.loadConfig(currentId.value)
 	}
 	syncFromConfig()
 	// 记录进入配置页时的初始快照 (用于未保存改动回滚画布)
@@ -111,6 +115,7 @@ const loadDraft = async () => {
 const applyToCanvas = () => {
 	L2D.l2dInstance?.setScale(draftScale.value)
 	L2D.l2dInstance?.setPosition(draftPosX.value, draftPosY.value)
+	L2D.previewRotation(draftRotation.value)
 	L2D.previewQuality(draftQuality.value)
 }
 
@@ -119,6 +124,9 @@ const onScaleInput = () => applyToCanvas()
 
 // 滑块事件: 拖动时实时预览, 值随 v-model 更新
 const onPosInput = () => applyToCanvas()
+
+// 滑块事件: 拖动时实时预览, 值随 v-model 更新
+const onRotationInput = () => applyToCanvas()
 
 // 滑块事件: 拖动时实时预览, 值随 v-model 更新
 const onQualityInput = () => applyToCanvas()
@@ -164,11 +172,11 @@ const pickCover = async () => {
 
 // 一次保存全部字段 (名称/封面/渲染/质量), 不退出. 成功更新初始快照, 返回是否成功
 const coreSave = async (): Promise<boolean> => {
-	TOUCH.config.name = draftName.value.trim()
-	TOUCH.config.image = draftImage.value
-	TOUCH.config.render = {scale: draftScale.value, posX: draftPosX.value, posY: draftPosY.value}
-	TOUCH.config.quality = draftQuality.value
-	const OK = await TOUCH.save()
+	L2D.config.name = draftName.value.trim()
+	L2D.config.image = draftImage.value
+	L2D.config.render = {scale: draftScale.value, posX: draftPosX.value, posY: draftPosY.value, rotation: draftRotation.value}
+	L2D.config.quality = draftQuality.value
+	const OK = await L2D.saveConfig()
 	if (OK) {
 		initial.value = {...snapshotFromConfig()}
 		await logger.info(`保存模型配置: ${currentId.value}`)
@@ -185,6 +193,58 @@ const saveAndExit = async () => {
 	emit("close")
 }
 
+// 导入/导出配置的页面状态提示 (success: 主题色, error: 红色)
+const importExportMsg = ref<{isError: boolean; text: string} | null>(null)
+
+// 导出当前模型的配置文件 (.config.json)
+const handleExportConfig = async (): Promise<void> => {
+	// 清除上次状态
+	importExportMsg.value = null
+	// 先落一次当前草稿, 保证导出的是最新配置
+	await coreSave()
+	const TARGET = await save({
+		title: I18N.value.exportConfig,
+		defaultPath: `${currentId.value}.config.json`,
+		filters: [{name: "DeepEr 模型配置", extensions: ["json"]}],
+	})
+	if (!TARGET) return
+	try {
+		await invoke("export_model_config", {name: currentId.value, targetPath: TARGET})
+		importExportMsg.value = {isError: false, text: I18N.value.exportConfigDone}
+		await logger.info(`导出模型配置: ${currentId.value} -> ${TARGET}`)
+	} catch (error) {
+		await logger.error("导出模型配置失败:", error)
+		importExportMsg.value = {isError: true, text: I18N.value.exportConfigFailed}
+	}
+}
+
+// 从配置文件恢复当前模型的配置 (导入后重载草稿并刷新画布预览)
+const handleImportConfig = async (): Promise<void> => {
+	// 清除上次状态
+	importExportMsg.value = null
+	const SOURCE = await open({
+		multiple: false,
+		directory: false,
+		title: I18N.value.importConfig,
+		filters: [{name: "DeepEr 模型配置", extensions: ["json"]}],
+	})
+	if (!SOURCE) return
+	const PATH = Array.isArray(SOURCE) ? SOURCE[0] : SOURCE
+	try {
+		await invoke("import_model_config", {name: currentId.value, sourcePath: PATH})
+		importExportMsg.value = {isError: false, text: I18N.value.importConfigDone}
+		await logger.info(`导入模型配置: ${currentId.value} <- ${PATH}`)
+		await L2D.loadConfig(currentId.value)
+		syncFromConfig()
+		applyToCanvas()
+		// 刷新"未保存改动"基准, 避免导入后误判存在改动
+		initial.value = {...snapshotFromConfig()}
+	} catch (error) {
+		await logger.error("导入模型配置失败:", error)
+		importExportMsg.value = {isError: true, text: I18N.value.importConfigFailed}
+	}
+}
+
 // 放弃未保存改动: 草稿与画布都恢复到进入配置页时的状态 (模型立即复原清晰)
 const rollback = () => {
 	const S = initial.value
@@ -193,6 +253,7 @@ const rollback = () => {
 	draftScale.value = S.scale
 	draftPosX.value = S.posX
 	draftPosY.value = S.posY
+	draftRotation.value = S.rotation
 	draftQuality.value = S.quality
 	applyToCanvas()
 }
@@ -221,6 +282,7 @@ onBeforeUnmount(() => {
 		// 仅在确有未保存改动时回滚画布
 		L2D.l2dInstance?.setScale(initial.value.scale)
 		L2D.l2dInstance?.setPosition(initial.value.posX, initial.value.posY)
+		L2D.previewRotation(initial.value.rotation)
 		L2D.previewQuality(initial.value.quality)
 	}
 })
@@ -232,6 +294,7 @@ const resetAll = async () => {
 	draftScale.value = 1.0
 	draftPosX.value = 0.0
 	draftPosY.value = 0.0
+	draftRotation.value = 0.0
 	draftQuality.value = 1.0
 	applyToCanvas()
 	await coreSave()
@@ -257,6 +320,14 @@ onMounted(async () => {
 				<span class="cfg-model-tag">{{ currentId }}</span>
 			</div>
 			<div class="cfg-top-right">
+				<button class="top-btn ghost" :title="I18N.exportConfig" @click="handleExportConfig">
+					<Icon name="folder" :size="15"/>
+					<span>{{ I18N.exportConfig }}</span>
+				</button>
+				<button class="top-btn ghost" :title="I18N.importConfig" @click="handleImportConfig">
+					<Icon name="import" :size="15"/>
+					<span>{{ I18N.importConfig }}</span>
+				</button>
 				<button class="top-btn ghost" @click="resetAll">
 					<Icon name="refresh" :size="15"/>
 					<span>{{ I18N.reset }}</span>
@@ -267,6 +338,9 @@ onMounted(async () => {
 				</button>
 			</div>
 		</header>
+		<div v-if="importExportMsg" class="cfg-status" :class="{error: importExportMsg.isError}">
+			{{ importExportMsg.text }}
+		</div>
 		<div class="cfg-sheet">
 			<!-- 外观 -->
 			<section class="card">
@@ -345,6 +419,30 @@ onMounted(async () => {
 							:style="rangeStyle(-2, 2, draftPosY)"
 							@input="onPosInput"
 						/>
+					</div>
+					<div class="slider-field">
+						<div class="slider-meta">
+							<span class="slider-name">{{ I18N.rotation }}</span>
+							<span class="slider-val">{{ draftRotation.toFixed(0) }}°</span>
+						</div>
+						<input
+							v-model.number="draftRotation"
+							class="range" type="range" min="0" max="360" step="1"
+							:style="rangeStyle(0, 360, draftRotation)"
+							@input="onRotationInput"
+						/>
+						<div class="rot-ticks">
+							<span
+								v-for="r in [0, 90, 180, 270]"
+								:key="r"
+								class="rot-tick"
+								:class="{active: Math.round(draftRotation) === r}"
+								:style="{left: `${(r / 360) * 100}%`}"
+							>
+								<i class="rot-tick-line"/>
+								<b class="rot-tick-label">{{ r }}</b>
+							</span>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -481,6 +579,24 @@ onMounted(async () => {
 		&:hover {
 			box-shadow: 0 0 1.6rem var(--glow-teal-soft);
 		}
+	}
+}
+
+.cfg-status {
+	margin-top: -0.3rem;
+	padding: 0.45rem 0.9rem;
+	width: max-content;
+	flex-shrink: 0;
+	font-size: 1.1rem;
+	border-radius: var(--radius-sm);
+	color: var(--deep-teal-bright);
+	background-color: rgba(125, 227, 255, 0.1);
+	border: 0.1rem solid rgba(125, 227, 255, 0.25);
+
+	&.error {
+		color: var(--danger);
+		background-color: rgba(251, 44, 54, 0.12);
+		border-color: rgba(251, 44, 54, 0.35);
 	}
 }
 
@@ -733,6 +849,44 @@ onMounted(async () => {
 			height: 0.5rem;
 			border-radius: 99.9rem;
 			background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
+		}
+	}
+
+	.rot-ticks {
+		position: relative;
+		margin-top: 0.45rem;
+		height: 0.45rem;
+
+		.rot-tick {
+			position: absolute;
+			top: 0;
+			transform: translateX(-50%);
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 0.15rem;
+			color: var(--text-faint);
+
+			.rot-tick-line {
+				width: 0.1rem;
+				height: 0.35rem;
+				background-color: var(--line-strong);
+			}
+
+			.rot-tick-label {
+				font-size: 0.85rem;
+				font-weight: 500;
+				line-height: 1;
+			}
+
+			&.active {
+				color: var(--deep-teal-bright);
+
+				.rot-tick-line {
+					height: 0.5rem;
+					background-color: var(--deep-teal-bright);
+				}
+			}
 		}
 	}
 }

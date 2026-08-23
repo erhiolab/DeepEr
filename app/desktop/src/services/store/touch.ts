@@ -1,9 +1,9 @@
 import {computed, ref} from "vue"
 import {defineStore} from "pinia"
-import {invoke} from "@tauri-apps/api/core"
 import {emit} from "@tauri-apps/api/event"
 import {logger} from "../logger"
 import useLanguages from "../i18n/useLanguages.ts"
+import {useLive2DStore} from "./live2d"
 
 /**
  * 触摸区域类型
@@ -23,27 +23,6 @@ export interface TouchArea {
 	h: number
 	image: string
 	prompt: string
-}
-
-/**
- * 模型渲染配置
- */
-export interface ModelRenderConfig {
-	scale: number
-	posX: number
-	posY: number
-}
-
-/**
- * 模型触摸配置
- */
-export interface ModelTouchConfig {
-	version: number
-	render: ModelRenderConfig
-	name: string
-	image: string
-	quality: number
-	touches: TouchArea[]
 }
 
 /**
@@ -70,43 +49,13 @@ export const FRENZY_MIN_CLICKS = 3
  */
 export const FRENZY_WINDOW_MS = 1200
 
-// 默认触摸配置
-const defaultConfig = (): ModelTouchConfig => ({
-	version: 1,
-	render: {scale: 1.0, posX: 0.0, posY: 0.0},
-	name: "",
-	image: "",
-	quality: 1.0,
-	touches: [],
-})
-
-const uid = () => `t-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-
 /**
- * 模型触摸配置 store
- * 每个模型在模型目录下维护一份 `model.config.json`, 数据库不再保存模型渲染信息
+ * 触摸行为 store
+ * 只负责触摸触发行为 (锁定 / 触发事件), 触摸区域数据与模型配置统一由 `useLive2DStore` 持有
  */
 export const useTouchStore = defineStore("touch", () => {
 	// 界面文案 (随语言响应式)
 	const I18N = computed(() => useLanguages().components.live2d)
-
-	// 是否已加载
-	const loaded = ref(false)
-
-	// 当前模型名
-	const modelName = ref<string | null>(null)
-
-	// 当前模型配置
-	const config = ref<ModelTouchConfig>(defaultConfig())
-
-	// 当前模型触摸区域
-	const touches = computed(() => config.value.touches)
-
-	// 当前模型渲染配置
-	const render = computed(() => config.value.render)
-
-	// 当前模型显示质量 (渲染倍率)
-	const quality = computed(() => config.value.quality)
 
 	// 触摸触发锁定
 	// 触发回调后锁定整个触摸, 防止同一对手势无限触发, 由外部执行 unlock() 解锁 (如 AI 返回后), 并有 2 分钟自动解锁兜底
@@ -148,129 +97,6 @@ export const useTouchStore = defineStore("touch", () => {
 	}
 
 	/**
-	 * 读取模型的触摸配置, 缺失回落默认
-	 */
-	const load = async (name: string): Promise<void> => {
-		// 切换模型时复位触摸锁定
-		unlock()
-		try {
-			const DATA = await invoke<ModelTouchConfig>("read_model_config", {name})
-			config.value = {
-				...defaultConfig(),
-				...DATA,
-				render: {...defaultConfig().render, ...DATA?.render},
-				quality: Number.isFinite(DATA?.quality) ? DATA!.quality : 1.0,
-				touches: Array.isArray(DATA?.touches) ? DATA.touches : [],
-			}
-			modelName.value = name
-			loaded.value = true
-			await logger.info(`已加载模型触摸配置: ${name}, touches=${config.value.touches.length}`)
-		} catch (err) {
-			await logger.error(`读取模型触摸配置失败: ${name}`, err)
-		}
-	}
-
-	/**
-	 * 写回当前配置
-	 */
-	const save = async (): Promise<boolean> => {
-		if (!modelName.value) return false
-		try {
-			await invoke("write_model_config", {name: modelName.value, config: config.value})
-			await logger.info(`已保存模型触摸配置: ${modelName.value}`)
-			return true
-		} catch (err) {
-			await logger.error("保存模型触摸配置失败:", err)
-			return false
-		}
-	}
-
-
-	/**
-	 * 更新模型显示名称与封面图片 (基本信息) 并持久化
-	 * @param name 显示名称, 空串表示回落模型目录名
-	 * @param image 相对模型目录的图片路径, 空串表示移除封面
-	 */
-	const updateNameImage = async (name: string, image: string) => {
-		config.value.name = name
-		config.value.image = image
-		await save()
-	}
-
-	/**
-	 * 添加一个触摸区域
-	 * @param data 触摸区域配置
-	 */
-	const addTouch = async (data: Omit<TouchArea, "id" | "image" | "prompt">) => {
-		config.value.touches.push({
-			...data,
-			id: uid(),
-			image: "",
-			prompt: "",
-		})
-		await save()
-	}
-
-	/**
-	 * 更新一个触摸区域
-	 * @param id 触摸区域 ID
-	 * @param patch 更新字段
-	 */
-	const updateTouch = async (id: string, patch: Partial<TouchArea>) => {
-		config.value.touches = config.value.touches.map((t) =>
-			t.id === id ? {...t, ...patch} : t,
-		)
-		await save()
-	}
-
-	/**
-	 * 拖动中实时更新某个触摸区域的位置/尺寸 (仅改内存, 不落盘)
-	 * 松手后再调用 `save` / `updateTouch` 持久化, 避免拖动过程中反复写盘
-	 */
-	const moveTouch = (id: string, patch: Partial<Pick<TouchArea, "x" | "y">>) => {
-		config.value.touches = config.value.touches.map((t) => {
-			if (t.id !== id) return t
-			const next = {
-				...t,
-				...patch,
-			}
-			// 数值防御: 越界/非有限数兜底到合理值, 避免把区域"画没"
-			const fin = (v: number, d: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d)
-			next.x = fin(next.x, t.x)
-			next.y = fin(next.y, t.y)
-			return next
-		})
-	}
-
-	/**
-	 * 删除一个触摸区域
-	 * @param id 触摸区域 ID
-	 */
-	const removeTouch = async (id: string) => {
-		config.value.touches = config.value.touches.filter((t) => t.id !== id)
-		await save()
-	}
-
-	/**
-	 * 更新模型渲染配置
-	 * @param patch 更新字段
-	 */
-	const setRender = async (patch: Partial<ModelRenderConfig>) => {
-		config.value.render = {...config.value.render, ...patch}
-		await save()
-	}
-
-	/**
-	 * 更新模型显示质量 (渲染倍率)
-	 * @param quality 0.25 ~ 1.0
-	 */
-	const setQuality = async (quality: number) => {
-		const Q = Math.min(1.0, Math.max(0.25, quality))
-		config.value.quality = Q
-		await save()
-	}
-
-	/**
 	 * 触发一个自定义触摸回调
 	 * 触发后立即锁定 (防止同一手势无限触发), 需外部 `unlock` 解锁或等待 2 分钟自动解锁
 	 * 当前派发 `touch-triggered` 事件 + 日志, 未来接入 LLM 上下文
@@ -290,8 +116,10 @@ export const useTouchStore = defineStore("touch", () => {
 				: touch.type === "frenzy"
 					? I18N.value.touchedFrenzy(touch.name)
 					: I18N.value.touchedName(touch.name)
+		// 当前模型名由 live2d store 统一持有
+		const L2D = useLive2DStore()
 		const PAYLOAD = {
-			modelName: modelName.value,
+			modelName: L2D.currentModel,
 			touchName: touch.name,
 			touchType: touch.type,
 			touchPrompt: touch.prompt || TYPED_PROMPT,
@@ -302,24 +130,9 @@ export const useTouchStore = defineStore("touch", () => {
 	}
 
 	return {
-		loaded,
-		modelName,
-		config,
-		touches,
-		render,
-		quality,
 		lock,
 		unlock,
 		locked,
-		load,
-		save,
-		addTouch,
-		updateTouch,
-		moveTouch,
-		removeTouch,
-		setRender,
-		setQuality,
-		updateNameImage,
 		trigger,
 	}
 })
