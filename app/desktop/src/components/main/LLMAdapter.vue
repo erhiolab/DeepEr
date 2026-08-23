@@ -3,9 +3,12 @@ import {computed, onMounted, ref} from "vue"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {getActiveAdapter, setActiveAdapter, LLM_ADAPTERS} from "../../services/llm/adapters"
 import type {LLMAdapterId} from "../../services/llm/types"
+import {useUnsavedGuard} from "../../services/store/unsaved"
 import ConfigPanel from "./llm/ConfigPanel.vue"
 
 const I18N = computed(() => useLanguages().components.main.llm)
+
+const UNSURE_GUARD = useUnsavedGuard()
 
 // 当前启用的适配器 id, null = 不启用
 const activeAdapter = ref<LLMAdapterId | null>(null)
@@ -24,6 +27,8 @@ onMounted(async () => {
 // 切换启用项 (单选, 互斥, null 表示不启用)
 const switchAdapter = async (id: LLMAdapterId | null) => {
 	if (id === activeAdapter.value) return
+	// 当前配置面板可能持有未保存修改, 离开前先询问
+	if (!(await UNSURE_GUARD.requestLeave())) return
 	activeAdapter.value = id
 	await setActiveAdapter(id)
 }

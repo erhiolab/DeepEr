@@ -3,6 +3,7 @@ import {computed, onMounted, ref} from "vue"
 import {useRouter} from "vue-router"
 import useLanguages from "../services/i18n/useLanguages"
 import {config} from "../services/config"
+import {useUnsavedGuard} from "../services/store/unsaved"
 import Icon from "../components/common/Icon.vue"
 import {IconName} from "../services/icon"
 import TitleBar from "../components/common/TitleBar.vue"
@@ -18,6 +19,8 @@ import LLMAdapter from "../components/main/LLMAdapter.vue"
 import TTSAdapter from "../components/main/TTSAdapter.vue"
 
 const I18N = computed(() => useLanguages().views.main)
+
+const UNSURE_GUARD = useUnsavedGuard()
 
 const ROUTER = useRouter()
 
@@ -104,8 +107,10 @@ onMounted(async () => {
 const direction = ref(1)
 
 // 切换导航项
-const switchNav = (key: NavKey) => {
+const switchNav = async (key: NavKey) => {
 	if (key === activeNav.value) return
+	// 当前页面可能持有未保存修改, 离开前先询问
+	if (!(await UNSURE_GUARD.requestLeave())) return
 	const ACTIVE_INDEX = ALL_NAV_ITEMS.value.findIndex((item) => item.key === activeNav.value)
 	const TARGET_INDEX = ALL_NAV_ITEMS.value.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1

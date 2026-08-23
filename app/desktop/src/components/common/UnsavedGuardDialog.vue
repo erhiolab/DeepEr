@@ -8,14 +8,14 @@ const GUARD = useUnsavedGuard()
 <template>
 	<Teleport to="body">
 		<Transition name="confirm">
-			<div v-if="GUARD.open" class="confirm-overlay" @click.self="GUARD.close">
+			<div v-if="GUARD.open" class="confirm-overlay" @click.self="GUARD.cancel">
 				<div class="confirm-panel" role="alertdialog" aria-modal="true">
 					<header class="confirm-head">
 						<div class="confirm-title-row">
 							<Icon name="info" :size="18" class="confirm-warn-icon"/>
 							<h3 class="confirm-title">{{ GUARD.title }}</h3>
 						</div>
-						<button class="confirm-close" @click="GUARD.close">✕</button>
+						<button class="confirm-close" @click="GUARD.cancel">✕</button>
 					</header>
 					<p class="confirm-message">{{ GUARD.message }}</p>
 					<footer class="confirm-actions">

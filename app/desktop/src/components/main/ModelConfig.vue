@@ -182,7 +182,6 @@ const coreSave = async (): Promise<boolean> => {
 const saveAndExit = async () => {
 	const OK = await coreSave()
 	if (!OK) return
-	closing.value = true
 	emit("close")
 }
 
@@ -198,33 +197,26 @@ const rollback = () => {
 	applyToCanvas()
 }
 
-// 通过询问框正常关闭 (已保存或已回滚) 后置位, 卸载兜底不再回滚画布
-const closing = ref(false)
+// 离开守卫: 有未保存改动时统一询问保存/放弃, 覆盖 back 按钮与主界面导航离开
+const GUARD_SYNC = () => ({
+	hasUnsaved: () => hasUnsaved.value,
+	onSave: async () => coreSave(),
+	onDiscard: rollback,
+	title: I18N.value.unsavedTitle,
+	message: I18N.value.unsavedMessage,
+	saveLabel: I18N.value.save,
+	discardLabel: I18N.value.discard,
+})
 
 // 关闭配置页入口: 有未保存改动时先询问保存/放弃, 否则直接关闭
-const requestClose = () => {
-	if (!hasUnsaved.value) {
+const requestClose = async () => {
+	if (await GUARD.requestLeave()) {
 		emit("close")
-		return
 	}
-	GUARD.ask({
-		title: I18N.value.unsavedTitle,
-		message: I18N.value.unsavedMessage,
-		saveLabel: I18N.value.save,
-		discardLabel: I18N.value.discard,
-		onSave: () => {
-			void saveAndExit()
-		},
-		onDiscard: () => {
-			rollback()
-			closing.value = true
-			emit("close")
-		},
-	})
 }
 
 onBeforeUnmount(() => {
-	if (closing.value) return
+	GUARD.unregister()
 	if (hasUnsaved.value) {
 		// 仅在确有未保存改动时回滚画布
 		L2D.l2dInstance?.setScale(initial.value.scale)
@@ -249,6 +241,8 @@ const resetAll = async () => {
 onMounted(async () => {
 	await ensureModel()
 	await loadDraft()
+	// 注册离开守卫: back 按钮与主界面导航 (路由/侧边栏) 离开前统一询问
+	GUARD.register(GUARD_SYNC())
 })
 </script>
 

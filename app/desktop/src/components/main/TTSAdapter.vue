@@ -3,9 +3,12 @@ import {computed, onMounted, ref} from "vue"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {getActiveAdapter, setActiveAdapter, TTS_ADAPTERS} from "../../services/tts/adapters"
 import type {TTSAdapterId} from "../../services/tts/types"
+import {useUnsavedGuard} from "../../services/store/unsaved"
 import GptSoVITS from "./tts/GptSoVITS.vue"
 
 const I18N = computed(() => useLanguages().components.main.tts)
+
+const UNSURE_GUARD = useUnsavedGuard()
 
 // 当前启用的适配器 id, null = 不启用
 const activeAdapter = ref<TTSAdapterId | null>(null)
@@ -21,6 +24,8 @@ onMounted(async () => {
 // 切换启用项 (单选, 互斥, null 表示不启用)
 const switchAdapter = async (id: TTSAdapterId | null) => {
 	if (id === activeAdapter.value) return
+	// 当前配置面板可能持有未保存修改, 离开前先询问
+	if (!(await UNSURE_GUARD.requestLeave())) return
 	activeAdapter.value = id
 	await setActiveAdapter(id)
 }

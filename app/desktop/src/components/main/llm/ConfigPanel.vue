@@ -43,9 +43,23 @@ const loaded = ref(false)
 // 是否有未保存修改
 const dirty = ref(false)
 
+const GUARD_SYNC = () => ({
+	hasUnsaved: () => dirty.value,
+	onSave: async () => save(),
+	title: I18N.value.unsavedTitle,
+	message: I18N.value.unsavedMessage,
+	saveLabel: I18N.value.saveAndLeave,
+	discardLabel: I18N.value.discardLeave,
+})
+
 onMounted(async () => {
 	await reload()
 	await LLM_STORE.init()
+	GUARD.register(GUARD_SYNC())
+})
+
+onBeforeUnmount(() => {
+	GUARD.unregister()
 })
 
 // 适配器切换时, 防止复用一个挂载点, 重新加载配置
@@ -89,20 +103,6 @@ const markDirty = () => {
 }
 
 watch(config, markDirty, {deep: true, flush: "sync"})
-
-onBeforeUnmount(() => {
-	if (loaded.value && dirty.value) {
-		GUARD.ask({
-			title: I18N.value.unsavedTitle,
-			message: I18N.value.unsavedMessage,
-			saveLabel: I18N.value.saveAndLeave,
-			discardLabel: I18N.value.discardLeave,
-			onSave: () => void save(),
-			onDiscard: () => {
-			},
-		})
-	}
-})
 
 // 测试连接状态
 const testing = computed(() => LLM_STORE.testing)

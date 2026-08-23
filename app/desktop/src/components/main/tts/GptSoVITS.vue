@@ -31,11 +31,25 @@ const loaded = ref(false)
 // 是否有未保存修改
 const dirty = ref(false)
 
+const GUARD_SYNC = () => ({
+	hasUnsaved: () => dirty.value,
+	onSave: async () => save(),
+	title: TTS_I18N.value.unsavedTitle,
+	message: TTS_I18N.value.unsavedMessage,
+	saveLabel: TTS_I18N.value.saveAndLeave,
+	discardLabel: TTS_I18N.value.discardLeave,
+})
+
 // 加载配置
 onMounted(async () => {
 	config.value = await loadConfig()
 	loaded.value = true
 	await TTS_STORE.init()
+	GUARD.register(GUARD_SYNC())
+})
+
+onBeforeUnmount(() => {
+	GUARD.unregister()
 })
 
 // 标记修改
@@ -44,21 +58,6 @@ const markDirty = () => {
 }
 
 watch(config, markDirty, {deep: true, flush: "sync"})
-
-// 离开页面时若有未保存修改, 交给全局弹窗询问「保存并离开 / 不保存离开」
-onBeforeUnmount(() => {
-	if (loaded.value && dirty.value) {
-		GUARD.ask({
-			title: TTS_I18N.value.unsavedTitle,
-			message: TTS_I18N.value.unsavedMessage,
-			saveLabel: TTS_I18N.value.saveAndLeave,
-			discardLabel: TTS_I18N.value.discardLeave,
-			onSave: () => void save(),
-			onDiscard: () => {
-			},
-		})
-	}
-})
 
 // 测试连接状态
 const testing = computed(() => TTS_STORE.testing)
