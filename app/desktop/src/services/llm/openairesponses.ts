@@ -16,12 +16,26 @@ import {llmHttpRequest, readJsonField} from "./http"
 export const PREFIX = "llm_openai_responses"
 
 /**
+ * 思考等级可选值 (OpenAI Responses `reasoning.effort`)
+ * - "" (空) : 不携带 reasoning 字段, 使用平台默认思考模式
+ * - none    : 显式关闭思考 (reasoning.effort = "none")
+ * - low / medium / high: 直接传给 API
+ */
+export const OPENAI_REASONING_EFFORTS = ["", "none", "low", "medium", "high"] as const
+
+/**
+ * 思考等级
+ */
+export type OpenAiReasoningEffort = (typeof OPENAI_REASONING_EFFORTS)[number]
+
+/**
  * OpenAI Responses 完整配置
  */
 export interface OpenAiResponsesConfig {
 	baseUrl: string
 	apiKey: string
 	model: string
+	reasoningEffort: OpenAiReasoningEffort
 }
 
 /**
@@ -32,7 +46,17 @@ export const defaultConfig: () => OpenAiResponsesConfig = () => {
 		baseUrl: "https://api.openai.com",
 		apiKey: "",
 		model: "",
+		reasoningEffort: "",
 	}
+}
+
+/**
+ * 校验思考等级, 非法值回落默认
+ */
+const toReasoningEffort = (raw: string | null, fallback: OpenAiReasoningEffort): OpenAiReasoningEffort => {
+	return raw && (OPENAI_REASONING_EFFORTS as readonly string[]).includes(raw)
+		? (raw as OpenAiReasoningEffort)
+		: fallback
 }
 
 /**
@@ -82,30 +106,38 @@ export const parseModels = (body: unknown): LLMModelInfo[] => {
  * 构造一次生成请求体 (OpenAI Responses 格式)
  */
 export const buildBody = (
-	config: {model: string; temperature: number; maxTokens: number},
+	config: {model: string; temperature: number; maxTokens: number; reasoningEffort?: OpenAiReasoningEffort},
 	request: Pick<LLMGenerateRequest, "messages">,
 	): Record<string, unknown> => {
 	const INPUT = request.messages.map(msg => ({
 		role: msg.role,
 		content: msg.content,
 	}))
-	return {
+	const BODY: Record<string, unknown> = {
 		model: config.model,
 		input: INPUT,
 		temperature: config.temperature,
 		...(config.maxTokens > 0 ? {max_output_tokens: config.maxTokens} : {}),
 	}
+	if (config.reasoningEffort) {
+		BODY.reasoning = {effort: config.reasoningEffort}
+	}
+	return BODY
 }
 
 /**
  * 构造测试请求体
  */
 export const buildTestBody = (config: OpenAiResponsesConfig): Record<string, unknown> => {
-	return {
+	const BODY: Record<string, unknown> = {
 		model: config.model,
 		input: [{role: "user", content: "ping"}],
 		max_output_tokens: 1,
 	}
+	if (config.reasoningEffort) {
+		BODY.reasoning = {effort: config.reasoningEffort}
+	}
+	return BODY
 }
 
 /**
@@ -137,15 +169,17 @@ export const extractText = (body: unknown): string => {
  */
 export const loadConfig = async (): Promise<OpenAiResponsesConfig> => {
 	const DEFAULTS = defaultConfig()
-	const [baseUrl, apiKey, model] = await Promise.all([
+	const [baseUrl, apiKey, model, reasoningEffort] = await Promise.all([
 		config.getRaw(`${PREFIX}_base_url`),
 		config.getRaw(`${PREFIX}_api_key`),
 		config.getRaw(`${PREFIX}_model`),
+		config.getRaw(`${PREFIX}_reasoning_effort`),
 	])
 	return {
 		baseUrl: baseUrl ?? DEFAULTS.baseUrl,
 		apiKey: await decryptSecret(apiKey ?? ""),
 		model: model || DEFAULTS.model,
+		reasoningEffort: toReasoningEffort(reasoningEffort, DEFAULTS.reasoningEffort),
 	}
 }
 
@@ -158,6 +192,7 @@ export const saveConfig = async (cfg: OpenAiResponsesConfig): Promise<void> => {
 		config.setRaw(`${PREFIX}_base_url`, normalizeBaseUrl(cfg.baseUrl)),
 		config.setRaw(`${PREFIX}_api_key`, API_KEY_TO_STORE),
 		config.setRaw(`${PREFIX}_model`, cfg.model),
+		config.setRaw(`${PREFIX}_reasoning_effort`, cfg.reasoningEffort),
 	])
 	await logger.info("保存 OpenAI Responses 配置")
 }
@@ -246,7 +281,12 @@ export const openAiResponsesAdapter: LLMAdapter<OpenAiResponsesConfig> = {
 					Authorization: `Bearer ${CFG.apiKey.trim()}`,
 				},
 				body: buildBody(
-					{model: CFG.model, temperature: 1, maxTokens: 0},
+					{
+						model: CFG.model,
+						temperature: 1,
+						maxTokens: 0,
+						reasoningEffort: CFG.reasoningEffort,
+					},
 					request,
 				),
 			})

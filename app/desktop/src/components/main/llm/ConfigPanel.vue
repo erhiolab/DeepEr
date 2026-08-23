@@ -5,6 +5,7 @@ import {logger} from "../../../services/logger"
 import {useUnsavedGuard} from "../../../services/store/unsaved.ts"
 import {useLLMStore} from "../../../services/store/llm.ts"
 import Icon from "../../common/Icon.vue"
+import {OPENAI_REASONING_EFFORTS} from "../../../services/llm/openairesponses"
 import type {LLMAdapter, LLMModelInfo} from "../../../services/llm/types"
 
 const I18N = computed(() => useLanguages().components.main.llm)
@@ -25,6 +26,7 @@ const K = {
 	baseUrl: "baseUrl" as const,
 	apiKey: "apiKey" as const,
 	model: "model" as const,
+	reasoningEffort: "reasoningEffort" as const,
 }
 
 // 当前适配器表单
@@ -32,10 +34,22 @@ interface LLMConfigForm {
 	baseUrl: string
 	apiKey: string
 	model: string
+	reasoningEffort?: string
 }
 
 // 当前适配器表单
-const config = ref<LLMConfigForm>({baseUrl: "", apiKey: "", model: ""})
+const config = ref<LLMConfigForm>({baseUrl: "", apiKey: "", model: "", reasoningEffort: "medium"})
+
+// 是否 OpenAI Responses 适配器 (用于展示思考等级下拉)
+const isOpenAiResponses = computed(() => props.adapter.id === "openai-responses")
+
+// 思考等级下拉选项
+const reasoningOptions = computed(() =>
+	OPENAI_REASONING_EFFORTS.map(effort => ({
+		value: effort,
+		label: effort === "" ? I18N.value.reasoningDefault : (I18N.value as unknown as Record<string, string>)[`reasoning${effort.charAt(0).toUpperCase()}${effort.slice(1)}`] ?? effort,
+	})),
+)
 
 // 是否已加载完成
 const loaded = ref(false)
@@ -350,6 +364,16 @@ const filteredModels = computed(() => {
 					{{ testing ? I18N.testing : COMMON_I18N.test }}
 				</button>
 			</div>
+			<div v-if="isOpenAiResponses" class="llm-row">
+				<label class="field grow">
+					<span class="field-label">{{ I18N.reasoningEffort }}</span>
+					<select v-model="config[K.reasoningEffort]" class="input select">
+						<option v-for="opt in reasoningOptions" :key="opt.value" :value="opt.value">
+							{{ opt.label }}
+						</option>
+					</select>
+				</label>
+			</div>
 			<p v-if="testResult" class="test-result" :class="{ok: testResult.ok, fail: !testResult.ok}">
 				{{ testResult.message }}
 			</p>
@@ -531,6 +555,15 @@ const filteredModels = computed(() => {
 	&::placeholder {
 		color: var(--text-muted);
 		opacity: 0.6;
+	}
+}
+
+.select {
+	cursor: pointer;
+
+	option {
+		color: var(--text-primary);
+		background-color: var(--bg-deep);
 	}
 }
 
