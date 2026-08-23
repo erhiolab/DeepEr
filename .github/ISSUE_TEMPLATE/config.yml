@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: ❓ 提问与求助 / Ask a Question
+    url: https://github.com/erhiolab/DeepEr/discussions/categories/%E9%97%AE%E7%AD%94-q-a
+    about: 如果你只是有疑问, 请在这里发帖, 而不是提 Issue.  / If you just have a question, please post here instead of opening an issue.
+
+  - name: 💡 讨论新想法 / Discuss Ideas
+    url: https://github.com/erhiolab/DeepEr/discussions/categories/%E6%83%B3%E6%B3%95-ideas
+    about: 如果你的想法还不成熟, 想先和大家讨论, 请来这里.  / If your idea is not fully formed and you want to discuss it first, come here.

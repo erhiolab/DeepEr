@@ -1,0 +1,88 @@
+name: 🐛 Bug Report
+description: Submit a bug to help us improve the project
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 中文 | English
+        感谢你的反馈! 在提交之前, 请确保你已经搜索过现有的 Issue, 确认这是一个新问题. 
+        Thanks for your feedback! Before submitting, please make sure you have searched existing issues and confirmed this is a new one.
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统 / Operating System
+      description: 你遇到 Bug 的操作系统是什么? / What OS did you encounter the bug on?
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - iOS
+        - Android
+        - 其他(请在下方说明)/ Other (please specify below)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 项目版本 / Project Version
+      description: 你使用的是哪个版本的项目? (例如: v1.2.0 或 commit hash)/ Which version of the project are you using? (e.g., v1.2.0 or commit hash)
+      placeholder: v1.0.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤 / Steps to Reproduce
+      description: 请提供详细的步骤, 让我们能在本地重现这个问题. / Please provide detailed steps so we can reproduce this issue locally.
+      placeholder: |
+        中文: 
+        1. 进入 '...' 页面
+        2. 点击 '....' 按钮
+        3. 滚动到 '....'
+        4. 看到报错
+
+        English:
+        1. Go to '...' page
+        2. Click on '....' button
+        3. Scroll to '....'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望的行为 / Expected Behavior
+      description: 你原本期望发生什么? / What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际的行为 / Actual Behavior
+      description: 实际上发生了什么? (如果有报错日志, 请粘贴在这里)/ What actually happened? (If there are error logs, please paste them here)
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 附加信息 / Additional Information
+      description: 任何能帮助我们定位问题的额外上下文/截图或视频链接. / Any additional context, screenshots, or video links that could help us locate the issue.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: 确认事项 / Confirmation
+      options:
+        - label: 我已经搜索过现有的 Issue, 确认没有重复. / I have searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: 我已经阅读了项目的贡献指南 (CONTRIBUTING.md). / I have read the project's contribution guidelines (CONTRIBUTING.md).
+          required: true

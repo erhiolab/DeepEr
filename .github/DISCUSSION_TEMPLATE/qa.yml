@@ -1,0 +1,44 @@
+name: 🙋 Q&A / 问答
+description: Ask a question or seek help / 提问或寻求社区帮助
+title: "[Q&A]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你的提问! 为了让大家更好地帮助你, 请尽可能详细地描述你的问题.
+        Thanks for asking! To help us assist you better, please describe your question in as much detail as possible.
+
+  - type: input
+    id: summary
+    attributes:
+      label: 问题简述 / Question Summary
+      description: 用一句话概括你的核心问题 / Summarize your core question in one sentence
+      placeholder: 例如: 如何在 React 中引入 TypeScript?  / e.g., How to integrate TypeScript in React?
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: 详细描述 / Detailed Description
+      description: 详细说明你遇到的问题/背景或疑惑 / Explain your problem, context, or doubts in detail
+      placeholder: |
+        我想实现..., 但是遇到了...
+        I want to achieve..., but I encountered...
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: 你已经尝试过的方法 / What have you tried?
+      description: 告诉我们你做过哪些尝试, 或者查过哪些资料 / Tell us what you've tried or what docs you've read
+      render: shell
+
+  - type: input
+    id: environment
+    attributes:
+      label: 环境信息 / Environment
+      description: 操作系统/软件版本/浏览器等 / OS, software version, browser, etc.
+      placeholder: macOS 13.0, Node.js v18.12.0, Chrome 114

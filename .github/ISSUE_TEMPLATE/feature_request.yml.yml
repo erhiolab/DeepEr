@@ -1,0 +1,60 @@
+name: 💡 Feature Request / Idea
+description: Propose a new idea or feature request for this project
+title: "[Feature]: "
+labels: ["enhancement", "idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 中文 | English
+        感谢你的建议! 一个好的功能请求应该清晰地描述使用场景. 
+        Thanks for your suggestion! A good feature request should clearly describe the use case.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你的痛点 / 使用场景 / Problem & Use Case
+      description: |
+        中文: 这个功能是为了解决什么问题? 或者在什么场景下你需要这个功能? 
+        English: What problem does this feature solve? In what scenario do you need this feature?
+      placeholder: |
+        中文: 当我在做 [某件事] 时, 我总是遇到 [某个困难]...
+        English: When I'm doing [something], I always run into [some difficulty]...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 你期望的解决方案 / Proposed Solution
+      description: |
+        中文: 你希望这个功能具体长什么样? 或者如何工作? 
+        English: What would you like this feature to look like? How should it work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案 / Alternatives
+      description: |
+        中文: 如果没有这个功能, 你目前是如何解决这个问题的? (或者有没有其他项目实现了类似功能? )
+        English: How are you currently solving this problem without this feature? (Or are there other projects that have implemented something similar?)
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 附加信息 / Additional Information
+      description: |
+        中文: 关于这个想法的截图/草图/或者参考链接. 
+        English: Screenshots, mockups, or reference links related to this idea.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: 确认事项 / Confirmation
+      options:
+        - label: |
+            中文: 我确认这个功能符合项目的整体愿景和目标. 
+            English: I confirm that this feature aligns with the project's overall vision and goals.
+          required: true
