@@ -117,7 +117,7 @@ const switchNav = async (key: NavKey) => {
 	activeNav.value = key
 	// 离开模型导航时关闭配置页回到模型列表
 	if (key !== "model") configModelId.value = null
-	config.set("main_active_nav", key)
+	await config.set("main_active_nav", key)
 }
 
 // 回到桌宠
