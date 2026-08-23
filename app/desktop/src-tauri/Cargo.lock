@@ -797,6 +797,8 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "webview2-com",
+ "windows",
  "zip",
 ]
 

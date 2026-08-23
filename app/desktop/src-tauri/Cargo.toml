@@ -35,3 +35,14 @@ base64 = "0.22"
 # 压缩算法精简, 仅启用 deflate(纯 Rust miniz_oxide 后端), 避免编译依赖 cmake 的 zlib-ng/zstd 等 C 依赖
 zip = { version = "1", default-features = false, features = ["deflate"] }
 
+[target.'cfg(windows)'.dependencies]
+# 访问 WebView2 的 ICoreWebView2Controller (用于打开任务管理器)
+webview2-com = "0.38"
+# Win32 API: windows::core::Interface (cast) 与低级键盘钩子 (WH_KEYBOARD_LL 拦截 Shift+Esc)
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+

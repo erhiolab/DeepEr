@@ -9,6 +9,9 @@
 //! - [`llm`] LLM 模型
 //! - [`live2d`] Live2D 线上列表
 //! - [`resource`] 资源 (下载 / 检查 / 列表 / 删除 / 导入)
+//! - [`tts`] 文本转语音
+//! - [`devtools`] 开发者工具 (DevTools) 运行时开关命令
+//! - [`task_manager`] 浏览器任务管理器 (Browser Task Manager) 命令
 
 pub mod first_run;
 pub mod language;
@@ -18,3 +21,4 @@ pub mod log;
 pub mod resource;
 pub mod tts;
 pub mod devtools;
+pub mod task_manager;

@@ -61,6 +61,16 @@ const handleToggleDevtools = async () => {
 	}
 }
 
+// 打开浏览器任务管理器
+const handleOpenTaskManager = async () => {
+	try {
+		await invoke("open_task_manager")
+	} catch (error) {
+		console.error("打开浏览器任务管理器失败:", error)
+		toast.error(I18N.value.openTaskManagerFailed)
+	}
+}
+
 const ACTIONS: ExceptionAction[] = [
 	{
 		icon: "refresh",
@@ -91,6 +101,16 @@ const ACTIONS: ExceptionAction[] = [
 		loading: () => false,
 		actionIcon: "settings",
 		actionLabel: () => (devtoolsOpen.value ? I18N.value.close : I18N.value.open),
+	},
+	{
+		icon: "tasks",
+		name: I18N.value.openTaskManager,
+		desc: I18N.value.openTaskManagerDesc,
+		action: handleOpenTaskManager,
+		disabled: () => L2D.isLoading,
+		loading: () => false,
+		actionIcon: "tasks",
+		actionLabel: () => I18N.value.open,
 	},
 ]
 </script>

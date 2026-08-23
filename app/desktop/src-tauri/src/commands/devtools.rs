@@ -1,8 +1,4 @@
 //! 开发者工具 (DevTools) 运行时开关命令
-//!
-//! 前端通过 `invoke("toggle_devtools")` 调用.
-//! 仅在应用内部需要时 (如"异常处理"页) 手动打开/关闭控制台,
-//! 窗口配置保持 `devtools: false` 以禁用默认入口/快捷键.
 
 use tauri::Manager;
 

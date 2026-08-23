@@ -254,6 +254,17 @@ export const icon = {
 			"M21 9v2",
 			"M3 14v1"
 		]
+	},
+	// 任务管理器 (任务清单)
+	tasks: {
+		stroke: [
+			"M4 6h10",
+			"M4 12h10",
+			"M4 18h10",
+			"M17 6h3",
+			"M17 12h3",
+			"M17 18h3"
+		]
 	}
 } satisfies Record<string, IconData>
 

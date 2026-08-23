@@ -64,3 +64,11 @@ window.addEventListener("wheel", (e) => {
 window.addEventListener("keydown", (e) => {
 	if (e.ctrlKey && ["+", "-", "=", "0"].includes(e.key)) e.preventDefault()
 })
+
+window.addEventListener("keydown", event => {
+	if (event.code === "Escape" && event.shiftKey) {
+		event.preventDefault()
+		event.stopPropagation()
+		event.stopImmediatePropagation()
+	}
+}, true)
