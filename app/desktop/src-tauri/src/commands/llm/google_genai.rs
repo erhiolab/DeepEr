@@ -176,7 +176,10 @@ pub async fn llm_google_generate(
     state: tauri::State<'_, db::Db>,
     args: LlmGenerateArgs,
 ) -> Result<LlmGenerateOutcome, String> {
-    let cfg = load_config(&state, &app)?;
+    let cfg = load_config(&state, &app).map_err(|e| {
+        let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google generate 加载配置失败: {e}"));
+        e
+    })?;
     if let Err((code, msg)) = validate(&cfg) {
         return Ok(LlmGenerateOutcome::err_with(Some(code), msg));
     }
@@ -186,7 +189,10 @@ pub async fn llm_google_generate(
     let client = Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+        .map_err(|e| {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google generate 创建 HTTP 客户端失败: {e}"));
+            format!("创建 HTTP 客户端失败: {e}")
+        })?;
     let resp = match client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -195,7 +201,10 @@ pub async fn llm_google_generate(
         .await
     {
         Ok(r) => r,
-        Err(e) => return Ok(LlmGenerateOutcome::err_with(Some("network_error"), format!("无法连接 {url}: {e}"))),
+        Err(e) => {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google generate 网络请求失败: {e}"));
+            return Ok(LlmGenerateOutcome::err_with(Some("network_error"), format!("无法连接 {url}: {e}")));
+        }
     };
     let status = resp.status().as_u16();
     let parsed: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
@@ -215,7 +224,10 @@ pub async fn llm_google_test_connection(
     app: tauri::AppHandle,
     state: tauri::State<'_, db::Db>,
 ) -> Result<LlmTestOutcome, String> {
-    let cfg = load_config(&state, &app)?;
+    let cfg = load_config(&state, &app).map_err(|e| {
+        let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google 连接测试加载配置失败: {e}"));
+        e
+    })?;
     if let Err((code, msg)) = validate(&cfg) {
         return Ok(LlmTestOutcome::client_err_with(Some(code), msg));
     }
@@ -224,7 +236,10 @@ pub async fn llm_google_test_connection(
     let client = Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+        .map_err(|e| {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google 连接测试创建 HTTP 客户端失败: {e}"));
+            format!("创建 HTTP 客户端失败: {e}")
+        })?;
     match client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -240,7 +255,10 @@ pub async fn llm_google_test_connection(
                 Ok(LlmTestOutcome::http_err(status))
             }
         }
-        Err(e) => Ok(LlmTestOutcome::client_err_with(Some("network_error"), format!("{e}"))),
+        Err(e) => {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google 连接测试网络请求失败: {e}"));
+            Ok(LlmTestOutcome::client_err_with(Some("network_error"), format!("{e}")))
+        }
     }
 }
 
@@ -250,7 +268,10 @@ pub async fn llm_google_list_models(
     app: tauri::AppHandle,
     state: tauri::State<'_, db::Db>,
 ) -> Result<Vec<String>, String> {
-    let cfg = load_config(&state, &app)?;
+    let cfg = load_config(&state, &app).map_err(|e| {
+        let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google 模型列表加载配置失败: {e}"));
+        e
+    })?;
     if cfg.api_key.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -258,7 +279,10 @@ pub async fn llm_google_list_models(
     let client = Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+        .map_err(|e| {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google 模型列表创建 HTTP 客户端失败: {e}"));
+            format!("创建 HTTP 客户端失败: {e}")
+        })?;
     match client.get(&url).send().await {
         Ok(resp) if resp.status().is_success() => {
             let parsed: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);

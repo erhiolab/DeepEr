@@ -209,14 +209,20 @@ pub async fn llm_openai_generate(
     state: tauri::State<'_, db::Db>,
     args: LlmGenerateArgs,
 ) -> Result<LlmGenerateOutcome, String> {
-    let cfg = load_config(&state, &app)?;
+    let cfg = load_config(&state, &app).map_err(|e| {
+        let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI generate 加载配置失败: {e}"));
+        e
+    })?;
     if let Err((code, msg)) = validate(&cfg) {
         return Ok(LlmGenerateOutcome::err_with(Some(code), msg));
     }
     let body = build_body(&cfg, &args);
     let (status, resp) = match post_json(build_responses_url(&cfg.base_url), auth_headers(&cfg), body).await {
         Ok(v) => v,
-        Err(e) => return Ok(LlmGenerateOutcome::err_with(Some("network_error"), e)),
+        Err(e) => {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI generate 网络请求失败: {e}"));
+            return Ok(LlmGenerateOutcome::err_with(Some("network_error"), e));
+        }
     };
     if status < 200 || status >= 300 {
         let reason = extract_error(&resp);
@@ -235,7 +241,10 @@ pub async fn llm_openai_test_connection(
     app: tauri::AppHandle,
     state: tauri::State<'_, db::Db>,
 ) -> Result<LlmTestOutcome, String> {
-    let cfg = load_config(&state, &app)?;
+    let cfg = load_config(&state, &app).map_err(|e| {
+        let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI 连接测试加载配置失败: {e}"));
+        e
+    })?;
     if let Err((code, msg)) = validate(&cfg) {
         return Ok(LlmTestOutcome::client_err_with(Some(code), msg));
     }
@@ -248,7 +257,10 @@ pub async fn llm_openai_test_connection(
                 Ok(LlmTestOutcome::http_err(status))
             }
         }
-        Err(e) => Ok(LlmTestOutcome::client_err_with(Some("network_error"), e)),
+        Err(e) => {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI 连接测试网络请求失败: {e}"));
+            Ok(LlmTestOutcome::client_err_with(Some("network_error"), e))
+        }
     }
 }
 
@@ -258,7 +270,10 @@ pub async fn llm_openai_list_models(
     app: tauri::AppHandle,
     state: tauri::State<'_, db::Db>,
 ) -> Result<Vec<String>, String> {
-    let cfg = load_config(&state, &app)?;
+    let cfg = load_config(&state, &app).map_err(|e| {
+        let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI 模型列表加载配置失败: {e}"));
+        e
+    })?;
     if cfg.api_key.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -270,6 +285,10 @@ pub async fn llm_openai_list_models(
     )
     .await
     {
+        Err(e) => {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI 模型列表网络请求失败: {e}"));
+            Ok(Vec::new())
+        }
         Ok((status, resp)) if (200..300).contains(&status) => {
             let ids = resp
                 .get("data")

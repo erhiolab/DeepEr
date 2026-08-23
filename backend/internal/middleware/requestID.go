@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"backend/internal/utils"
+	"context"
 	"net/http"
 )
 
@@ -13,8 +14,10 @@ func RequestID() func(http.Handler) http.Handler {
 			requestID := utils.GetUpstreamInfo(r).RequestID
 			// 设置响应头
 			w.Header().Set("X-Request-ID", requestID)
+			// 注入 context,供 controller/service 通过 WithRequestLogCtx 关联 requestID
+			ctx := context.WithValue(r.Context(), utils.RequestIDKey, requestID)
 			// 继续处理请求
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

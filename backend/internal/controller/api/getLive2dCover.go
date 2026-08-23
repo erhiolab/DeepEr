@@ -1,6 +1,7 @@
 package api
 
 import (
+	"backend/internal/logger"
 	"backend/internal/service"
 	"backend/internal/utils"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // GetLive2dCover 获取 Live2D 模型封面图
@@ -23,6 +26,8 @@ func GetLive2dCover() http.HandlerFunc {
 		// 创建OSS服务
 		ossService, err := service.NewOSSService()
 		if err != nil {
+			logger.WithRequestLogCtx(r.Context()).Error("创建OSS服务失败",
+				zap.String("modelID", modelID), zap.Error(err))
 			utils.InternalServerError(w, "创建OSS服务失败")
 			return
 		}
@@ -30,6 +35,8 @@ func GetLive2dCover() http.HandlerFunc {
 		// 打开封面对象
 		body, meta, err := ossService.OpenCover(modelID)
 		if err != nil {
+			logger.WithRequestLogCtx(r.Context()).Error("打开封面对象失败",
+				zap.String("modelID", modelID), zap.Error(err))
 			utils.Error(w, http.StatusNotFound, err.Error())
 			return
 		}

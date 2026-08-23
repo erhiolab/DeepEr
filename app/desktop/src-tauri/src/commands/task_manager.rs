@@ -1,5 +1,6 @@
 //! 浏览器任务管理器 (Browser Task Manager) 命令
 
+use crate::log;
 use tauri::{AppHandle, Manager};
 
 #[cfg(windows)]
@@ -17,7 +18,10 @@ pub fn open_task_manager(app: AppHandle) -> Result<(), String> {
     {
         let window = app
             .get_webview_window("deeper")
-            .ok_or_else(|| "未找到主窗口".to_string())?;
+            .ok_or_else(|| {
+                let _ = log::write(&app, &log::LogSource::Backend, "error", "打开任务管理器失败: 未找到主窗口");
+                "未找到主窗口".to_string()
+            })?;
 
         let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
 
@@ -39,9 +43,17 @@ pub fn open_task_manager(app: AppHandle) -> Result<(), String> {
                 };
                 let _ = tx.send(result);
             })
-            .map_err(|e| format!("调度打开任务管理器失败: {e}"))?;
+            .map_err(|e| {
+                let msg = format!("调度打开任务管理器失败: {e}");
+                let _ = log::write(&app, &log::LogSource::Backend, "error", &msg);
+                msg
+            })?;
 
-        rx.recv().map_err(|e| format!("等待打开任务管理器响应失败: {e}"))?
+        rx.recv().map_err(|e| {
+            let msg = format!("等待打开任务管理器响应失败: {e}");
+            let _ = log::write(&app, &log::LogSource::Backend, "error", &msg);
+            msg
+        })?
     }
     #[cfg(not(windows))]
     {

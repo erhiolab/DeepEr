@@ -62,7 +62,15 @@ pub fn check_resource(
 ) -> Result<bool, String> {
     let resource_type = parse_resource_type(&resource_type)?;
     let name = validate_resource_name(&name)?;
-    let installed = crate::resource::is_installed(&app, resource_type, name)?;
+    let installed = crate::resource::is_installed(&app, resource_type, name).map_err(|e| {
+        let _ = log::write(
+            &app,
+            &log::LogSource::Backend,
+            "error",
+            &format!("检查资源失败: type={} name={name} error={e}", resource_type.as_str()),
+        );
+        e
+    })?;
     let _ = log::write(
         &app,
         &log::LogSource::Backend,
@@ -92,7 +100,10 @@ pub async fn ensure_resource(
     const EVENT: &str = "resource-download";
 
     // 快速路径: 已安装 → 直接回已安装事件
-    if crate::resource::is_installed(&app, resource_type, &name)? {
+    if crate::resource::is_installed(&app, resource_type, &name).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("检查资源是否已安装失败: type={type_name} name={name} error={e}"));
+        e
+    })? {
         let _ = log::write(
             &app,
             &log::LogSource::Backend,
@@ -103,7 +114,10 @@ pub async fn ensure_resource(
         return Ok(());
     }
 
-    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("获取数据目录失败: type={type_name} name={name} error={e}"));
+        e.to_string()
+    })?;
     let _ = log::write(
         &app,
         &log::LogSource::Backend,
@@ -272,9 +286,18 @@ pub fn list_resources(
     resource_type: String,
 ) -> Result<Vec<ResourceSummary>, String> {
     let resource_type = parse_resource_type(&resource_type)?;
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let indexed = crate::resource::index::list(&conn, resource_type).map_err(|e| e.to_string())?;
-    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let conn = state.0.lock().map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("列出资源失败: type={} 获取数据库锁失败: {e}", resource_type.as_str()));
+        e.to_string()
+    })?;
+    let indexed = crate::resource::index::list(&conn, resource_type).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("列出资源失败: type={} 读取索引失败: {e}", resource_type.as_str()));
+        e.to_string()
+    })?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("列出资源失败: type={} 获取数据目录失败: {e}", resource_type.as_str()));
+        e.to_string()
+    })?;
     let _ = log::write(
         &app,
         &log::LogSource::Backend,
@@ -319,9 +342,20 @@ pub fn delete_resource(
 ) -> Result<(), String> {
     let resource_type = parse_resource_type(&resource_type)?;
     let name = validate_resource_name(&name)?;
-    crate::resource::delete(&app, resource_type, name)?;
+    crate::resource::delete(&app, resource_type, name).map_err(|e| {
+        let _ = log::write(
+            &app,
+            &log::LogSource::Backend,
+            "error",
+            &format!("删除资源失败: type={} name={name} error={e}", resource_type.as_str()),
+        );
+        e
+    })?;
     // 删除索引
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let conn = state.0.lock().map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("删除资源失败: type={} name={name} 获取数据库锁失败: {e}", resource_type.as_str()));
+        e.to_string()
+    })?;
     let _ = crate::resource::index::remove(&conn, resource_type, name);
     let _ = log::write(
         &app,
@@ -370,8 +404,14 @@ pub async fn import_live2d(
         _ => {}
     }
 
-    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
-    let temp_dir = crate::resource::temp_dir(&app).map_err(|e| e.to_string())?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("导入 Live2D 失败: {source_path} 获取数据目录失败: {e}"));
+        e.to_string()
+    })?;
+    let temp_dir = crate::resource::temp_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("导入 Live2D 失败: {source_path} 获取临时目录失败: {e}"));
+        e.to_string()
+    })?;
     let _ = log::write(
         &app,
         &log::LogSource::Backend,
@@ -501,8 +541,14 @@ pub fn read_model_config(
     name: String,
 ) -> Result<crate::resource::live2d::ModelConfig, String> {
     let name = validate_resource_name(&name)?;
-    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
-    let config = crate::resource::live2d::read_model_config(&data_dir, name)?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("读取模型配置失败: name={name} 获取数据目录失败: {e}"));
+        e.to_string()
+    })?;
+    let config = crate::resource::live2d::read_model_config(&data_dir, name).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("读取模型配置失败: name={name} error={e}"));
+        e
+    })?;
     let _ = log::write(
         &app,
         &log::LogSource::Backend,
@@ -521,7 +567,10 @@ pub fn write_model_config(
     config: crate::resource::live2d::ModelConfig,
 ) -> Result<(), String> {
     let name = validate_resource_name(&name)?;
-    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("写入模型配置失败: name={name} 获取数据目录失败: {e}"));
+        e.to_string()
+    })?;
     crate::resource::live2d::write_model_config(&data_dir, name, &config)?;
     let _ = log::write(
         &app,
@@ -542,7 +591,10 @@ pub fn save_model_cover(
     source_path: String,
 ) -> Result<String, String> {
     let name = validate_resource_name(&name)?;
-    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("保存模型封面失败: name={name} 获取数据目录失败: {e}"));
+        e.to_string()
+    })?;
     let relative = crate::resource::live2d::save_model_image(
         &data_dir,
         name,
@@ -577,7 +629,10 @@ pub fn export_model_config(
             return Err(format!("导出目录不存在: {}", parent.display()));
         }
     }
-    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("导出模型配置失败: name={name} 获取数据目录失败: {e}"));
+        e.to_string()
+    })?;
     let source = crate::resource::live2d::model_config_path(&data_dir, name)?;
     if !source.is_file() {
         return Err(format!("模型没有配置文件: {name}"));
@@ -614,7 +669,10 @@ pub fn import_model_config(
     // (字段带 default, 合法 JSON 即使缺字段也不丢, 结构错误则拒绝导入避免配置整体失效)
     serde_json::from_str::<crate::resource::live2d::ModelConfig>(&content)
         .map_err(|e| format!("文件不是合法的模型配置文件: {e}"))?;
-    let data_dir = db::data_dir(&app).map_err(|e| e.to_string())?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("导入模型配置失败: name={name} 获取数据目录失败: {e}"));
+        e.to_string()
+    })?;
     let target = crate::resource::live2d::model_config_path(&data_dir, name)?;
     let parent = target.parent().ok_or("模型目录不存在")?;
     if !parent.is_dir() {

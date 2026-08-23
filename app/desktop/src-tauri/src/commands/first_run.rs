@@ -14,9 +14,33 @@ pub fn is_first_run(state: State<'_, Db>) -> Result<bool, String> {
 /// 首次启动完成
 #[tauri::command]
 pub fn complete_first_run(app: tauri::AppHandle, state: State<'_, Db>) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    crate::config::mark_first_run_completed(&conn).map_err(|e| e.to_string())?;
-    crate::config::mark_initialized(&conn).map_err(|e| e.to_string())?;
+    let conn = state.0.lock().map_err(|e| {
+        let _ = log::write(
+            &app,
+            &log::LogSource::Backend,
+            "error",
+            &format!("首次初始化失败: 获取数据库锁失败: {e}"),
+        );
+        e.to_string()
+    })?;
+    crate::config::mark_first_run_completed(&conn).map_err(|e| {
+        let _ = log::write(
+            &app,
+            &log::LogSource::Backend,
+            "error",
+            &format!("首次初始化失败: 标记完成失败: {e}"),
+        );
+        e.to_string()
+    })?;
+    crate::config::mark_initialized(&conn).map_err(|e| {
+        let _ = log::write(
+            &app,
+            &log::LogSource::Backend,
+            "error",
+            &format!("首次初始化失败: 记录初始化时间失败: {e}"),
+        );
+        e.to_string()
+    })?;
     let _ = log::write(&app, &log::LogSource::Backend, "info", "首次初始化完成");
     Ok(())
 }

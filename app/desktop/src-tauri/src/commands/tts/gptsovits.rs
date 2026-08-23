@@ -197,7 +197,10 @@ pub async fn tts_gptsovits_synthesize(
     if args.text.trim().is_empty() {
         return Ok(fail_outcome("empty_text", "合成文本不能为空".to_string()));
     }
-    let cfg = load_config(&state)?;
+    let cfg = load_config(&state).map_err(|e| {
+        let _ = log::write(&app, &LogSource::Backend, "error", &format!("TTS 合成加载配置失败: {e}"));
+        e
+    })?;
     let Some(entry) = find_voice(&cfg, &args.voice) else {
         return Ok(fail_outcome("missing_voice", format!("未找到音色: {}", args.voice.clone().unwrap_or_default())));
     };
@@ -211,10 +214,12 @@ pub async fn tts_gptsovits_synthesize(
         Ok(client) => match client.post(&url).json(&params).send().await {
             Ok(r) => r,
             Err(e) => {
+                let _ = log::write(&app, &LogSource::Backend, "error", &format!("TTS 合成网络请求失败: {e}"));
                 return Ok(fail_outcome("network_error", format!("TTS 请求失败: {e}")));
             }
         },
         Err(e) => {
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("TTS 合成创建 HTTP 客户端失败: {e}"));
             return Ok(fail_outcome("network_error", format!("创建 HTTP 客户端失败: {e}")));
         }
     };
@@ -230,14 +235,26 @@ pub async fn tts_gptsovits_synthesize(
     let bytes = response
         .bytes()
         .await
-        .map_err(|e| format!("读取 TTS 音频流失败: {e}"))?;
+        .map_err(|e| {
+            let msg = format!("读取 TTS 音频流失败: {e}");
+            let _ = log::write(&app, &LogSource::Backend, "error", &msg);
+            msg
+        })?;
     if bytes.is_empty() {
         return Ok(fail_outcome("empty_audio", "TTS 接口返回了空音频".to_string()));
     }
 
     // 缓存目录: <应用数据目录>/temp/tts
-    let cache_dir = resource::temp_dir(&app)?.join("tts");
-    std::fs::create_dir_all(&cache_dir).map_err(|e| format!("创建 TTS 缓存目录失败: {e}"))?;
+    let cache_dir = resource::temp_dir(&app).map_err(|e| {
+        let msg = format!("获取 TTS 临时目录失败: {e}");
+        let _ = log::write(&app, &LogSource::Backend, "error", &msg);
+        msg
+    })?.join("tts");
+    std::fs::create_dir_all(&cache_dir).map_err(|e| {
+        let msg = format!("创建 TTS 缓存目录失败: {e}");
+        let _ = log::write(&app, &LogSource::Backend, "error", &msg);
+        msg
+    })?;
     prune_cache(&cache_dir);
 
     let stamp = std::time::SystemTime::now()
@@ -247,7 +264,11 @@ pub async fn tts_gptsovits_synthesize(
     let ext = "wav";
     let file_name = format!("tts_{stamp}.{ext}");
     let file_path = cache_dir.join(&file_name);
-    std::fs::write(&file_path, &bytes).map_err(|e| format!("保存 TTS 音频失败: {e}"))?;
+    std::fs::write(&file_path, &bytes).map_err(|e| {
+        let msg = format!("保存 TTS 音频失败: {e}");
+        let _ = log::write(&app, &LogSource::Backend, "error", &msg);
+        msg
+    })?;
     let size = bytes.len() as u64;
     let _ = log::write(
         &app,
@@ -268,19 +289,30 @@ pub async fn tts_gptsovits_synthesize(
 /// 连接测试: invoke("tts_gptsovits_test_connection")
 #[tauri::command]
 pub async fn tts_gptsovits_test_connection(
-    _app: tauri::AppHandle,
+    app: tauri::AppHandle,
     state: tauri::State<'_, db::Db>,
 ) -> Result<u16, String> {
-    let cfg = load_config(&state)?;
+    let cfg = load_config(&state).map_err(|e| {
+        let _ = log::write(&app, &LogSource::Backend, "error", &format!("TTS 连接测试加载配置失败: {e}"));
+        e
+    })?;
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(6))
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+        .map_err(|e| {
+            let msg = format!("创建 HTTP 客户端失败: {e}");
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("TTS 连接测试 {msg}"));
+            msg
+        })?;
     let response = client
         .get(&cfg.base_url)
         .send()
         .await
-        .map_err(|e| format!("无法连接 {}: {e}", cfg.base_url))?;
+        .map_err(|e| {
+            let msg = format!("无法连接 {}: {e}", cfg.base_url);
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("TTS 连接测试 {msg}"));
+            msg
+        })?;
     Ok(response.status().as_u16())
 }
 
