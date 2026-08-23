@@ -9,6 +9,7 @@ import {IconName} from "../services/icon"
 import TitleBar from "../components/common/TitleBar.vue"
 import Live2D from "../components/Live2D.vue"
 import Home from "../components/main/Home.vue"
+import Talk from "../components/main/Talk.vue"
 import ModelSelect from "../components/main/ModelSelect.vue"
 import ModelConfig from "../components/main/ModelConfig.vue"
 import Touch from "../components/main/Touch.vue"
@@ -17,6 +18,7 @@ import LanguageSelect from "../components/main/LanguageSelect.vue"
 import Exception from "../components/main/Exception.vue"
 import LLMAdapter from "../components/main/LLMAdapter.vue"
 import TTSAdapter from "../components/main/TTSAdapter.vue"
+import ToolList from "../components/main/ToolList.vue"
 
 const I18N = computed(() => useLanguages().views.main)
 
@@ -24,8 +26,12 @@ const UNSURE_GUARD = useUnsavedGuard()
 
 const ROUTER = useRouter()
 
-// 侧边导航项
-type NavKey = "home" | "talk" | "language" | "model" | "llm" | "tts" | "touch" | "exception" | "about"
+// 侧边导航项键
+type NavKey =
+	"home" | "talk" |
+	"model" | "touch" |
+	"llm" | "tts" | "tool" |
+	"language" | "exception" | "about"
 
 // 侧边导航项
 interface NavItem {
@@ -60,6 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
 		items: [
 			{key: "llm", icon: "robot"},
 			{key: "tts", icon: "volume"},
+			{key: "tool", icon: "volume"},
 		],
 	},
 	{
@@ -115,6 +122,7 @@ const switchNav = async (key: NavKey) => {
 	const TARGET_INDEX = ALL_NAV_ITEMS.value.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
 	activeNav.value = key
+	console.log(direction.value, activeNav.value)
 	// 离开模型导航时关闭配置页回到模型列表
 	if (key !== "model") configModelId.value = null
 	await config.set("main_active_nav", key)
@@ -155,13 +163,19 @@ const goToPet = () => {
 			<main class="content">
 				<Transition :name="direction > 0 ? 'page-next' : 'page-prev'" mode="out-in">
 					<Home v-if="activeNav === 'home'"/>
+					<Talk v-else-if="activeNav === 'talk'"/>
 
 					<ModelSelect v-else-if="activeNav === 'model' && !configModelId" @configure="openModelConfig"/>
-					<ModelConfig v-else-if="activeNav === 'model' && configModelId" :model-id="configModelId" @close="closeModelConfig"/>
+					<ModelConfig
+						v-else-if="activeNav === 'model' && configModelId"
+						:model-id="configModelId"
+						@close="closeModelConfig"
+					/>
 					<Touch v-else-if="activeNav === 'touch'"/>
 
 					<LLMAdapter v-else-if="activeNav === 'llm'"/>
 					<TTSAdapter v-else-if="activeNav === 'tts'"/>
+					<ToolList v-else-if="activeNav === 'tool'"/>
 
 					<LanguageSelect v-else-if="activeNav === 'language'"/>
 					<Exception v-else-if="activeNav === 'exception'"/>

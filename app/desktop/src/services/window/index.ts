@@ -80,6 +80,9 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null
 // 复位进行中禁止持久化 (复位会移动/缩放窗口, 触发 onMoved/onResized 会误写回数据库)
 let resetting = false
 
+// 定位进行中禁止持久化
+let positioning = false
+
 /**
  * 读取上次保存的桌宠窗口位置/大小
  */
@@ -114,6 +117,15 @@ const writeWindowState =  async (width: number, height: number, x: number, y: nu
  * @param delay 防抖毫秒数, 传 0 或负数则立即写入
  */
 export const persistWindowState = async (delay = 500) => {
+	// 定位/复位期间禁止写库, 避免中间状态污染配置
+	if (positioning || resetting) {
+		// 清理可能已挂起的防抖写库
+		if (persistTimer) {
+			clearTimeout(persistTimer)
+			persistTimer = null
+		}
+		return
+	}
 	const SIZE = await appWindow.outerSize()
 	const POSITION = await appWindow.outerPosition()
 	const SCALE_FACTOR = await appWindow.scaleFactor()
@@ -145,11 +157,11 @@ export const persistWindowState = async (delay = 500) => {
 export const watchWindowState = async (): Promise<() => void> => {
 	const STOPS: (() => void)[] = []
 	STOPS.push(await appWindow.onMoved(() => {
-		if (resetting) return
+		if (resetting || positioning) return
 		void persistWindowState()
 	}))
 	STOPS.push(await appWindow.onResized(() => {
-		if (resetting) return
+		if (resetting || positioning) return
 		void persistWindowState()
 	}))
 	return () => {
@@ -202,23 +214,29 @@ export const setMainWindow = async () => {
  * 设置窗口属性为桌宠窗口
  */
 export const setPetWindow = async () => {
-	const SAVED = await getSavedPetState()
-	// 恢复上次保存的窗口大小, 无记录时用默认 300x300
-	const WIDTH = SAVED.width ?? 300
-	const HEIGHT = SAVED.height ?? 300
-	await appWindow.setSize(new LogicalSize(WIDTH, HEIGHT))
-	// 恢复上次保存的窗口位置, 无记录时不移动(保持当前)
-	if (SAVED.x != null && SAVED.y != null) {
-		await appWindow.setPosition(new LogicalPosition(SAVED.x, SAVED.y))
+	// 定位期间标记, 抑制 onMoved/onResized 与后续写库, 防止中间状态污染配置
+	positioning = true
+	try {
+		const SAVED = await getSavedPetState()
+		// 恢复上次保存的窗口大小, 无记录时用默认 300x300
+		const WIDTH = SAVED.width ?? 300
+		const HEIGHT = SAVED.height ?? 300
+		await appWindow.setSize(new LogicalSize(WIDTH, HEIGHT))
+		// 恢复上次保存的窗口位置, 无记录时不移动(保持当前)
+		if (SAVED.x != null && SAVED.y != null) {
+			await appWindow.setPosition(new LogicalPosition(SAVED.x, SAVED.y))
+		}
+		// 不允许调整大小
+		await appWindow.setResizable(false)
+		// 窗口置顶
+		await appWindow.setAlwaysOnTop(true)
+		// 显示窗口
+		await appWindow.show()
+		// 获取焦点
+		await appWindow.setFocus()
+	} finally {
+		positioning = false
 	}
-	// 不允许调整大小
-	await appWindow.setResizable(false)
-	// 窗口置顶
-	await appWindow.setAlwaysOnTop(true)
-	// 显示窗口
-	await appWindow.show()
-	// 获取焦点
-	await appWindow.setFocus()
 }
 
 /**

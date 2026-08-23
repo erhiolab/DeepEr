@@ -1,6 +1,6 @@
 import {createRouter, createWebHashHistory} from "vue-router"
 import {emit} from "@tauri-apps/api/event"
-import {setFirstRunWindow, setMainWindow, setPetWindow} from "../window"
+import {setFirstRunWindow, setMainWindow} from "../window"
 import {logger} from "../logger"
 import {useUnsavedGuard} from "../store/unsaved"
 import FirstRunView from "../../views/FirstRunView.vue"
@@ -39,7 +39,6 @@ router.afterEach(async (to, _from, failure) => {
 			await setMainWindow()
 			break
 		case "Pet":
-			await setPetWindow()
 			break
 	}
 })

@@ -15,6 +15,7 @@ export default {
 			model: "Live2D",
 			llm: "LLM",
 			tts: "TTS",
+			tool: "工具",
 			exception: "异常",
 			about: "关于",
 			touch: "触摸",
