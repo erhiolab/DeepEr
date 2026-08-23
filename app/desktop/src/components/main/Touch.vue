@@ -349,7 +349,10 @@ watch(() => L2D.currentModel, async m => {
 	<section class="page-touch">
 		<header class="touch-head">
 			<div>
-				<h2 class="touch-title">{{ I18N.title }}</h2>
+				<h2 class="touch-title">
+					{{ I18N.title }}
+					<span v-if="L2D.currentModel" class="touch-model">{{ L2D.currentModel }}</span>
+				</h2>
 				<p class="touch-sub">{{ I18N.subtitle }}</p>
 			</div>
 		</header>
@@ -383,11 +386,11 @@ watch(() => L2D.currentModel, async m => {
 				<ul v-if="TOUCH.touches.length" class="touch-list">
 					<li v-for="(t, i) in TOUCH.touches" :key="t.id" class="touch-item">
 						<span class="touch-item-type" :class="t.type">
-							{{t.type === "tap" ? I18N.typeTap : t.type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy }}
+							{{t.type === "tap" ? I18N.typeTap : t.type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy}}
 						</span>
 						<span class="touch-item-name">{{ t.name }}</span>
 						<span class="touch-item-size">
-							({{ (t.w * 100).toFixed(0) }}% × {{(t.h * 100).toFixed(0) }}%)
+							({{ (t.w * 100).toFixed(0) }}% × {{ (t.h * 100).toFixed(0) }}%)
 						</span>
 						<div class="touch-item-actions">
 							<button class="mini-btn" @click="startEdit(t, i)">
@@ -499,6 +502,16 @@ watch(() => L2D.currentModel, async m => {
 		font-weight: 600;
 		color: var(--text-primary);
 		text-shadow: 0 0 1.8rem var(--glow-teal), 0 0 6rem var(--glow-teal-soft);
+	}
+
+	.touch-model {
+		padding: 0.15rem 0.7rem;
+		display: inline-block;
+		font-size: 1.2rem;
+		color: var(--deep-teal-bright);
+		background-color: rgba(125, 227, 255, 0.1);
+		border: 0.1rem solid color-mix(in srgb, var(--deep-teal) 45%, transparent);
+		border-radius: 0.5rem;
 	}
 
 	.touch-sub {
