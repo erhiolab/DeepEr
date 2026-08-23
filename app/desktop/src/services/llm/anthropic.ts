@@ -1,15 +1,11 @@
 /**
  * Anthropic Messages API 适配器
- * 协议: https://docs.anthropic.com/en/api/messages
- * 端点: POST {base}/v1/messages
- * 鉴权: x-api-key: <apiKey>, anthropic-version: 2023-06-01
- * 说明: Messages 协议的 system 是独立顶层字段, 其余消息只有 user / assistant 两种角色.
  */
 import {config} from "../config"
 import {logger} from "../logger"
 import {decryptSecret, encryptSecret} from "../secret"
 import type {LLMAdapter, LLMModelInfo, LLMGenerateRequest, LLMGenerateResult, LLMTestResult} from "./types"
-import {llmHttpRequest, readJsonField} from "./http"
+import {backendGenerate, backendTestConnection} from "./http"
 
 /**
  * 配置键前缀
@@ -38,7 +34,6 @@ export const defaultConfig: () => AnthropicMessagesConfig = () => {
 
 /**
  * Anthropic 已知模型预设 (无公开 model list API, 内置下拉供选择)
- * id 为真实模型名, label 为该模型的简记.
  */
 export const ANTHROPIC_MODELS: LLMModelInfo[] = [
 	{id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5 (均衡)"},
@@ -56,69 +51,6 @@ export const normalizeBaseUrl = (raw: string): string => {
 	if (!TRIMMED) return defaultConfig().baseUrl
 	if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(TRIMMED)) return TRIMMED
 	return `https://${TRIMMED}`
-}
-
-/**
- * 拼接 {base}/v1/messages 完整地址
- */
-export const buildMessagesUrl = (cfg: Pick<AnthropicMessagesConfig, "baseUrl">): string => {
-	const BASE = normalizeBaseUrl(cfg.baseUrl).replace(/\/+$/, "")
-	return `${BASE}/v1/messages`
-}
-
-/**
- * 构造一次生成请求体 (Anthropic Messages 格式)
- * system 独立提取, 其余消息合并为 user/assistant 交替序列.
- */
-export const buildBody = (
-	config: {model: string; temperature: number; maxTokens: number},
-	request: Pick<LLMGenerateRequest, "messages">,
-): Record<string, unknown> => {
-	const SYSTEM = request.messages
-		.filter(msg => msg.role === "system")
-		.map(msg => msg.content)
-		.join("\n")
-	const MESSAGES = request.messages
-		.filter(msg => msg.role !== "system")
-		.map(msg => ({
-			role: msg.role === "assistant" ? "assistant" : "user",
-			content: msg.content,
-		}))
-	const BODY: Record<string, unknown> = {
-		model: config.model,
-		messages: MESSAGES,
-		temperature: config.temperature,
-		...(config.maxTokens > 0 ? {max_tokens: config.maxTokens} : {}),
-	}
-	if (SYSTEM) BODY.system = SYSTEM
-	return BODY
-}
-
-/**
- * 构造测试请求体
- */
-export const buildTestBody = (config: AnthropicMessagesConfig): Record<string, unknown> => {
-	return {
-		model: config.model,
-		max_tokens: 1,
-		messages: [{role: "user", content: "ping"}],
-	}
-}
-
-/**
- * 从 Messages 响应中提取文本流 (content 里的 text 段拼接)
- */
-export const extractText = (body: unknown): string => {
-	const CONTENT = readJsonField(body, "content")
-	if (!Array.isArray(CONTENT)) return ""
-	return CONTENT
-		.map((part: unknown) => {
-			if (!part || typeof part !== "object") return ""
-			const OBJ = part as Record<string, unknown>
-			if (OBJ.type === "text") return String(OBJ.text ?? "")
-			return ""
-		})
-		.join("")
 }
 
 /**
@@ -152,7 +84,7 @@ export const saveConfig = async (cfg: AnthropicMessagesConfig): Promise<void> =>
 }
 
 /**
- * 是否已保存过 API Key (只判断是否有密文, 不解密)
+ * 是否已保存过 API Key
  */
 export const hasApiKey = async (): Promise<boolean> => {
 	const SAVED = await config.getRaw(`${PREFIX}_api_key`)
@@ -184,22 +116,7 @@ export const anthropicMessagesAdapter: LLMAdapter<AnthropicMessagesConfig> = {
 		const CFG = await this.loadConfig()
 		if (!CFG.apiKey.trim()) return {ok: false, error: "未填写 API Key"}
 		if (!CFG.model.trim()) return {ok: false, error: "未填写模型名"}
-		try {
-			const RES = await llmHttpRequest({
-				url: buildMessagesUrl(CFG),
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					"x-api-key": CFG.apiKey.trim(),
-					"anthropic-version": "2023-06-01",
-				},
-				body: buildTestBody(CFG),
-			})
-			if (RES.status >= 200 && RES.status < 300) return {ok: true, status: RES.status}
-			return {ok: false, status: RES.status, error: `HTTP ${RES.status}`}
-		} catch (error) {
-			return {ok: false, error: error instanceof Error ? error.message : String(error)}
-		}
+		return await backendTestConnection("llm_anthropic_test_connection")
 	},
 	async listModels(): Promise<LLMModelInfo[]> {
 		return ANTHROPIC_MODELS.map(m => ({...m}))
@@ -210,34 +127,10 @@ export const anthropicMessagesAdapter: LLMAdapter<AnthropicMessagesConfig> = {
 	async clearApiKey() {
 		await clearApiKey()
 	},
-	async generate(request): Promise<LLMGenerateResult> {
+	async generate(request: LLMGenerateRequest): Promise<LLMGenerateResult> {
 		const CFG = await this.loadConfig()
 		if (!CFG.apiKey.trim()) return {ok: false, error: "未填写 API Key"}
 		if (!CFG.model.trim()) return {ok: false, error: "未填写模型名"}
-		try {
-			const RES = await llmHttpRequest({
-				url: buildMessagesUrl(CFG),
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					"x-api-key": CFG.apiKey.trim(),
-					"anthropic-version": "2023-06-01",
-				},
-				body: buildBody({model: CFG.model, temperature: 1, maxTokens: 0}, request),
-			})
-			const TEXT = extractText(RES.body)
-			const USAGE = readJsonField(RES.body, "usage")
-			const inputTokens =
-				USAGE && typeof USAGE === "object"
-					? Number((USAGE as Record<string, unknown>).input_tokens ?? 0) || undefined
-					: undefined
-			const outputTokens =
-				USAGE && typeof USAGE === "object"
-					? Number((USAGE as Record<string, unknown>).output_tokens ?? 0) || undefined
-					: undefined
-			return {ok: true, text: TEXT, inputTokens, outputTokens}
-		} catch (error) {
-			return {ok: false, error: error instanceof Error ? error.message : String(error)}
-		}
+		return await backendGenerate("llm_anthropic_generate", request)
 	},
 }

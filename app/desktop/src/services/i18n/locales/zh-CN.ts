@@ -338,4 +338,13 @@ export default {
 			resizing: "取消调整"
 		}
 	},
+	errors: {
+		missingApiKey: "未填写 API Key",
+		missingModel: "未填写模型名",
+		networkError: "无法连接服务器，请检查地址与网络",
+		httpError: "平台接口返回 HTTP {status}",
+		emptyText: "合成文本不能为空",
+		missingVoice: "未找到音色",
+		emptyAudio: "语音接口返回了空音频",
+	},
 }

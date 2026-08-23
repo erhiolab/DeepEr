@@ -1,11 +1,18 @@
 /**
  * GPT-SoVITS 适配器
- * 服务端 API 版本: V2, 接口: GET {base}/tts
  */
 import {invoke} from "@tauri-apps/api/core"
+import useLanguages from "../i18n/useLanguages"
 import {logger} from "../logger"
 import {config} from "../config"
-import type {TTSAdapter, TTSVoiceEntry} from "./types"
+import type {
+	TTSAdapter,
+	TTSVoiceEntry,
+	TtsSynthesizeRequest,
+	TtsSynthesizeResult,
+	TtsTestResult,
+	TTSVoiceInfo
+} from "./types"
 
 /**
  * 合成/参考语言可选值
@@ -21,6 +28,28 @@ export const GPT_SOVITS_SPLIT_METHODS: string[] = ["cut0", "cut1", "cut2", "cut3
  * 配置键前缀
  */
 export const PREFIX = "tts_gpt_sovits"
+
+/**
+ * 把后端 TTS 错误码翻译为用户可读文案
+ */
+const translateTtsError = (code?: string, fallback?: string): string => {
+	if (!code) return fallback ?? "TTS 合成失败"
+	const ERRORS = useLanguages().errors
+	switch (code) {
+		case "empty_text":
+			return ERRORS.emptyText
+		case "missing_voice":
+			return ERRORS.missingVoice
+		case "network_error":
+			return ERRORS.networkError
+		case "http_error":
+			return ERRORS.httpError()
+		case "empty_audio":
+			return ERRORS.emptyAudio
+		default:
+			return fallback ?? "TTS 合成失败"
+	}
+}
 
 /**
  * GPT-SoVITS 完整配置 (与前端表单对应)
@@ -53,7 +82,7 @@ export const defaultConfig: () => GptSoVitsConfig = () => {
 }
 
 /**
- * 归一化服务地址: 去掉首尾空白, 自动补全 http:// 前缀 (防止 reqwest `builder error`)
+ * 归一化服务地址: 去掉首尾空白, 自动补全 http:// 前缀
  */
 export const normalizeBaseUrl = (raw: string): string => {
 	const TRIMMED = raw.trim()
@@ -63,42 +92,7 @@ export const normalizeBaseUrl = (raw: string): string => {
 }
 
 /**
- * 返回归一化后的 base 地址, 例: http://127.0.0.1:9880
- */
-export const buildBaseUrl = (cfg: Pick<GptSoVitsConfig, "baseUrl">): string => {
-	return normalizeBaseUrl(cfg.baseUrl)
-}
-
-/**
- * 拼接 /tts 完整地址
- */
-export const buildTtsUrl = (cfg: Pick<GptSoVitsConfig, "baseUrl">): string => {
-	return `${buildBaseUrl(cfg)}/tts`
-}
-
-/**
- * 构造一次合成请求的查询参数
- */
-export const buildParams = (config: Pick<GptSoVitsConfig, "textLang" | "topK" | "topP" | "temperature" | "textSplitMethod" | "batchSize">, text: string, entry: TTSVoiceEntry,): Record<string, unknown> => {
-	// 合成文本语言来自 config.textLang, 参考音频语言来自 entry.promptLang (每条参考音频独立).
-	const PARAMS: Record<string, unknown> = {
-		text,
-		text_lang: config.textLang,
-		ref_audio_path: entry.audioPath,
-		prompt_lang: entry.promptLang,
-		top_k: config.topK,
-		top_p: config.topP,
-		temperature: config.temperature,
-		text_split_method: config.textSplitMethod,
-		batch_size: config.batchSize,
-		streaming_mode: false,
-	}
-	if (entry.promptText) PARAMS["prompt_text"] = entry.promptText
-	return PARAMS
-}
-
-/**
- * 解析情绪列表 (稳健: 反序列化失败回退空数组, 老数据缺 promptLang 时回落默认语言)
+ * 解析情绪列表
  */
 export const parseEmotions = async (raw: string | null): Promise<TTSVoiceEntry[]> => {
 	if (!raw) return []
@@ -117,7 +111,7 @@ export const parseEmotions = async (raw: string | null): Promise<TTSVoiceEntry[]
 						name: NAME,
 						audioPath: AUDIO_PATH,
 						promptText: PROMPT_TEXT,
-						promptLang: toLang(PROMPT_LANG, "zh")
+						promptLang: toLang(PROMPT_LANG, "zh"),
 					}
 				})
 				.filter((item): item is TTSVoiceEntry => item !== null)
@@ -204,30 +198,36 @@ export const gptSovitsAdapter: TTSAdapter<GptSoVitsConfig> = {
 	async saveConfig(cfg) {
 		await saveConfig(cfg)
 	},
-	async testConnection() {
-		// 404 是根路径无映射但服务健康, 5xx 是服务在线但网关异常, 都算连通.
-		const URL = buildBaseUrl(await this.loadConfig())
+	async testConnection(): Promise<TtsTestResult> {
+		// 后端自读配置并请求平台, 返回 HTTP 状态码
 		try {
-			const STATUS = await invoke<number>("tts_test_connection", {url: URL})
+			const STATUS = await invoke<number>("tts_gptsovits_test_connection")
 			return {ok: true, status: STATUS}
 		} catch (error) {
-			// 网络层错误 (连接被拒/超时/DNS 失败) 才真正说明不可达
 			return {ok: false, error: typeof error === "string" ? error : String(error)}
 		}
 	},
-	async synthesize(request) {
-		const CONFIG = await this.loadConfig()
-		const ENTRY = findVoice(CONFIG, request.voice)
-		if (!ENTRY) {
-			return {ok: false, error: `未找到音色: ${request.voice ?? "(未指定)"}`}
+	async synthesize(request: TtsSynthesizeRequest): Promise<TtsSynthesizeResult> {
+		const CFG = await this.loadConfig()
+		if (!CFG.emotions.length) {
+			return {ok: false, error: "尚未配置任何音色(参考音频)"}
 		}
-		const PARAMS = buildParams(CONFIG, request.text, ENTRY)
 		try {
-			const RESULT = await invoke<{ assetPath: string; fileName: string }>("tts_synthesize", {
-				url: buildTtsUrl(CONFIG),
-				params: PARAMS,
-				extension: "wav",
+			const RESULT = await invoke<{
+				ok: boolean
+				assetPath?: string
+				fileName?: string
+				error?: string
+				errorCode?: string
+			}>("tts_gptsovits_synthesize", {
+				args: {
+					text: request.text,
+					...(request.voice?.trim() ? {voice: request.voice.trim()} : {}),
+				},
 			})
+			if (!RESULT.ok) {
+				return {ok: false, error: translateTtsError(RESULT.errorCode, RESULT.error)}
+			}
 			return {
 				ok: true,
 				audioAssetPath: RESULT.assetPath,
@@ -239,22 +239,11 @@ export const gptSovitsAdapter: TTSAdapter<GptSoVitsConfig> = {
 			return {ok: false, error: REASON}
 		}
 	},
-	async listVoices() {
-		const CONFIG = await this.loadConfig()
-		return CONFIG.emotions.map(entry => ({
+	async listVoices(): Promise<TTSVoiceInfo[]> {
+		const CFG = await this.loadConfig()
+		return CFG.emotions.map(entry => ({
 			name: entry.name,
 			description: entry.audioPath || undefined,
 		}))
 	},
-}
-
-/**
- * 在配置中按音色名查找参考音频, 未指定时用第一条 (若存在).
- */
-const findVoice = (config: GptSoVitsConfig, voice?: string): TTSVoiceEntry | undefined => {
-	if (voice && voice.trim()) {
-		const NAME = voice.trim()
-		return config.emotions.find(entry => entry.name === NAME)
-	}
-	return config.emotions[0]
 }

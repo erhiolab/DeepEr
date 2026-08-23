@@ -353,5 +353,14 @@ export default () => {
 				resizing: t("views.pet.resizing"),
 			},
 		},
+		errors: {
+			missingApiKey: t("errors.missingApiKey"),
+			missingModel: t("errors.missingModel"),
+			networkError: t("errors.networkError"),
+			httpError: (status?: number) => t("errors.httpError", {status: status ?? ""}),
+			emptyText: t("errors.emptyText"),
+			missingVoice: t("errors.missingVoice"),
+			emptyAudio: t("errors.emptyAudio"),
+		},
 	}
 }

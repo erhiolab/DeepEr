@@ -65,12 +65,22 @@ pub fn run() {
             commands::first_run::complete_first_run,
             commands::log::write_log,
             commands::language::get_system_language,
-            commands::llm::llm_http_request,
-            commands::tts::tts_test_connection,
-            commands::tts::tts_synthesize,
+            commands::live2d::fetch_live2d_list,
+
+            commands::llm::openai_responses::llm_openai_generate,
+            commands::llm::openai_responses::llm_openai_test_connection,
+            commands::llm::openai_responses::llm_openai_list_models,
+            commands::llm::anthropic_messages::llm_anthropic_generate,
+            commands::llm::anthropic_messages::llm_anthropic_test_connection,
+            commands::llm::google_genai::llm_google_generate,
+            commands::llm::google_genai::llm_google_test_connection,
+            commands::llm::google_genai::llm_google_list_models,
+
             commands::tts::tts_list_audio_files,
             commands::tts::tts_read_audio_file,
-            commands::live2d::fetch_live2d_list,
+            commands::tts::gptsovits::tts_gptsovits_synthesize,
+            commands::tts::gptsovits::tts_gptsovits_test_connection,
+
             config::get_config,
             config::set_config,
             config::delete_config,
@@ -79,18 +89,21 @@ pub fn run() {
             config::get_init_config,
             secret::secret_encrypt,
             secret::secret_decrypt,
+
             commands::resource::check_resource,
             commands::resource::ensure_resource,
             commands::resource::list_resources,
             commands::resource::delete_resource,
             commands::resource::import_live2d,
-            commands::devtools::toggle_devtools,
-            commands::task_manager::open_task_manager,
+
             commands::resource::read_model_config,
             commands::resource::write_model_config,
             commands::resource::export_model_config,
             commands::resource::import_model_config,
-            commands::resource::save_model_cover
+            commands::resource::save_model_cover,
+
+            commands::devtools::toggle_devtools,
+            commands::task_manager::open_task_manager
         ])
         .run(tauri::generate_context!())
         .expect("运行应用时出错")
