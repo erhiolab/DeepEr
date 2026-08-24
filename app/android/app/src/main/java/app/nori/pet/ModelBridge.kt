@@ -14,12 +14,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.zip.ZipInputStream
 
-/**
- * 原生模型桥: 由 WebView 注入为 window.NoriBridge.
- * 提供 -> 网关 download_url 下载 ZIP -> 解压到 filesDir/models/<id>/<entryBase>/.
- * 模型文件随后由 shouldInterceptRequest 拦截 "live2d/" 前缀请求从磁盘返回.
- * 下载/解压在后台线程执行, 结果经 JS 回调异步回传, 不占用主线程.
- */
+
 class ModelBridge(private val appContext: Context) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -34,10 +29,10 @@ class ModelBridge(private val appContext: Context) {
     }
 
     val modelsDir: File
-        // 模型存应用私有目录(免权限); 重装后重新下载
+        
         get() = File(appContext.filesDir, MODELS_ROOT)
 
-    /** 下载并安装模型(异步), 经 window.__noriModelRes(json) 回调: {"ok":true,"entryBase":...} */
+    
     @android.webkit.JavascriptInterface
     fun download(id: String) {
         ioExecutor.execute {
@@ -63,7 +58,7 @@ class ModelBridge(private val appContext: Context) {
         }
     }
 
-    /** 已安装模型列表 -> [{"id":...,"entryBase":...}] (JSON 字符串) */
+    
     @android.webkit.JavascriptInterface
     fun listInstalled(): String {
         val arr = JSONArray()
@@ -80,13 +75,13 @@ class ModelBridge(private val appContext: Context) {
         return arr.toString()
     }
 
-    /** 删除模型目录 */
+    
     @android.webkit.JavascriptInterface
     fun delete(id: String) {
         runCatching { modelsDir.resolve(safeSegment(id)).deleteRecursively() }
     }
 
-    /** 在 <modelDir> 内定位 *.model3.json 所处最浅目录, 返回该目录名 (entry base) */
+    
     private fun findEntryBase(modelDir: File): String? {
         if (!modelDir.isDirectory) return null
         return modelDir.walkTopDown()
@@ -104,7 +99,7 @@ class ModelBridge(private val appContext: Context) {
             .minByOrNull { depthOfEntry(modelDir, it) }
     }
 
-    /** 估算 entry 所在目录深度 (越小越浅) */
+    
     private fun depthOfEntry(modelDir: File, entryBase: String): Int {
         val dir = modelDir.resolve(safeSegment(entryBase))
         val f = File(dir, "$entryBase.model3.json")
@@ -156,7 +151,7 @@ class ModelBridge(private val appContext: Context) {
                 entry = zip.nextEntry
             }
         }
-        // 定位入口 base
+        
         val entryFiles = entries.filterKeys { it.endsWith(".model3.json", true) }
         val best = entryFiles.keys.minByOrNull { it.count { c -> c == '/' } } ?: throw RuntimeException("模型包缺少 .model3.json")
         val parts = best.split("/")

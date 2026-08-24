@@ -6,31 +6,31 @@
 		@touchend.passive="onTouchEnd"
 		@touchcancel.passive="onTouchEnd"
 	>
-		<!-- 涟漪层 -->
+		
 		<div ref="rippleHost" class="ripple-host"></div>
 
-		<!-- Live2D 渲染层: 固定在底层, 可被设置/对话/底栏等 UI 盖住 -->
+		
 		<div ref="l2dHost" class="l2d-host"></div>
 
-		<!-- 触摸触发气泡 -->
+		
 		<transition name="fade">
 			<div v-if="touchBubble" class="touch-bubble">{{ touchBubble }}</div>
 		</transition>
 
-		<!-- AI 触摸回应气泡(仅气泡) -->
+		
 		<transition name="ai">
 			<div v-if="aiBubble" class="ai-bubble">
 				<div class="ai-bubble-txt">{{ aiBubble }}</div>
 			</div>
 		</transition>
 
-		<div class="topbar" v-show="panel !== 'touch'">
+		<div class="topbar" v-show="panel !== 'touch' && panel !== 'tts'">
 			<div class="tag" @click="panel = panel === 'model' ? '' : 'model'">{{ currentModel?.name ?? "—" }}</div>
 			<div v-if="error" class="err" @click="error = ''">{{ error }} ✕</div>
 			<div v-else-if="loading" class="loading">{{ loadingMsg }}</div>
 		</div>
 
-		<!-- 对话面板: 悬浮在按钮群上方 -->
+		
 		<transition name="chat">
 			<div v-if="chatOpen" class="chat-panel">
 				<div class="chat-head">
@@ -61,7 +61,7 @@
 			</div>
 		</transition>
 
-		<div class="dock" v-show="panel !== 'touch'">
+		<div class="dock" v-show="panel !== 'touch' && panel !== 'tts'">
 			<button class="fab ripple" @click="playRand" :disabled="!ready">动作</button>
 			<button class="fab ripple primary" @click="playExpr" :disabled="!ready">表情</button>
 			<button class="fab ripple" @click="openPanel('model')">模型</button>
@@ -70,22 +70,22 @@
 			<button class="fab ripple" @click="toggleChat">对话</button>
 		</div>
 
-		<!-- 自定义触摸: 独立全屏页面, 模型可见可在其上直接框选 (桌面端风格) -->
+		
 		<Transition name="fade">
 		<div v-if="panel === 'touch'" class="touch-page">
-			<!-- 触摸区域叠加框: 铺满全屏画在模型上, 不拦截指针 -->
+			
 			<div class="touch-overlay" :class="{drawing: touchDrawing}">
 				<div v-for="(t, i) in touchAreas" :key="t.id" class="touch-area-box" :class="t.type" :style="[boxStyle(t), {zIndex: i + 1}]">
 					<span class="ba-name">{{ t.name }}</span>
 				</div>
 				<div v-if="touchDraft" class="touch-area-box draft" :style="boxStyle(touchDraft)"></div>
 			</div>
-			<!-- 顶部栏 -->
+			
 			<div class="touch-top">
 				<span class="touch-title">自定义触摸</span>
 				<button class="x" @click="panel = ''">✕</button>
 			</div>
-			<!-- 底部编辑器 -->
+			
 			<div class="touch-editor">
 				<TouchManager
 					:touches="touchAreas"
@@ -103,15 +103,27 @@
 		</div>
 		</Transition>
 
+		<Transition name="fade">
+		<div v-if="panel === 'tts'" class="tts-page">
+			<div class="tts-top">
+				<span class="tts-title">语音合成（TTS）</span>
+				<button class="x" @click="panel = ''">✕</button>
+			</div>
+			<div class="tts-body">
+				<div class="tts-empty">语音合成（TTS）功能即将上线</div>
+			</div>
+		</div>
+		</Transition>
+
 		<transition name="sheet">
-			<div v-if="panel && panel !== 'touch'" class="sheet-mask" @click.self="panel = ''">
+			<div v-if="panel && panel !== 'touch' && panel !== 'tts'" class="sheet-mask" @click.self="panel = ''">
 				<div class="sheet">
 					<div class="sheet-head">
 						<span class="sheet-title">{{ panelTitle(panel) }}</span>
 						<button class="x" @click="panel = ''">✕</button>
 					</div>
 					<div class="sheet-body">
-						<!-- 模型选择 -->
+						
 						<template v-if="panel === 'model'">
 							<div v-if="listError" class="empty">{{ listError }}</div>
 							<div v-else-if="!modelList.length" class="empty">正在获取模型列表…</div>
@@ -123,7 +135,7 @@
 							</div>
 						</template>
 
-						<!-- 动作 -->
+						
 						<template v-else-if="panel === 'motion'">
 							<div v-if="!motions.length" class="empty">暂无动作</div>
 							<div v-for="g in motions" :key="g.group" class="grp">
@@ -134,7 +146,7 @@
 							</div>
 						</template>
 
-						<!-- 表情 -->
+						
 						<template v-else-if="panel === 'expression'">
 							<div v-if="!expressions.length" class="empty">暂无表情</div>
 							<div class="chips">
@@ -143,7 +155,7 @@
 							</div>
 						</template>
 
-						<!-- 设置 -->
+						
 						<template v-else-if="panel === 'settings'">
 							<div class="settings-row">
 								<label>API Base URL</label>
@@ -177,6 +189,7 @@
 								<label>聊天记录存储位置</label>
 								<div class="hint ok">公共下载目录：{{ storagePath }}（卸载重装也不丢）</div>
 							</div>
+							<button class="btn ripple" @click="openPanel('tts')">语音合成（TTS）</button>
 							<button class="btn ripple" @click="saveSettingsNow">保存设置</button>
 						</template>
 					</div>
@@ -222,7 +235,7 @@ import {
 	type ChatMsg,
 } from "./services/chat"
 
-type P = "model" | "motion" | "expression" | "touch" | "settings" | ""
+type P = "model" | "motion" | "expression" | "touch" | "settings" | "tts" | ""
 
 const l2dHost = ref<HTMLElement | null>(null)
 
@@ -234,60 +247,60 @@ const panel = ref<P>("")
 const currentModelId = ref<string>("")
 const motions = ref<MotionGroup[]>([])
 const expressions = ref<string[]>([])
-// 触摸区域
+
 const touchAreas = ref<TouchArea[]>([])
-// 框选编辑模式: true 时主模型上的单指拖动用于画矩形区域, 不触发生效的触摸
+
 const touchDrawing = ref(false)
-// 调整/移动模式: true 时只有"点中已有框"才能拖动它, 不能画新框
+
 const touchAdjusting = ref(false)
-// 框选中的草稿区域(归一化坐标) 与 触发气泡
+
 const touchDraft = ref<{x: number; y: number; w: number; h: number} | null>(null)
-// 是否已画完一个有效矩形(松手后为 true), 控制表单弹出
+
 const draftReady = ref(false)
-// 框选模式下正在拖动调整的已有区域 id
+
 const drawingTarget = ref<string | null>(null)
 const touchBubble = ref("")
 let touchBubbleTimer: ReturnType<typeof setTimeout> | null = null
 const scale = ref(1)
 const offsetX = ref(0)
 const offsetY = ref(0)
-// 布局版本号: 每次模型缩放/位移/加载后自增, 用于强制触摸叠加层重新读取 canvas 显示矩形, 保证框随模型移动
+
 const layoutVer = ref(0)
 const loadingMsg = ref("加载中…")
 const modelList = ref<{id: string; name: string}[]>([])
 const listError = ref("")
 
 const currentModel = computed(() => modelList.value.find((m) => m.id === currentModelId.value))
-const panelTitle = (p: P) => ({model: "选择模型", motion: "动作列表", expression: "表情列表", touch: "自定义触摸", settings: "设置"} as Record<string, string>)[p] ?? ""
+const panelTitle = (p: P) => ({model: "选择模型", motion: "动作列表", expression: "表情列表", touch: "自定义触摸", settings: "设置", tts: "语音合成"} as Record<string, string>)[p] ?? ""
 
 const hideThumb = (e: Event) => { (e.currentTarget as HTMLElement).style.visibility = "hidden" }
 
-/* ================= 模型展示与布局 ================= */
+
 
 const relayout = () => {
 	applyCanvasLayout(l2d.canvas(), undefined, {
 		zIndex: "1", scale: scale.value, offsetX: offsetX.value, offsetY: offsetY.value, animate: false,
 	})
-	// 自增版本号, 触发触摸叠加层重新读取 canvas 显示矩形 → 框紧跟模型
+	
 	layoutVer.value++
 }
 
-/* ================= 触摸区域 ================= */
 
-// 触摸命中检测器: 单击=戳, 滑动=摸 → 触发区域回调, 由 handleTouchTrigger 交给 AI 并弹气泡
+
+
 const detector = new TouchDetector((area, type) => {
 	handleTouchTrigger(area, type)
 })
-// 区域触发冷却固定 2 秒, 防止频繁触摸过度消耗 token/性能
+
 detector.setCooldown(2000)
 
 const configureTouchDetector = () => {
-	// 用 canvas 元素（应用后边界含缩放/位移）做坐标基准, 并传入模型自然宽高使 hit 与框一致 contain 对齐
+	
 	const ms = modelSize()
 	detector.configure(touchAreas.value, l2d.canvas(), ms?.w ?? 0, ms?.h ?? 0)
 }
 
-/** 模型的自然画布尺寸(由 live2d 库补丁暴露), 用于 contain() 把归一化坐标对齐到真实模型内容矩形 */
+
 const modelSize = (): {w: number; h: number} | null => {
 	const m = (window as unknown as {__noriModelCanvas?: {w: number; h: number}}).__noriModelCanvas
 	return m && m.w > 0 && m.h > 0 ? {w: m.w, h: m.h} : null
@@ -332,7 +345,7 @@ const onTouchRemove = (id: string) => {
 	saveTouch()
 }
 
-// 画新模式开关: 空白处画新矩形, 不拖动已有框
+
 const toggleTouchDraw = () => {
 	touchDrawing.value = !touchDrawing.value
 	if (touchDrawing.value) touchAdjusting.value = false
@@ -344,7 +357,7 @@ const toggleTouchDraw = () => {
 	if (touchDrawing.value) triggerBubble("在模型上按住拖动画新矩形")
 }
 
-// 调整/移动模式开关: 只有点中已有框才能拖动它
+
 const toggleTouchAdjust = () => {
 	touchAdjusting.value = !touchAdjusting.value
 	if (touchAdjusting.value) touchDrawing.value = false
@@ -363,7 +376,7 @@ const resetTouchDraft = () => {
 	drawDragged = false
 }
 
-// 关闭触摸面板时一并退出画框/调整模式, 防止叠加层残留在屏幕上
+
 import {watch as __watch} from "vue"
 __watch(() => panel.value, (newVal) => {
 	if (newVal !== 'touch') {
@@ -376,21 +389,21 @@ __watch(() => panel.value, (newVal) => {
 		drawDragged = false
 	}
 })
-// 模型缩放/位移或加载完成后强制重算触摸框, 保证始终贴合模型当前显示位置
+
 __watch([scale, offsetX, offsetY, ready], () => {
 	nextTick(() => configureTouchDetector())
 })
 
-/** 临时气泡提示(显示 2 秒) */
+
 const triggerBubble = (msg: string) => {
 	touchBubble.value = msg
 	if (touchBubbleTimer) clearTimeout(touchBubbleTimer)
 	touchBubbleTimer = setTimeout(() => { touchBubble.value = "" }, 2000)
 }
 
-/* ================= AI 触摸回应 ================= */
 
-// 触摸触发后 AI 回复的纯聊天气泡(仅气泡, 不弹出对话面板)
+
+
 const aiBubble = ref("")
 let aiBubbleTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -400,14 +413,10 @@ const showAiBubble = (t: string) => {
 	aiBubbleTimer = setTimeout(() => { aiBubble.value = "" }, 9000)
 }
 
-/**
- * 触摸触发: 开放、随机的互动描述发给 AI, 只把 AI 的回复显示到对话里。
- * - 随机措辞(每次都不一样), 若区域写了提示词则直接采用, 否则用名称
- * - 不把"用户 摸了…"写进聊天记录, 对话里只显示 AI 的话
- */
+
 const TAP_VERBS = ["戳了戳", "点了点", "轻轻点了一下", "碰了碰", "戳了一下"]
 const SWIPE_VERBS = ["摸了摸", "轻轻摸了摸", "蹭了蹭", "抚摸了好几下", "揉了揉"]
-// 触摸场景附加指令: 强调彻底自由发挥, 不要机械复读, 也不要只报身体部位
+
 const TOUCH_DIRECTIVE = [
 	"这一次是触摸互动：",
 	"1. 你已经是一个感觉灵敏的人, 完全按自己的方式来反应, 不许复读之前说过的话, 不许每次都说同一句类似的话。",
@@ -416,7 +425,7 @@ const TOUCH_DIRECTIVE = [
 	"4. 仍然遵守上面的句式和标点规则。",
 ].join("\n")
 
-// 触摸互动结果统一出口: 打开聊天栏时融入聊天栏, 否则浮出气泡
+
 const surface = (content: string) => {
 	messages.value.push({role: "assistant", content, ts: Date.now()})
 	persistChat(messages.value)
@@ -439,7 +448,7 @@ const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
 	]
 	if (memory.trim()) context.push({role: "system", content: `(长期记忆，按需参考)\n${memory.trim()}`} as ChatMsg)
 	const hist = messages.value.slice(-14).map(({role, content}) => ({role, content}) as ChatMsg)
-	// 触摸描述只作为当前这轮的用户消息发给 AI, 不写入聊天记录
+	
 	const payload: ChatMsg[] = [...context, ...hist, {role: "user", content: text, ts: Date.now()}]
 	try {
 		const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
@@ -454,7 +463,7 @@ const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
 	}
 }
 
-/** 把屏幕点映射为模型归一化坐标(基于 canvas 应用后边界 + 模型自然宽高 contain 适配, 随缩放位移自动适配) */
+
 const toModel = (clientX: number, clientY: number): {x: number; y: number} | null => {
 	const el = l2d.canvas()
 	const ms = modelSize()
@@ -462,20 +471,20 @@ const toModel = (clientX: number, clientY: number): {x: number; y: number} | nul
 	return toModelPoint(clientX, clientY, el, ms?.w ?? 0, ms?.h ?? 0)
 }
 
-// 框选/拖动状态
+
 let drawStart: {x: number; y: number} | null = null
-// 手指是否真正拖动了一段距离(区分"轻触"与"画框")
+
 let drawDragged = false
-// 移动已有区域时的起始值
+
 let movingOrigin: {x: number; y: number} | null = null
 
-/** 判定手指是否已真正拖动画框(避免轻触/抖动就把配置栏弹出来) */
+
 const markDrawDragged = (P: {x: number; y: number}) => {
 	if (drawDragged || !drawStart) return
 	if (Math.abs(P.x - drawStart.x) > 0.025 || Math.abs(P.y - drawStart.y) > 0.025) drawDragged = true
 }
 
-// 命中判断: 点是否落在某个已有区域左上角一定容差内(用于"点已有框调整位置")
+
 const hitTouch = (p: {x: number; y: number}): {id: string; t: TouchArea} | null => {
 	for (let i = touchAreas.value.length - 1; i >= 0; i--) {
 		const t = touchAreas.value[i]
@@ -484,13 +493,13 @@ const hitTouch = (p: {x: number; y: number}): {id: string; t: TouchArea} | null 
 	return null
 }
 
-/** 画框/调整模式下指针按下 */
+
 const onDrawDown = (e: PointerEvent) => {
 	if (!touchDrawing.value && !touchAdjusting.value) return
 	const P = toModel(e.clientX, e.clientY)
 	if (!P) return
 	drawStart = P
-	// 调整模式: 只有点中已有区域才进入移动, 否则不做任何事
+	
 	if (touchAdjusting.value) {
 		const HIT = hitTouch(P)
 		if (HIT) {
@@ -501,7 +510,7 @@ const onDrawDown = (e: PointerEvent) => {
 		}
 		return
 	}
-	// 画新模式: 总是开始画新矩形, 不拖动已有框(也不互相关联)
+	
 	drawingTarget.value = null
 	movingOrigin = null
 	drawDragged = false
@@ -509,14 +518,14 @@ const onDrawDown = (e: PointerEvent) => {
 	touchDraft.value = {x: P.x, y: P.y, w: 0, h: 0}
 }
 
-/** 画框/调整模式下指针移动 */
+
 const onDrawMove = (e: PointerEvent) => {
 	if (!touchDrawing.value && !touchAdjusting.value) return
 	const P = toModel(e.clientX, e.clientY)
 	if (!P) return
 	if (!drawStart) return
 	markDrawDragged(P)
-	// 移动已有区域
+	
 	if (drawingTarget.value && movingOrigin) {
 		const dx = P.x - drawStart.x
 		const dy = P.y - drawStart.y
@@ -528,7 +537,7 @@ const onDrawMove = (e: PointerEvent) => {
 		}
 		return
 	}
-	// 仅在画新模式时更新草稿
+	
 	if (!touchDrawing.value) return
 	touchDraft.value = {
 		x: Math.min(drawStart.x, P.x),
@@ -538,20 +547,20 @@ const onDrawMove = (e: PointerEvent) => {
 	}
 }
 
-/** 画框/调整模式下指针松开 */
+
 const onDrawUp = () => {
 	drawStart = null
-	// 移动过已有区域 → 保存
+	
 	if (drawingTarget.value) { saveTouch(); drawingTarget.value = null; movingOrigin = null; drawDragged = false; return }
 	drawingTarget.value = null
 	movingOrigin = null
-	// 调整模式松手且未拖动任何框 → 直接返回
+	
 	if (touchAdjusting.value) { drawDragged = false; return }
-	// 画出了一个有效新矩形(真正拖动过 + 尺寸足够) 才弹出填写表单, 轻触/抖动不触发
+	
 	const d = touchDraft.value
 	if (d && drawDragged && d.w >= 0.06 && d.h >= 0.06) {
 		draftReady.value = true
-		// 自动退出画框模式, 让用户直接填表
+		
 		touchDrawing.value = false
 	} else {
 		touchDraft.value = null
@@ -559,9 +568,9 @@ const onDrawUp = () => {
 	drawDragged = false
 }
 
-/** 把模型归一化坐标映射为叠加层像素样式(渲染触摸区域框, 锚定模型内容矩形, 随模型缩放位移而动) */
+
 const boxStyle = (t: {x: number; y: number; w: number; h: number}) => {
-	void layoutVer.value // 依赖布局版本号: 模型缩放/位移/加载后强制重算, 使框跟随模型
+	void layoutVer.value 
 	const el = l2d.canvas()
 	const ms = modelSize()
 	if (!el) return {}
@@ -569,7 +578,7 @@ const boxStyle = (t: {x: number; y: number; w: number; h: number}) => {
 	if (R.width <= 0 || R.height <= 0) return {}
 	const L = modelLayout(el, ms?.w ?? 0, ms?.h ?? 0)
 	if (!L) return {}
-	// 叠加层与 canvas 同在 viewport 坐标系, 直接给出像素坐标
+	
 	return {
 		left: `${R.left + L.x + t.x * L.w}px`,
 		top: `${R.top + L.y + t.y * L.h}px`,
@@ -578,23 +587,23 @@ const boxStyle = (t: {x: number; y: number; w: number; h: number}) => {
 	}
 }
 
-/* 舞台指针委托: 优先框选模式, 否则交给触摸命中检测 */
+
 let stagePointers = 0
 
 const onStagePointerDown = (e: PointerEvent) => {
 	stagePointers++
-	// 共享: 判断触摸是否落在面板/底栏/触摸页编辑器等 UI 上
+	
 	const onUI = (elm: EventTarget | null): boolean =>
 		!!(elm as HTMLElement)?.closest?.(".sheet, .dock, .topbar, .pet-fab, .chat-panel, .touch-editor, .touch-top")
-	// 画框/调整模式: 仅在模型区域(非面板)按下才处理
+	
 	if (touchDrawing.value || touchAdjusting.value) {
 		if (onUI(e.target)) return
 		onDrawDown(e)
 		return
 	}
-	// 面板打开 / 双指缩放时不触发模型触摸命中
+	
 	if (panel.value !== "" || stagePointers > 1) return
-	// 点到底栏/顶栏/对话等 UI 组件也不触发模型的 摸/点
+	
 	if (onUI(e.target)) return
 	detector.onPointerDown(e)
 }
@@ -667,12 +676,12 @@ const playExpr = () => {
 
 const openPanel = (p: P) => { panel.value = panel.value === p ? "" : p }
 
-/* ================= 双指缩放 / 位移 (取代"调整") ================= */
+
 
 const gesture = reactive<Record<number, {x: number; y: number}>>({})
 let pinchBase = {dist: 0, midX: 0, midY: 0, scale: 1, ox: 0, oy: 0}
 
-// 命中 UI 覆盖层(设置/对话/底栏/顶栏)的触摸不参与模型缩放位移
+
 const isUI = (t: Touch): boolean =>
 	!!(t.target as HTMLElement)?.closest?.(".sheet, .chat-panel, .dock, .topbar")
 
@@ -705,7 +714,7 @@ const onTouchMove = (e: TouchEvent) => {
 	if (pinchBase.dist > 0) {
 		scale.value = clamp(pinchBase.scale * (dist / pinchBase.dist), 0.3, 3)
 	}
-	// 双指整体平移 = 位移模型
+	
 	offsetX.value = clamp(pinchBase.ox + (midX - pinchBase.midX), -500, 500)
 	offsetY.value = clamp(pinchBase.oy + (midY - pinchBase.midY), -800, 400)
 	relayout()
@@ -713,7 +722,7 @@ const onTouchMove = (e: TouchEvent) => {
 }
 
 const onTouchEnd = (e: TouchEvent) => {
-	// 保留残留; 重新形成两指时重新取基准
+	
 	const liveSet = new Set(Array.from(e.touches).map((t) => t.identifier))
 	for (const id of Object.keys(gesture)) {
 		if (!liveSet.has(Number(id))) delete gesture[Number(id)]
@@ -731,7 +740,7 @@ const saveTransform = () => {
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 
-/* ================= 涟漪效果 ================= */
+
 
 const rippleHost = ref<HTMLElement | null>(null)
 
@@ -750,7 +759,7 @@ const spawnRipple = (e: Event) => {
 	setTimeout(() => span.remove(), 600)
 }
 
-/* ================= 聊天 ================= */
+
 
 const chatOpen = ref(false)
 const draft = ref("")
@@ -768,16 +777,16 @@ const cfg = reactive({
 	renderScale: 1,
 })
 
-/** 气泡字号随设置实时变化 */
+
 const chatFontPX = computed(() => `${14 * (Number(cfg.bubbleScale) || 1)}px`)
-/** 气泡大小数值显示 */
+
 const bubbleScaleNum = computed(() => Number(cfg.bubbleScale) || 1)
-/** 渲染分辨率数值显示 */
+
 const renderScaleNum = computed(() => Number(cfg.renderScale) || 1)
-/** 手机原生 DPR(作为推荐渲染档位): 设为该值时模型分辨率与屏幕 1:1 最清晰 */
+
 const nativeDpr = computed(() => Math.max(1.5, Math.min(window.devicePixelRatio || 2, 3)))
 
-/** 应用渲染分辨率到 Live2D 渲染层 */
+
 const applyRenderScale = () => l2d.setRenderScale(renderScaleNum.value)
 
 const curModelName = computed(() => cfg.model || "未配置模型")
@@ -822,7 +831,7 @@ const send = async () => {
 
 	typing.value = true
 	try {
-		// 上下文: Nori 人设系统提示词 + 发送指令 + 长期记忆 + 最近 20 条消息
+		
 		const memory = readMemory()
 		const context: ChatMsg[] = [
 			{role: "system", content: PERSONA_PROMPT} as ChatMsg,
@@ -834,7 +843,7 @@ const send = async () => {
 		const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
 		if (res.ok) {
 			const reply = res.content ?? ""
-			// 分条发送: 按"每句一行"拆分成独立气泡, 逐条模拟真人打字
+			
 			const parts = splitReplies(reply)
 			for (let i = 0; i < parts.length; i++) {
 				if (i > 0) await sleep(400 + Math.random() * 900)
@@ -842,9 +851,9 @@ const send = async () => {
 				persistChat(messages.value)
 				scrollChatBottom()
 			}
-			// 根据内容自动触发表情动作
+			
 			triggerEmotion(reply)
-			// 简单记忆: 记住明确以"记住/我叫/我是"等开头的用户陈述
+			
 			appendMemoryIfAny(text)
 		} else {
 			messages.value.push({role: "assistant", content: `⚠ ${res.message ?? "请求失败"}`, ts: Date.now()})
@@ -864,7 +873,7 @@ const DIRECTIVE = [
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-/** 按换行把回复拆成多条; 无换行时退回按常见断句切分 */
+
 const splitReplies = (reply: string): string[] => {
 	const lines = reply.split(/\n+/).map((s) => s.trim()).filter((s) => s)
 	if (lines.length >= 2) return lines.map((s) => s.replace(/[。！？!?^~，,]+$/g, ""))
@@ -878,9 +887,9 @@ const appendMemoryIfAny = (text: string) => {
 	}
 }
 
-/* ================= 情绪 → 表情/动作自动联动 ================= */
 
-// 情绪关键词 → 名称里要找的子串 (匹配模型自带的表情名, 如 13_Happy / 05_Angry ...)
+
+
 const EMOTION_RULES: {key: RegExp; match: string[]}[] = [
 	{key: /开心|高兴|happy|哈哈|嘿嘿|太棒|好呀|超棒|真棒|喜欢|开心就|笑嘻嘻|哈哈/, match: ["happy", "smile", "kira"]},
 	{key: /生气|讨厌|不喜欢|气死|居然|过分|气鼓/, match: ["angry"]},
@@ -892,7 +901,7 @@ const EMOTION_RULES: {key: RegExp; match: string[]}[] = [
 	{key: /无奈|叹气|真是|哎/, match: ["speechless", "doubt", "troubled"]},
 ]
 
-/** 从回复里挑一个表达式名, 没有匹配则返回空 */
+
 const detectExpression = (text: string): string | null => {
 	const lower = text.toLowerCase()
 	for (const rule of EMOTION_RULES) {
@@ -903,7 +912,7 @@ const detectExpression = (text: string): string | null => {
 	return null
 }
 
-/** 播放一个随机的待机动作 */
+
 const playIdleMotionOnce = () => {
 	const idle = motions.value.find((g) => /idle/i.test(g.group))
 	if (idle && idle.names.length) {
@@ -911,7 +920,7 @@ const playIdleMotionOnce = () => {
 	}
 }
 
-/** 根据聊天内容自动做表情动作 */
+
 const triggerEmotion = (text: string) => {
 	if (!ready.value) return
 	const emo = detectExpression(text)
@@ -935,17 +944,17 @@ const onResize = () => relayout()
 
 onMounted(async () => {
 	window.addEventListener("resize", onResize)
-	// 触摸框选 + 触摸命中检测的指针委托 (桌面触摸逻辑移植)
+	
 	document.addEventListener("pointerdown", onStagePointerDown)
 	document.addEventListener("pointermove", onStagePointerMove)
 	document.addEventListener("pointerup", onStagePointerUp)
 	document.addEventListener("pointercancel", onStagePointerUp)
-	// 从系统"所有文件访问"设置页返回后重新检测授权状态
+	
 	const refreshStorage = () => { storageReady.value = isStorageReady() }
 	window.addEventListener("focus", refreshStorage)
 	document.addEventListener("visibilitychange", refreshStorage)
 
-	// 设置 & 聊天 & 记忆
+	
 	const s = loadSettings()
 	cfg.apiKey = s.apiKey
 	cfg.baseUrl = s.baseUrl || "https://api.openai.com/v1"
@@ -955,7 +964,7 @@ onMounted(async () => {
 	window.__noriRenderScale = renderScaleNum.value
 	storagePath.value = getStorageDir()
 	storageReady.value = isStorageReady()
-	// 首次启动自动弹出存储权限申请(仅弹一次)
+	
 	if (!storageReady.value && !localStorage.getItem("storage_asked")) {
 		localStorage.setItem("storage_asked", "1")
 		setTimeout(grantStorage, 1200)
@@ -963,7 +972,7 @@ onMounted(async () => {
 	messages.value = loadChat()
 	if (cfg.apiKey.trim()) refreshModels()
 
-	// 模型列表与恢复上次模型
+	
 	try {
 		modelList.value = await fetchModelList()
 		listError.value = ""
@@ -1004,7 +1013,7 @@ onBeforeUnmount(async () => {
 
 .ripple-host { display: none; }
 
-/* Live2D 渲染层: 占满全屏、在底层, UI 元素 z-index 均高于它 */
+
 .l2d-host {
 	position: absolute;
 	inset: 0;
@@ -1013,7 +1022,7 @@ onBeforeUnmount(async () => {
 	overflow: hidden;
 }
 
-/* 触摸区域叠加层 */
+
 .touch-overlay {
 	position: absolute;
 	inset: 0;
@@ -1032,14 +1041,44 @@ onBeforeUnmount(async () => {
 	&.draft { border-style: dashed; border-color: rgba(125,227,255,0.95); background: rgba(125,227,255,0.15); }
 }
 
-/* ===== 触摸配置独立全屏页面 ===== */
+
 .touch-page {
 	position: fixed;
 	inset: 0;
 	z-index: 15;
 	background: rgba(2, 6, 23, 0.35);
-	pointer-events: none; /* 整页对指针透明, 让模型区域可直接触摸 */
+	pointer-events: none; 
 	touch-action: none;
+}
+.tts-page {
+	position: fixed;
+	inset: 0;
+	z-index: 15;
+	background: rgba(2, 6, 23, 0.5);
+	display: flex;
+	flex-direction: column;
+}
+.tts-top {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
+	background: linear-gradient(180deg, rgba(2,6,23,0.7) 0%, rgba(2,6,23,0) 100%);
+}
+.tts-title {
+	font-size: 16px; font-weight: 600; color: #f1f5f9;
+	text-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+}
+.tts-body {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.tts-empty {
+	color: #64748b;
+	font-size: 14px;
+	text-align: center;
 }
 .touch-page .touch-overlay.drawing { cursor: crosshair; }
 .touch-top {
@@ -1083,7 +1122,7 @@ onBeforeUnmount(async () => {
 	white-space: nowrap;
 }
 
-/* 触摸触发气泡 */
+
 .touch-bubble {
 	position: absolute;
 	left: 50%;
@@ -1106,7 +1145,7 @@ onBeforeUnmount(async () => {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateX(-50%) translateY(8px); }
 
-/* AI 触摸回应气泡 */
+
 .ai-bubble {
 	position: absolute;
 	left: 12px; right: 12px;
@@ -1155,7 +1194,7 @@ onBeforeUnmount(async () => {
 }
 .err { color: #fecaca; border-color: rgba(248, 113, 113, 0.5); background: rgba(127, 29, 29, 0.5); }
 
-/* ===== 涟漪 ===== */
+
 .ripple {
 	position: relative;
 	overflow: hidden;
@@ -1172,7 +1211,7 @@ onBeforeUnmount(async () => {
 	to { transform: scale(1); opacity: 0; }
 }
 
-/* ===== 对话面板 ===== */
+
 .chat-panel {
 	position: absolute;
 	left: 10px; right: 10px;
@@ -1250,7 +1289,7 @@ onBeforeUnmount(async () => {
 .chat-enter-active, .chat-leave-active { transition: opacity 0.22s ease, transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .chat-enter-from, .chat-leave-to { opacity: 0; transform: translateY(16px); }
 
-/* ===== 底栏按钮 ===== */
+
 .dock {
 	position: absolute;
 	left: 0; right: 0; bottom: 0;
@@ -1279,7 +1318,7 @@ onBeforeUnmount(async () => {
 	border-color: rgba(255,255,255,0.15);
 }
 
-/* ===== 底部面板 ===== */
+
 .sheet-mask {
 	position: fixed; inset: 0;
 	background: rgba(2,6,23,0.55);
@@ -1332,7 +1371,7 @@ onBeforeUnmount(async () => {
 }
 .chip.w { background: rgba(127, 29, 29, 0.5); border-color: rgba(248, 113, 113, 0.3); color: #fecaca; }
 
-/* ===== 设置 ===== */
+
 .settings-row {
 	padding: 10px 2px;
 	display: flex; flex-direction: column; gap: 6px;

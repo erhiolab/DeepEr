@@ -1,19 +1,19 @@
-// 聊天/设置/记忆: 封装原生 NoriChat 桥
-// 聊天记录、记忆、设置均持久化到 <公共 Documents>/NoriPet/, 卸载重装也不丢
-// 系统提示词: 打包内置的 Nori 人设 (nori-prompt.md)
+
+
+
 
 import NORI_PROMPT from "./nori-prompt.md?raw"
 
-/** Nori 人格系统提示词 */
+
 export const PERSONA_PROMPT: string = NORI_PROMPT
 
 export interface Settings {
 	apiKey: string
 	baseUrl: string
 	model: string
-	/** 气泡缩放 */
+	
 	bubbleScale: number
-	/** 渲染分辨率 */
+	
 	renderScale: number
 }
 
@@ -54,7 +54,7 @@ const bridge = (): NoriChat => {
 	return window.NoriChat
 }
 
-/* ---------------- 设置 ---------------- */
+
 
 export const loadSettings = (): Settings => {
 	try {
@@ -70,10 +70,10 @@ export const loadSettings = (): Settings => {
 export const saveSettings = (s: Settings): void => {
 	try {
 		bridge().writeFile("settings.json", JSON.stringify(s))
-	} catch { /* ignore */ }
+	} catch {  }
 }
 
-/* ---------------- 聊天历史 (append-only, 永不覆盖) ---------------- */
+
 
 export const loadChat = (): ChatMsg[] => {
 	try {
@@ -90,34 +90,34 @@ export const loadChat = (): ChatMsg[] => {
 export const persistChat = (messages: ChatMsg[]): void => {
 	try {
 		bridge().writeFile("chat.json", JSON.stringify(messages))
-	} catch { /* ignore */ }
+	} catch {  }
 }
 
-/* ---------------- 记忆 ---------------- */
+
 
 export const readMemory = (): string => {
 	try { return bridge().readMemory() } catch { return "" }
 }
 
 export const appendMemory = (text: string): void => {
-	try { if (text.trim()) bridge().appendMemory(text.trim()) } catch { /* ignore */ }
+	try { if (text.trim()) bridge().appendMemory(text.trim()) } catch {  }
 }
 
-/* ---------------- 存储权限 ---------------- */
+
 
 export const isStorageReady = (): boolean => {
 	try { return !!bridge().isStorageReady() } catch { return false }
 }
 
 export const requestStoragePermission = (): void => {
-	try { bridge().requestStoragePermission() } catch { /* ignore */ }
+	try { bridge().requestStoragePermission() } catch {  }
 }
 
 export const getStorageDir = (): string => {
 	try { return bridge().getStorageDir() } catch { return "Download/NoriPet" }
 }
 
-/* ---------------- 聊天模型列表 / 会话 ---------------- */
+
 
 export interface ModelsResult {
 	ok: boolean
@@ -125,7 +125,7 @@ export interface ModelsResult {
 	message?: string
 }
 
-/** 原生后台线程异步回调函数 */
+
 declare global {
 	interface Window {
 		__noriModelsRes?: (json: string) => void
@@ -133,7 +133,7 @@ declare global {
 	}
 }
 
-/** 拉取模型列表(异步, 原生后台线程执行, 不阻塞界面) */
+
 export const fetchModels = (baseUrl: string, apiKey: string): Promise<ModelsResult> =>
 	new Promise((resolve) => {
 		window.__noriModelsRes = (json) => {
@@ -149,7 +149,7 @@ export interface ChatResult {
 	message?: string
 }
 
-/** 发送聊天(异步, 原生后台线程执行, 不阻塞界面) */
+
 export const sendChat = (
 	baseUrl: string,
 	apiKey: string,

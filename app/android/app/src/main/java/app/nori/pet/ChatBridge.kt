@@ -19,12 +19,7 @@ import java.net.URL
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/**
- * 聊天/设置/记忆桥: 由 WebView 注入为 window.NoriChat.
- * - fetchModels / chat 走 OpenAI 兼容接口 (原生调用, 无 CORS 限制; 后台线程异步回传)
- * - 聊天记录、记忆、设置经 MediaStore 写入公共 Downloads/NoriPet, 卸载重装也不丢,
- *   且不需要 "所有文件访问" 权限, 安装不会被拦截
- */
+
 class ChatBridge(private val appContext: Context) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -37,13 +32,13 @@ class ChatBridge(private val appContext: Context) {
 
     @android.webkit.JavascriptInterface
     fun isStorageReady(): Boolean {
-        // API29+ 用 MediaStore 写公共 Downloads 无需任何权限
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return true
         return appContext.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
-    /** 仅老系统(API<=28)需要写权限, 用标准运行时弹窗申请; 新版无需任何权限 */
+    
     @android.webkit.JavascriptInterface
     fun requestStoragePermission() {
         mainHandler.post {
@@ -59,11 +54,11 @@ class ChatBridge(private val appContext: Context) {
         }
     }
 
-    /** 聊天/记忆/设置的公共存储相对路径 */
+    
     @android.webkit.JavascriptInterface
     fun getStorageDir(): String = "Download/NoriPet"
 
-    // ---------- MediaStore 公共存储读写 (Downloads/NoriPet) ----------
+    
 
     private fun queryUri(name: String): Uri? {
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -129,7 +124,7 @@ class ChatBridge(private val appContext: Context) {
     private fun safeName(name: String): String =
         name.replace(Regex("[^A-Za-z0-9._-]"), "_").takeIf { it.isNotBlank() } ?: "data"
 
-    // ---------- 异步网络接口 (后台线程 → 回调 JS) ----------
+    
 
     @android.webkit.JavascriptInterface
     fun fetchModels(baseUrl: String, apiKey: String) {

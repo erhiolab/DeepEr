@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// 触摸区域管理器 (移动端适配, 受控组件)
-// - 父组件(App)控制 drawing/adjusting 两种模式:
-//     drawing=画新模式(只画新矩形), adjusting=调整模式(只拖动已有框), 两者互斥
-// - 编辑已有区域在对应卡片下方展开
+
+
+
+
 import {ref, watch} from "vue"
 import type {TouchArea} from "../services/live2d/touch"
 
@@ -22,11 +22,11 @@ const emit = defineEmits<{
 	(e: "resetDraft"): void
 }>()
 
-// 正在编辑(在卡片下方展开)的区域 id
+
 const editingId = ref<string | null>(null)
 const editName = ref("")
 const editPrompt = ref("")
-// 新增草稿表单
+
 const name = ref("")
 const prompt = ref("")
 
@@ -59,7 +59,7 @@ const submitNew = () => {
 
 watch(() => props.hasDraft, (has) => {
 	if (has) {
-		// 新画出矩形 → 预填名称
+		
 		editingId.value = null
 		if (!name.value) name.value = `区域 ${props.touches.length + 1}`
 	}
@@ -95,7 +95,7 @@ watch(() => props.hasDraft, (has) => {
 					<button class="tm-btn" @click="startEdit(t)">编辑</button>
 					<button class="tm-btn danger" @click="emit('remove', t.id)">删除</button>
 				</div>
-				<!-- 编辑在卡片下方展开 -->
+				
 				<div v-if="editingId === t.id" class="tm-edit">
 					<div class="tm-field">
 						<label>名称</label>
@@ -116,7 +116,7 @@ watch(() => props.hasDraft, (has) => {
 			还没有触摸区域。<br/>点「＋ 新增区域」，然后在模型上画矩形。
 		</p>
 
-		<!-- 新增草稿表单 -->
+		
 		<div v-if="hasDraft" class="tm-edit tm-new">
 			<div class="tm-field">
 				<label>名称</label>

@@ -28,8 +28,8 @@ class MainActivity : AppCompatActivity() {
     private val chatBridge by lazy { ChatBridge(this) }
 
     companion object {
-        // 通过 WebViewAssetLoader 以 https origin 提供 assets 资源,
-        // 避免 file:// 协议下 ES module / fetch 被 CORS 拦截
+        
+        
         private const val ENTRY_URL = "https://appassets.androidplatform.net/assets/web/index.html"
     }
 
@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         settings.textZoom = 100
         webView.setBackgroundColor(0xFF0F172A.toInt())
         webView.webChromeClient = object : WebChromeClient() {
-            // 把页面 JS console 输出转发到 logcat, 便于调试
+            
             override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
                 if (message?.message()?.isNotBlank() == true) {
                     android.util.Log.d("WebViewConsole", "${message.message()} [src=${message.sourceId()}:${message.lineNumber()}]")
@@ -110,12 +110,12 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): WebResourceResponse? {
                 val url = request?.url ?: return null
-                // 模型文件: 从已经下载到磁盘的目录返回
+                
                 serveModelFile(url.toString())?.let { return it }
                 return assetLoader.shouldInterceptRequest(url)
             }
 
-            // 把请求路径中 "/live2d/" 之后的部分映射到 filesDir/models/<relPath> 返回
+            
             private fun serveModelFile(url: String): WebResourceResponse? {
                 val marker = "/live2d/"
                 val idx = url.indexOf(marker)
