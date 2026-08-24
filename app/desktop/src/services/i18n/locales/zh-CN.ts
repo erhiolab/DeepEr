@@ -55,9 +55,9 @@ export default {
 			empty: "暂无模型",
 			tagSwipe: "磨蹭",
 			tagFrenzy: "狂点",
-			touchedName: "用户触摸了{name}",
-			touchedSwipe: "用户在{name}上来回磨蹭",
-			touchedFrenzy: "用户疯狂点击{name}",
+			touchedName: "用户触摸了你的{name}",
+			touchedSwipe: "用户在你的{name}上来回磨蹭",
+			touchedFrenzy: "用户疯狂点击你的{name}",
 		},
 		confirm: {
 			cancel: "取消",

@@ -1,8 +1,8 @@
 import {computed, ref} from "vue"
 import {defineStore} from "pinia"
-import {emit} from "@tauri-apps/api/event"
 import {logger} from "../logger"
 import useLanguages from "../i18n/useLanguages.ts"
+import {useConversationStore} from "./conversation"
 import {useLive2DStore} from "./live2d"
 
 /**
@@ -124,7 +124,10 @@ export const useTouchStore = defineStore("touch", () => {
 			touchId: touch.id,
 		}
 		await logger.info(`[touch] 触发: ${JSON.stringify(PAYLOAD)}`)
-		void emit("touch-triggered", PAYLOAD)
+		const CONV = useConversationStore()
+		const PROMPT_TEXT = touch.prompt || TYPED_PROMPT
+		CONV.pushCenter(PROMPT_TEXT)
+		await CONV.sendTouch(PROMPT_TEXT, unlock)
 	}
 
 	return {

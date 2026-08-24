@@ -90,35 +90,52 @@ export const useConversationStore = defineStore("conversation", () => {
 	 */
 	const pushCenter = (text: string): ChatMessage => push("center", text)
 
-	/**
-	 * 发送消息 (用户自己 / 右边)
-	 */
-	const sendMessage = async (text: string): Promise<ChatMessage> => {
-		const MSG = pushRight(text)
+	// 当前对话历史映射为 LLM 消息 (只取最近的若干条)
+	type LLMMsg = {role: "user" | "assistant" | "system", content: string}
+	const toLLMMessages = (): LLMMsg[] => HISTORY.value.slice(-20).map((m): LLMMsg => {
+		const ROLE: LLMMsg["role"] = m.side === "right" ? "user" : m.side === "left" ? "assistant" : "system"
+		return {role: ROLE, content: m.text}
+	})
+
+	// 触发一次 LLM 生成, 成功时插入左边回复, 完成后回调并复位键入状态
+	const requestLLM = (messages: LLMMsg[], onDone?: () => void) => {
 		setTyping(true)
-		// 异步触发 LLM 回复
 		void (async () => {
 			try {
 				// 动态导入避免循环依赖
 				const {useLLMStore} = await import("./llm")
-				const LLM = useLLMStore()
-				// 构建对话历史 (只取最近的若干条，避免 token 爆炸)
-				const HISTORY_FOR_LLM = HISTORY.value.slice(-20).map((m): {role: "user" | "assistant" | "system", content: string} => {
-					const ROLE: "user" | "assistant" | "system" = m.side === "right" ? "user" : m.side === "left" ? "assistant" : "system"
-					return {role: ROLE, content: m.text}
-				})
-				const RESULT = await LLM.generate({messages: HISTORY_FOR_LLM})
+				const RESULT = await useLLMStore().generate({messages})
 				if (RESULT.ok && RESULT.text) {
 					pushLeft(RESULT.text)
-				} else {
-					setTyping(false)
 				}
 			} catch (err) {
+				await import("../logger").then(({logger}) => logger.error("conversation LLM 请求异常", err))
+			} finally {
 				setTyping(false)
-				await import("../logger").then(({logger}) => logger.error("conversation sendMessage LLM 异常", err))
+				onDone?.()
 			}
 		})()
+	}
+
+	/**
+	 * 发送消息 (用户自己 / 右边)
+	 * @param text 消息内容
+	 * @param onDone LLM 回复流程结束后回调 (成功/失败都会触发), 可用于解除触摸锁定等
+	 */
+	const sendMessage = async (text: string, onDone?: () => void): Promise<ChatMessage> => {
+		const MSG = pushRight(text)
+		requestLLM(toLLMMessages(), onDone)
 		return MSG
+	}
+
+	/**
+	 * 发送触摸动作的请求
+	 * @param prompt 触摸提示词
+	 * @param onDone LLM 回复流程结束后回调 (成功/失败都会触发), 用于解除触摸锁定
+	 */
+	const sendTouch = async (prompt: string, onDone?: () => void): Promise<void> => {
+		const MESSAGES = [...toLLMMessages(), {role: "user" as const, content: prompt}]
+		requestLLM(MESSAGES, onDone)
 	}
 
 	// 只供聊天界面使用的中间信息 (含 center)
@@ -138,6 +155,7 @@ export const useConversationStore = defineStore("conversation", () => {
 		chatItems,
 		// 方法
 		sendMessage,
+		sendTouch,
 		setTyping,
 		pushLeft,
 		pushRight,
