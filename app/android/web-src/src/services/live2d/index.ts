@@ -35,12 +35,12 @@ export const MOTION_PRIORITY = {
 export interface Live2DMountOptions {
 	canvasWidth?: string
 	canvasHeight?: string
-	/** 挂载 canvas 的容器元素(可选)。若提供会把 canvas 移入其中, 便于参与该容器的层叠上下文 */
+	
 	host?: HTMLElement | null
 }
 
-// 库内部 modelHomeDir = resourcesPath + modelDir + "/",
-// 因此 OPFS 布局为 <id>/<entryBase>/..., 这里 resourcesPath 到 <id>/, modelDir 为入口基础名
+
+
 const buildLoadConfig = (model: Live2DModelSpec, options: Live2DMountOptions = {}): Record<string, unknown> => ({
 	modelDir: model.fileBase,
 	resourcesPath: `${live2dUrl(model.directory)}/`,
@@ -51,13 +51,13 @@ const buildLoadConfig = (model: Live2DModelSpec, options: Live2DMountOptions = {
 
 export const createLive2D = () => {
 	let canvasEl: HTMLCanvasElement | null = null
-	// 库的 stop() 内部会轮询一个只有成功 load() 后才置位的标志,
-	// 首次加载前调用会永久挂起, 因此仅在确实加载过模型后才 stop
+	
+	
 	let didLoad = false
 
 	const canvas = (): HTMLCanvasElement | null => canvasEl
 
-	/** 模型渲染的原始逻辑尺寸(backing store), 用于触摸坐标归一化 */
+	
 	const srcSize = (): {w: number; h: number} | null => {
 		if (!canvasEl) return null
 		const w = canvasEl.width
@@ -73,8 +73,8 @@ export const createLive2D = () => {
 		didLoad = true
 		canvasEl = document.body.querySelector("canvas")
 		if (canvasEl) {
-			// 把 canvas 移入宿主容器内, 使其参与容器的层叠上下文,
-			// 而不是与 .stage-root 平级(导致总是盖在最上面)
+			
+			
 			if (options?.host) options.host.appendChild(canvasEl)
 			canvasEl.style.pointerEvents = "none"
 			canvasEl.style.position = "fixed"
@@ -85,14 +85,14 @@ export const createLive2D = () => {
 			canvasEl.style.width = "100%"
 			canvasEl.style.height = "100%"
 			canvasEl.style.transform = "none"
-			// 让模型在底层, 可被设置/对话/底栏等 UI 盖住
+			
 			canvasEl.style.zIndex = "1"
 		}
 	}
 
 	const destroy = async (): Promise<void> => {
 		if (didLoad) {
-			try { await stop() } catch { /* ignore */ }
+			try { await stop() } catch {  }
 			didLoad = false
 		}
 		if (canvasEl && canvasEl.isConnected) canvasEl.remove()
@@ -103,9 +103,9 @@ export const createLive2D = () => {
 		try { return await getAllMotionsInfo() } catch { return null }
 	}
 
-	// 动态调整渲染分辨率: 库在 onResize() 时读取 window.__noriRenderScale,
-	// 该 onResize 由 ResizeObserver 监听 canvas 尺寸变化触发, 因此先改全局值,
-	// 再轻微扰动 canvas 尺寸以触发重算(不影响实际显示尺寸)
+	
+	
+	
 	const setRenderScale = (scale: number): void => {
 		try {
 			window.__noriRenderScale = scale
@@ -113,7 +113,7 @@ export const createLive2D = () => {
 				const w = canvasEl.style.width, h = canvasEl.style.height
 				canvasEl.style.width = "99.99%"
 				canvasEl.style.height = "99.99%"
-				// 触发 ResizeObserver 异步回调
+				
 				requestAnimationFrame(() => {
 					requestAnimationFrame(() => {
 						canvasEl!.style.width = w
@@ -121,7 +121,7 @@ export const createLive2D = () => {
 					})
 				})
 			}
-		} catch { /* ignore */ }
+		} catch {  }
 	}
 
 	const playMotionByIndex = async (group: string, no: number, priority = MOTION_PRIORITY.force): Promise<boolean> => {

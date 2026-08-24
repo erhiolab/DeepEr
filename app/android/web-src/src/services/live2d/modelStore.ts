@@ -1,6 +1,6 @@
-// 模型在线下载: 交由原生 ModelBridge (window.NoriBridge) 完成下载 + 解压 + 落盘,
-// 模型文件再由原生 shouldInterceptRequest 拦截 live2d/** 请求从磁盘返回.
-// 前端只需调用 bridge, 不依赖浏览器 OPFS / Service Worker.
+
+
+
 
 import {fetchLive2dList} from "../gateway/api"
 
@@ -16,7 +16,7 @@ interface Bridge {
 	listInstalled: () => string
 }
 
-/** 原生桥可能未注入 (例如在纯浏览器里调试), 这里做个安全探测 */
+
 declare global {
 	interface Window {
 		NoriBridge?: Bridge
@@ -56,7 +56,7 @@ export const listInstalled = async (): Promise<InstalledMeta[]> => {
 export const getInstalled = async (id: string): Promise<InstalledMeta | undefined> =>
 	(await listInstalled()).find((i) => i.id === id)
 
-/** 确保模型已安装到磁盘(原生后台下载/解压, 异步回调), 返回入口文件基础名 */
+
 export const ensureModel = async (id: string, _name: string, _onProgress: ProgressFn): Promise<string> => {
 	const cached = await getInstalled(id)
 	if (cached?.entryBase) return cached.entryBase
@@ -72,5 +72,5 @@ export const ensureModel = async (id: string, _name: string, _onProgress: Progre
 	})
 }
 
-/** 原生桥暴露的模型根目录 (供调试 / 拦截使用) */
+
 export const modelsDirOf = (): string | null => "models"

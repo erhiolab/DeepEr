@@ -20,8 +20,8 @@ export interface Live2DMountOptions {
 	canvasHeight?: string
 }
 
-// 模型不再内置: 联网下载后存入 OPFS, 由 sw.js 以相对路径 live2d/** 提供.
-// 使用相对路径是为了落在 Service Worker 的 scope (页面所在目录) 内.
+
+
 export const live2dUrl = (relativePath: string): string =>
 	`live2d/${relativePath.replace(/^\/+/, "")}`
 
@@ -51,7 +51,7 @@ export const readModelConfig = async <T>(
 				const parsed = parse(raw)
 				if (parsed != null) return parsed
 			}
-		} catch { /* ignore */ }
+		} catch {  }
 	}
 	return fallback
 }
@@ -61,5 +61,5 @@ export const writeModelConfig = (modelId: string, base: L2DConfigKey, value: unk
 		const key = l2dModelKey(base, modelId)
 		if (value == null) localStorage.removeItem(key)
 		else localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value))
-	} catch { /* ignore */ }
+	} catch {  }
 }
