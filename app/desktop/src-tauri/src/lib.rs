@@ -101,6 +101,7 @@ pub fn run() {
             commands::resource::export_model_config,
             commands::resource::import_model_config,
             commands::resource::save_model_cover,
+            commands::resource::delete_model_cover,
 
             commands::devtools::toggle_devtools,
             commands::task_manager::open_task_manager

@@ -528,3 +528,25 @@ pub fn save_model_image(
         target.extension().and_then(|e| e.to_str()).unwrap_or(&ext)
     ))
 }
+
+/// 删除模型目录下的封面图片 (所有扩展名), 即"移除封面"
+pub fn delete_model_cover(
+    data_dir: &Path,
+    name: &str,
+) -> Result<(), String> {
+    let resource_dir = model_dir(data_dir, name)?;
+    if !resource_dir.is_dir() {
+        return Err(format!("Live2D 资源不存在: {name}"));
+    }
+    let root = root_dir(data_dir);
+    ensure_inside(&root, &resource_dir)?;
+    for cover in ["cover.png", "cover.jpg", "cover.jpeg", "cover.gif", "cover.webp", "cover.bmp"] {
+        let path = resource_dir.join(cover);
+        if path.is_file() {
+            fs::remove_file(&path).map_err(|e| {
+                format!("删除封面图片失败: {}: {e}", path.display())
+            })?;
+        }
+    }
+    Ok(())
+}

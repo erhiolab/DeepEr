@@ -609,6 +609,28 @@ pub fn save_model_cover(
     Ok(relative)
 }
 
+/// 删除当前模型的封面图片 (移除磁盘上的 cover.* 文件)
+/// invoke("delete_model_cover", { name: "arg-nori" })
+#[tauri::command]
+pub fn delete_model_cover(
+    app: tauri::AppHandle,
+    name: String,
+) -> Result<(), String> {
+    let name = validate_resource_name(&name)?;
+    let data_dir = db::data_dir(&app).map_err(|e| {
+        let _ = log::write(&app, &log::LogSource::Backend, "error", &format!("删除模型封面失败: name={name} 获取数据目录失败: {e}"));
+        e.to_string()
+    })?;
+    crate::resource::live2d::delete_model_cover(&data_dir, name)?;
+    let _ = log::write(
+        &app,
+        &log::LogSource::Backend,
+        "info",
+        &format!("删除模型封面: name={name}"),
+    );
+    Ok(())
+}
+
 /// 导出模型级配置到指定路径 (原样复制 model.config.json 文本)
 /// 前端先用 `save` 对话框拿到目标文件路径 (默认名为<模型显示名>.config.json), 再传入.
 /// invoke("export_model_config", { name: "ARGNori", targetPath: "C:/xx/哼.config.json" })

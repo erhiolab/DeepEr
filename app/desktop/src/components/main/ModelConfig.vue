@@ -170,14 +170,31 @@ const pickCover = async () => {
 	}
 }
 
+// 移除封面: 仅清空草稿, 勾选"未保存改动"; 真正删除磁盘上的封面文件延后到保存(coreSave)成功且封面确为空时执行
+const removeCover = () => {
+	draftImage.value = ""
+}
+
 // 一次保存全部字段 (名称/封面/渲染/质量), 不退出. 成功更新初始快照, 返回是否成功
 const coreSave = async (): Promise<boolean> => {
+	// 记录保存前的旧封面 (用于判定本次是否"移除了封面", 决定是否删除磁盘封面文件)
+	const previousImage = L2D.config.image
 	L2D.config.name = draftName.value.trim()
 	L2D.config.image = draftImage.value
 	L2D.config.render = {scale: draftScale.value, posX: draftPosX.value, posY: draftPosY.value, rotation: draftRotation.value}
 	L2D.config.quality = draftQuality.value
 	const OK = await L2D.saveConfig()
 	if (OK) {
+		// 移除封面后真正删除磁盘文件: 保存在旧封面非空、新封面为空时执行.
+		// (放在保存成功后, 避免"放弃修改"导致磁盘文件被删而配置仍指向旧封面的 404 / 不可逆丢失)
+		if (previousImage && !draftImage.value) {
+			try {
+				await invoke("delete_model_cover", {name: currentId.value})
+				await logger.info(`删除模型封面文件: ${currentId.value}`)
+			} catch (error) {
+				await logger.error("删除模型封面文件失败:", error)
+			}
+		}
 		initial.value = {...snapshotFromConfig()}
 		await logger.info(`保存模型配置: ${currentId.value}`)
 	} else {
@@ -366,7 +383,7 @@ onMounted(async () => {
 									<Icon name="import" :size="14"/>
 									<span>{{ I18N.uploadCover }}</span>
 								</button>
-								<button v-if="draftImage" class="mini-btn danger" @click="draftImage = ''">
+								<button v-if="draftImage" class="mini-btn danger" @click="removeCover">
 									<Icon name="close" :size="14"/>
 									<span>{{ I18N.removeCover }}</span>
 								</button>

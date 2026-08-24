@@ -26,8 +26,10 @@ export interface ChatMessage {
 export const useConversationStore = defineStore("conversation", () => {
 	// 完整对话历史
 	const HISTORY = ref<ChatMessage[]>([])
+
 	// 消息 id 自增
 	let nextId = 1
+
 	// 生成一条消息并写入历史
 	const push = (side: ChatSide, text: string): ChatMessage => {
 		const MSG: ChatMessage = {id: nextId++, side, text, createdAt: Date.now()}
@@ -35,10 +37,12 @@ export const useConversationStore = defineStore("conversation", () => {
 		return MSG
 	}
 
-	// 对方是否正在输入/加载 (统一托管, 聊天界面与桌宠共享)
+	// 对方是否正在输入/加载
 	const isTyping = ref(false)
-	// 输入状态自动复位的兜底超时 (防止外部忘记结束后一直卡住)
+
+	// 输入状态自动复位的兜底超时
 	const TYPING_TIMEOUT_MS = 60_000
+
 	let typingTimer: ReturnType<typeof setTimeout> | null = null
 
 	// 清除超时定时器
@@ -86,6 +90,37 @@ export const useConversationStore = defineStore("conversation", () => {
 	 */
 	const pushCenter = (text: string): ChatMessage => push("center", text)
 
+	/**
+	 * 发送消息 (用户自己 / 右边)
+	 */
+	const sendMessage = async (text: string): Promise<ChatMessage> => {
+		const MSG = pushRight(text)
+		setTyping(true)
+		// 异步触发 LLM 回复
+		void (async () => {
+			try {
+				// 动态导入避免循环依赖
+				const {useLLMStore} = await import("./llm")
+				const LLM = useLLMStore()
+				// 构建对话历史 (只取最近的若干条，避免 token 爆炸)
+				const HISTORY_FOR_LLM = HISTORY.value.slice(-20).map((m): {role: "user" | "assistant" | "system", content: string} => {
+					const ROLE: "user" | "assistant" | "system" = m.side === "right" ? "user" : m.side === "left" ? "assistant" : "system"
+					return {role: ROLE, content: m.text}
+				})
+				const RESULT = await LLM.generate({messages: HISTORY_FOR_LLM})
+				if (RESULT.ok && RESULT.text) {
+					pushLeft(RESULT.text)
+				} else {
+					setTyping(false)
+				}
+			} catch (err) {
+				setTyping(false)
+				await import("../logger").then(({logger}) => logger.error("conversation sendMessage LLM 异常", err))
+			}
+		})()
+		return MSG
+	}
+
 	// 只供聊天界面使用的中间信息 (含 center)
 	const chatItems = computed(() => HISTORY.value)
 
@@ -102,6 +137,7 @@ export const useConversationStore = defineStore("conversation", () => {
 		// 聊天界面消息
 		chatItems,
 		// 方法
+		sendMessage,
 		setTyping,
 		pushLeft,
 		pushRight,

@@ -112,9 +112,8 @@ const inputText = ref("")
 const sendMessage = () => {
 	const TEXT = inputText.value.trim()
 	if (!TEXT) return
-	CONV.pushRight(TEXT)
+	CONV.sendMessage(TEXT)
 	inputText.value = ""
-	CONV.setTyping(true)
 }
 
 // 是否悬浮在窗口上

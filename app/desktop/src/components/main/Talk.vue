@@ -45,13 +45,12 @@ const peerAvatar = computed<string>(() => {
 // 输入框文本
 const inputText = ref("")
 
-// 发送消息: 写入一条右边 (用户自己) 消息, 并开启"对方正在输入"状态
+// 发送消息
 const sendMessage = () => {
 	const TEXT = inputText.value.trim()
 	if (!TEXT) return
-	CONV.pushRight(TEXT)
+	CONV.sendMessage(TEXT)
 	inputText.value = ""
-	CONV.setTyping(true)
 }
 
 // 消息列表容器
