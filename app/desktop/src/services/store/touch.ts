@@ -21,7 +21,6 @@ export interface TouchArea {
 	y: number
 	w: number
 	h: number
-	image: string
 	prompt: string
 }
 

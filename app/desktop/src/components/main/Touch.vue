@@ -222,7 +222,6 @@ const up = async (e: PointerEvent) => {
 				y: draft.value.y,
 				w: draft.value.w,
 				h: draft.value.h,
-				image: "",
 				prompt: ""
 			}
 			editingIndex.value = -1

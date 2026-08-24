@@ -183,11 +183,10 @@ export const useLive2DStore = defineStore("live2d", () => {
 	}
 
 	// 添加一个触摸区域
-	const addTouch = async (data: Omit<TouchArea, "id" | "image" | "prompt">) => {
+	const addTouch = async (data: Omit<TouchArea, "id" | "prompt">) => {
 		config.value.touches.push({
 			...data,
 			id: uid(),
-			image: "",
 			prompt: "",
 		})
 		await saveConfig()

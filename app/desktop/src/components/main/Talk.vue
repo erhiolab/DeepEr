@@ -3,9 +3,11 @@ import {computed, nextTick, onMounted, ref, watch} from "vue"
 import Icon from "../common/Icon.vue"
 import {assetUrl} from "../../services/asset.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
+import {useConversationStore} from "../../services/store/conversation.ts"
 import fallbackAvatar from "../../assets/images/logo.png"
 
 const L2D = useLive2DStore()
+const CONV = useConversationStore()
 
 // 组装模型展示图 URL, 并做路径穿越校验
 const modelImageUrl = (modelName: string, image: string): string | null => {
@@ -40,41 +42,16 @@ const peerAvatar = computed<string>(() => {
 	return fallbackAvatar
 })
 
-// kind: time = 居中时间分隔, tip = 居中系统状态, msg = 普通消息
-type ChatItem =
-	| {id: number; kind: "time"; text: string}
-	| {id: number; kind: "tip"; text: string}
-	| {id: number; kind: "msg"; role: "other" | "self"; text: string}
-
-// 消息 id
-let nextId = 0
-
-// 消息自增 id
-const makeId = () => ++nextId
-
-// 会话消息列表
-const items = ref<ChatItem[]>([
-	{id: makeId(), kind: "time", text: "11月4日 下午 5:14"},
-	{id: makeId(), kind: "msg", role: "other", text: "嗨~ 我是薇塔~"},
-	{id: makeId(), kind: "msg", role: "other", text: "我在我在~"},
-	{id: makeId(), kind: "tip", text: "DeepEr 戳了戳 我"},
-	{id: makeId(), kind: "msg", role: "other", text: "(笑)"},
-	{id: makeId(), kind: "msg", role: "self", text: "不错"},
-])
-
 // 输入框文本
 const inputText = ref("")
 
-// 对方是否正在输入/加载
-const typing = ref(false)
-
-// 发送消息: 追加自己的消息并进入"正在输入中"状态
+// 发送消息: 写入一条右边 (用户自己) 消息, 并开启"对方正在输入"状态
 const sendMessage = () => {
 	const TEXT = inputText.value.trim()
 	if (!TEXT) return
-	items.value.push({id: makeId(), kind: "msg", role: "self", text: TEXT})
+	CONV.pushRight(TEXT)
 	inputText.value = ""
-	typing.value = true
+	CONV.setTyping(true)
 }
 
 // 消息列表容器
@@ -89,7 +66,7 @@ const scrollToBottom = () => {
 }
 
 // 新消息 / 输入状态变化时滚动到底部
-watch([() => items.value.length, typing], scrollToBottom)
+watch([() => CONV.history.length, () => CONV.isTyping], scrollToBottom)
 
 onMounted(async () => {
 	scrollToBottom()
@@ -112,7 +89,7 @@ watch(() => L2D.currentModel, (model) => {
 				</div>
 				<div class="peer-meta">
 					<h2 class="peer-name">{{ peerName }}</h2>
-					<p class="peer-state" :class="{typing}">{{ typing ? "对方正在输入..." : "在线" }}</p>
+					<p class="peer-state" :class="{typing: CONV.isTyping}">{{ CONV.isTyping ? "对方正在输入..." : "在线" }}</p>
 				</div>
 			</div>
 			<button class="more-btn" title="更多">
@@ -121,11 +98,10 @@ watch(() => L2D.currentModel, (model) => {
 		</header>
 		<div ref="listEl" class="talk-body">
 			<TransitionGroup name="msg">
-				<template v-for="item in items" :key="item.id">
-					<div v-if="item.kind === 'time'" class="chat-time">{{ item.text }}</div>
-					<div v-else-if="item.kind === 'tip'" class="chat-tip">{{ item.text }}</div>
-					<div v-else class="msg-row" :class="item.role">
-						<img v-if="item.role === 'other'" class="avatar" :src="peerAvatar" :alt="peerName"/>
+				<template v-for="item in CONV.history" :key="item.id">
+					<div v-if="item.side === 'center'" class="chat-time">{{ item.text }}</div>
+					<div v-else class="msg-row" :class="item.side">
+						<img v-if="item.side === 'left'" class="avatar" :src="peerAvatar" :alt="peerName"/>
 						<div class="bubble">{{ item.text }}</div>
 					</div>
 				</template>
@@ -262,26 +238,16 @@ watch(() => L2D.currentModel, (model) => {
 	border: 0.1rem solid var(--line-subtle);
 }
 
-.chat-tip {
-	padding: 0.3rem 1rem;
-	align-self: center;
-	border-radius: 99.9rem;
-	font-size: 1.05rem;
-	color: var(--text-muted);
-	background-color: rgba(125, 227, 255, 0.06);
-	border: 0.1rem solid var(--line-subtle);
-}
-
 .msg-row {
 	display: flex;
 	align-items: flex-end;
 	gap: 0.8rem;
 
-	&.other {
+	&.left {
 		justify-content: flex-start;
 	}
 
-	&.self {
+	&.right {
 		justify-content: flex-end;
 	}
 
@@ -294,7 +260,7 @@ watch(() => L2D.currentModel, (model) => {
 		border: 0.1rem solid var(--line-strong);
 	}
 
-	&.other .avatar {
+	&.left .avatar {
 		animation: talk-breathe 3.2s ease-in-out infinite;
 	}
 }
@@ -311,7 +277,7 @@ watch(() => L2D.currentModel, (model) => {
 	white-space: pre-wrap;
 }
 
-.msg-row.other .bubble {
+.msg-row.left .bubble {
 	background-color: rgba(255, 255, 255, 0.05);
 	border: 0.1rem solid var(--line-subtle);
 	color: var(--text-body);
@@ -328,7 +294,7 @@ watch(() => L2D.currentModel, (model) => {
 	}
 }
 
-.msg-row.self .bubble {
+.msg-row.right .bubble {
 	background-image: linear-gradient(135deg, var(--deep-teal-bright), var(--deep-teal));
 	color: var(--ink-deep);
 	font-weight: 500;

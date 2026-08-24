@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, onMounted, onUnmounted, ref} from "vue"
+import {computed, onMounted, onUnmounted, ref, watch} from "vue"
 import {useRouter} from "vue-router"
 import {emit} from "@tauri-apps/api/event"
 import Live2D from "../components/Live2D.vue"
@@ -16,10 +16,14 @@ import {
 	type ResizeDirection
 } from "../services/window"
 import useLanguages from "../services/i18n/useLanguages.ts"
+import {useConversationStore} from "../services/store/conversation.ts"
 
 const I18N = computed(() => useLanguages().views.pet)
 
 const ROUTER = useRouter()
+
+// AI 对话状态
+const CONV = useConversationStore()
 
 // 气泡自动消失等待时长(毫秒)
 const BUBBLE_TTL = 6000
@@ -108,8 +112,9 @@ const inputText = ref("")
 const sendMessage = () => {
 	const TEXT = inputText.value.trim()
 	if (!TEXT) return
-	pushBubble(TEXT)
+	CONV.pushRight(TEXT)
 	inputText.value = ""
+	CONV.setTyping(true)
 }
 
 // 是否悬浮在窗口上
@@ -199,6 +204,21 @@ const onStageMouseDown = (event: MouseEvent) => {
 	void startDragWindow()
 }
 
+// 已处理过的消息 id
+let lastSeenId = 0
+
+// 同步对话状态 → 桌宠气泡
+const syncConversationToBubbles = () => {
+	const LIST = CONV.history
+	for (const MSG of LIST) {
+		if (MSG.id <= lastSeenId) continue
+		lastSeenId = MSG.id
+		// 中间信息不进桌宠气泡
+		if (MSG.side === "center") continue
+		pushBubble(MSG.text)
+	}
+}
+
 onMounted(async () => {
 	await setPetWindow()
 	// 根据当前窗口大小计算气泡上限, 并在窗口缩放时同步更新 (rAF 节流)
@@ -210,6 +230,9 @@ onMounted(async () => {
 	window.addEventListener("keydown", onKeydown)
 	// 进入桌宠即保存一次, 确保首次有数据落库
 	await persistWindowState(0)
+	// 忽略已存在的历史, 只从当前进度开始同步新产生的消息
+	lastSeenId = CONV.history[CONV.history.length - 1]?.id ?? 0
+	watch(() => CONV.history, syncConversationToBubbles)
 })
 
 onUnmounted(() => {
