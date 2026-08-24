@@ -343,10 +343,11 @@ export default () => {
 				language: t("common.label.language"),
 				model: t("common.label.model"),
 				llm: t("common.label.llm"),
+				touch: t("common.label.touch"),
+				action: t("common.label.action"),
 				tts: t("common.label.tts"),
 				tool: t("common.label.tool"),
 				exception: t("common.label.exception"),
-				touch: t("common.label.touch"),
 				about: t("common.label.about"),
 			},
 			pet: {

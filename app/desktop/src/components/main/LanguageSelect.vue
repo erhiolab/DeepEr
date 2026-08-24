@@ -48,7 +48,7 @@ onMounted(async () => {
 		languages.value = await language.getLanguages()
 		current.value = await language.getLanguage()
 	} catch (error) {
-		logger.error("加载语言列表失败:", error)
+		await logger.error("加载语言列表失败:", error)
 		toast.error(I18N.value.loadLanguagesFailed)
 	}
 })

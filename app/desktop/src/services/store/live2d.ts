@@ -29,7 +29,26 @@ export interface ModelRenderConfig {
 }
 
 /**
- * 模型配置 (渲染 / 名称 / 封面 / 质量 / 触摸区域)
+ * 动作/表情映射条目
+ * 保存模型文件侧的动作/表情标识与用户设置的 AI 映射名
+ */
+export interface ActionMapping {
+	id: string
+	name: string
+	exist: boolean
+}
+
+/**
+ * 动作/表情映射配置
+ * 供 AI 调用对照: AI 下发"映射名"即可触发对应动作/表情
+ */
+export interface ModelActions {
+	motions: ActionMapping[]
+	expressions: ActionMapping[]
+}
+
+/**
+ * 模型配置 (渲染 / 名称 / 封面 / 质量 / 触摸区域 / 动作表情映射)
  * 每个模型在模型目录下维护一份 `model.config.json`
  */
 export interface ModelTouchConfig {
@@ -39,8 +58,10 @@ export interface ModelTouchConfig {
 	image: string
 	quality: number
 	touches: TouchArea[]
+	actions: ModelActions
 }
 
+// 默认模型配置 (空模型)
 const defaultConfig = (): ModelTouchConfig => ({
 	version: 1,
 	render: {scale: 1.0, posX: 0.0, posY: 0.0, rotation: 0},
@@ -48,6 +69,7 @@ const defaultConfig = (): ModelTouchConfig => ({
 	image: "",
 	quality: 1.0,
 	touches: [],
+	actions: {motions: [], expressions: []},
 })
 
 const uid = () => `t-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
@@ -154,6 +176,10 @@ export const useLive2DStore = defineStore("live2d", () => {
 				render: {...defaultConfig().render, ...DATA?.render},
 				quality: Number.isFinite(DATA?.quality) ? DATA!.quality : 1.0,
 				touches: Array.isArray(DATA?.touches) ? DATA.touches : [],
+				actions: {
+					motions: Array.isArray(DATA?.actions?.motions) ? DATA.actions.motions : [],
+					expressions: Array.isArray(DATA?.actions?.expressions) ? DATA.actions.expressions : [],
+				},
 			}
 			configModelName.value = name
 			await logger.info(`已加载模型配置: ${name}, touches=${config.value.touches.length}`)
@@ -232,6 +258,97 @@ export const useLive2DStore = defineStore("live2d", () => {
 	// 更新模型显示质量 (渲染倍率) 并持久化
 	const setConfigQuality = async (quality: number) => {
 		config.value.quality = Math.min(1.0, Math.max(0.25, quality))
+		await saveConfig()
+	}
+
+	/**
+	 * 一次对账: 用 l2d 实例当前的动作/表情列表与模型配置中的映射同步.
+	 * - 配置里存在、但模型文件已不存在的映射 → 标 exist=false (仍留在列表供查看, AI 调用时跳过)
+	 * - 模型文件存在、但配置里没有的映射 → 追加进去 (id=模型侧标识, name 默认取文件名, exist=true)
+	 * - 已存在但 name 为空 (未设置) 的条目 → 补默认文件名作名称
+	 * 返回是否发生了变更 (由调用方决定是否落盘)
+	 *
+	 * 动作映射 id 编码为 `组名::文件名`, 保证组内多条动作各有唯一可回放标识
+	 * 分支: 模型无动作(组为空)或读动作失败时不改动既有列表, 避免误清空
+	 */
+	const syncActionsInternal = (): boolean => {
+		if (!l2dInstance.value || !configModelName.value) return false
+		let changed = false
+		const normMap = (list: ActionMapping[]) => {
+			const MAP = new Map<string, ActionMapping>()
+			for (const ITEM of list) MAP.set(ITEM.id, ITEM)
+			return MAP
+		}
+		// 从动作/表情标识里取"文件名"作为默认名称: 动作取文件 basename, 表情直接用它
+		const defaultNameOf = (id: string): string => {
+			const BASENAME = id.slice(Math.max(id.lastIndexOf("/"), id.lastIndexOf("\\")) + 1)
+			// 动作 id 形如 `组名::文件名`, 去掉 `组名::` 前缀
+			const SEP = BASENAME.lastIndexOf("::")
+			return SEP >= 0 ? BASENAME.slice(SEP + 2) : BASENAME
+		}
+		// 按模型侧 id 顺序重排: 保留用户命名; 新增或名称为空的条目默认用文件名; 文件缺失 → exist=false
+		const normalize = (map: Map<string, ActionMapping>, ids: string[]): ActionMapping[] => {
+			const NEXT: ActionMapping[] = []
+			for (const ID of ids) {
+				const PREV = map.get(ID)
+				if (PREV) {
+					// 已有条目: 未命名时补默认文件名, 标记为已变更从而落盘持久化
+					if (!PREV.name.trim()) {
+						PREV.name = defaultNameOf(ID)
+						changed = true
+					}
+					NEXT.push(PREV)
+				} else {
+					NEXT.push({id: ID, name: defaultNameOf(ID), exist: true})
+					changed = true
+				}
+			}
+			// 模型文件已不存在的条目 → exist=false (它们在 ids 中不再出现)
+			for (const PREV of map.values()) {
+				if (!ids.includes(PREV.id) && PREV.exist) {
+					PREV.exist = false
+					changed = true
+				}
+			}
+			return NEXT
+		}
+		try {
+			const MOTIONS_RAW = l2dInstance.value.getMotions()
+			const MOTION_IDS: string[] = []
+			for (const [group, files] of Object.entries(MOTIONS_RAW)) {
+				for (const FILE of files) MOTION_IDS.push(`${group}::${FILE}`)
+			}
+			config.value.actions.motions = normalize(
+				normMap(config.value.actions.motions),
+				MOTION_IDS,
+			)
+			config.value.actions.expressions = normalize(
+				normMap(config.value.actions.expressions),
+				l2dInstance.value.getExpressions(),
+			)
+		} catch (err) {
+			void logger.error("同步动作/表情映射失败:", err)
+			return false
+		}
+		return changed
+	}
+
+	/**
+	 * 对账并落盘动作/表情映射 (模型加载成功后调用)
+	 * 仅在发生变更时写盘, 避免反复覆盖
+	 */
+	const syncActions = async (): Promise<void> => {
+		if (!configModelName.value) return
+		if (syncActionsInternal()) await saveConfig()
+	}
+
+	/**
+	 * 更新某个动作/表情映射的用户命名 (AI 调用对照名), 并落盘
+	 */
+	const updateActionName = async (kind: "motions" | "expressions", id: string, name: string) => {
+		config.value.actions[kind] = config.value.actions[kind].map((item) =>
+			item.id === id ? {...item, name: name.trim()} : item,
+		)
 		await saveConfig()
 	}
 
@@ -510,6 +627,11 @@ export const useLive2DStore = defineStore("live2d", () => {
 			currentModel.value = modelName
 			isInitialized.value = true
 			await applyModelTransform()
+			// 模型加载完成后对账动作/表情映射 (新增/移除模型文件侧条目)
+			await loadConfig(modelName)
+			await syncActions()
+			// 屏蔽"随机睡眠"待机暂时关闭 (基线测试, 需先确认手动动作渲染正常后再开启)
+			// setupSleepGuard()
 			// 若开启了显示可触摸区域但此前实例未就绪, 在这里重新启动绘制
 			if (showHitAreas.value && l2dInstance.value && !hitAreaRafId) {
 				ensureHitAreaOverlay()
@@ -951,5 +1073,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 		removeTouch,
 		setConfigRender,
 		setConfigQuality,
+
+		// 动作 / 表情映射 (供 AI 调用对照, 对账与命名配置)
+		syncActions,
+		updateActionName,
 	}
 })

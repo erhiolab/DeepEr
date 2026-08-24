@@ -81,6 +81,47 @@ pub struct TouchArea {
     pub prompt: String,
 }
 
+/// 动作/表情映射条目
+/// 保存模型文件侧的动作/表情标识与用户设置的 AI 映射名 (AS_NAME 供 AI 对照, 可留空)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionMapping {
+    /// 模型文件侧动作标识: 动作组名 / 表情 ID
+    #[serde(default)]
+    pub id: String,
+    /// 用户设置的 AI 映射名 (留空时不参与 AI 调用对照)
+    #[serde(default)]
+    pub name: String,
+    /// 该动作/表情文件是否还存在 (模型加载后自动对账, 文件缺失移除)
+    #[serde(default = "default_exist")]
+    pub exist: bool,
+}
+
+fn default_exist() -> bool {
+    true
+}
+
+/// 动作/表情映射配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelActions {
+    /// 动作组映射: 模型侧动作 (l2d 按动作组分组, 组内每条是一个可播放动作)
+    #[serde(default)]
+    pub motions: Vec<ActionMapping>,
+    /// 表情映射: 模型侧表情 ID
+    #[serde(default)]
+    pub expressions: Vec<ActionMapping>,
+}
+
+impl Default for ModelActions {
+    fn default() -> Self {
+        Self {
+            motions: Vec::new(),
+            expressions: Vec::new(),
+        }
+    }
+}
+
 /// 模型级配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +148,9 @@ pub struct ModelConfig {
     /// 自定义可触摸区域
     #[serde(default)]
     pub touches: Vec<TouchArea>,
+    /// 动作/表情映射配置 (供 AI 调用对照, 模型加载后自动对账)
+    #[serde(default)]
+    pub actions: ModelActions,
 }
 
 /// 默认显示质量
@@ -123,6 +167,7 @@ impl Default for ModelConfig {
             render: ModelRenderConfig::default(),
             quality: default_quality(),
             touches: Vec::new(),
+            actions: ModelActions::default(),
         }
     }
 }

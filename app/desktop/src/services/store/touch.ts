@@ -98,7 +98,6 @@ export const useTouchStore = defineStore("touch", () => {
 	/**
 	 * 触发一个自定义触摸回调
 	 * 触发后立即锁定 (防止同一手势无限触发), 需外部 `unlock` 解锁或等待 2 分钟自动解锁
-	 * 当前派发 `touch-triggered` 事件 + 日志, 未来接入 LLM 上下文
 	 */
 	const trigger = async (touch: TouchArea) => {
 		// 已锁住时不重复触发

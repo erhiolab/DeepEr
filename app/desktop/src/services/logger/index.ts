@@ -35,7 +35,13 @@ const writeLog = async (type: LogType, msg: string, error?: unknown) => {
 export const logger = {
 	debug: (msg: string, error?: unknown) => writeLog("debug", msg, error),
 	info: (msg: string, error?: unknown) => writeLog("info", msg, error),
-	warn: (msg: string, error?: unknown) => writeLog("warn", msg, error),
-	error: (msg: string, error?: unknown) => writeLog("error", msg, error),
+	warn: async (msg: string, error?: unknown) => {
+		await writeLog("warn", msg, error)
+		console.warn(msg, error)
+	},
+	error: async (msg: string, error?: unknown) => {
+		await writeLog("error", msg, error)
+		console.error(msg, error)
+	},
 }
 
