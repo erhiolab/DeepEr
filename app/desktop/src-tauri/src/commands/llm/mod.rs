@@ -177,11 +177,12 @@ pub fn decrypt_api_key(app: &tauri::AppHandle, encoded: &str) -> Result<String, 
 
 /// SSE 流式读取骨架: 发送 POST 请求, 逐行解析 `data:` 负载,
 /// 对每个 data 调用 `extract` 提取文本增量并 `emit` 到前端; 累计完整文本.
+/// 可选的 `collect_usage` 在每个 data 上提取 usage token (输入/输出).
 /// 结束时统一 `emit` `STREAM_EVENT_END`.
 ///
-/// 返回 `(status, 完整文本)`:
+/// 返回 `(status, 完整文本, 输入token, 输出token)`:
 /// - 非 2xx 时第二个元素为响应原文 (用于错误展示), 不会 emit 增量.
-/// - 2xx 时第二个元素为拼接的完整文本.
+/// - 2xx 时第二个元素为拼接的完整文本, 后两元素为流式过程中收集到的 usage.
 pub async fn stream_generate(
     app: &tauri::AppHandle,
     request_id: &str,
@@ -189,7 +190,8 @@ pub async fn stream_generate(
     headers: Vec<(String, String)>,
     body: serde_json::Value,
     extract: fn(&serde_json::Value) -> Option<String>,
-) -> Result<(u16, String), String> {
+    collect_usage: fn(&serde_json::Value) -> (Option<u64>, Option<u64>),
+) -> Result<(u16, String, Option<u64>, Option<u64>), String> {
     // 结束事件统一收尾
     let finish = |app: &tauri::AppHandle, request_id: &str, ok: bool, error: Option<String>| {
         let _ = app.emit(
@@ -221,10 +223,12 @@ pub async fn stream_generate(
     if status < 200 || status >= 300 {
         let text = resp.text().await.unwrap_or_default();
         finish(app, request_id, false, Some(format!("HTTP {status}")));
-        return Ok((status, text));
+        return Ok((status, text, None, None));
     }
 
     let mut full = String::new();
+    let mut usage_input: Option<u64> = None;
+    let mut usage_output: Option<u64> = None;
     let mut sse_buf: Vec<u8> = Vec::new();
     let mut bytes = resp.bytes_stream();
     // 逐块累积并逐行解析
@@ -248,9 +252,17 @@ pub async fn stream_generate(
                 let data = data.trim();
                 // OpenAI Responses 流结束标记
                 if data == "[DONE]" {
-                    return Ok((status, full));
+                    return Ok((status, full, usage_input, usage_output));
                 }
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                    // 累积 usage: 不同事件的 input / output 各自取非 None
+                    let (input, output) = collect_usage(&json);
+                    if input.is_some() {
+                        usage_input = input;
+                    }
+                    if output.is_some() {
+                        usage_output = output;
+                    }
                     if let Some(delta) = extract(&json) {
                         if !delta.is_empty() {
                             full.push_str(&delta);
@@ -265,5 +277,5 @@ pub async fn stream_generate(
         }
     }
     finish(app, request_id, true, None);
-    Ok((status, full))
+    Ok((status, full, usage_input, usage_output))
 }

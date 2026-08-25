@@ -66,6 +66,8 @@ pub fn run() {
             commands::log::write_log,
             commands::language::get_system_language,
             commands::live2d::fetch_live2d_list,
+            commands::context::context_insert,
+            commands::context::context_list,
 
             commands::llm::openai_responses::llm_openai_generate,
             commands::llm::openai_responses::llm_openai_test_connection,

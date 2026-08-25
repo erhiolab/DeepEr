@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS resources (
     size          INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT
 );
+CREATE TABLE IF NOT EXISTS contexts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    type        TEXT NOT NULL,
+    role        TEXT,
+    content     TEXT NOT NULL,
+    token_count INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL
+);
 ";
 
 /// 数据库文件名

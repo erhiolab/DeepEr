@@ -175,13 +175,24 @@ pub async fn llm_google_generate(
     let body = build_body(&args);
     let request_id = args.request_id.unwrap_or_default();
     let url = build_stream_url(&cfg, &model);
-    let (status, resp) = match stream_generate(
+    let (status, resp, input_tokens, output_tokens) = match stream_generate(
         &app,
         &request_id,
         url,
         vec![("Content-Type".to_string(), "application/json".to_string())],
         body,
         extract_stream_delta,
+        |json| {
+            // Google usage: `usageMetadata.promptTokenCount` / `candidatesTokenCount` (流式最后一个 data 事件)
+            if let Some(usage) = json.get("usageMetadata") {
+                let input = usage.get("promptTokenCount").and_then(|v| v.as_u64());
+                let output = usage.get("candidatesTokenCount").and_then(|v| v.as_u64());
+                if input.is_some() || output.is_some() {
+                    return (input, output);
+                }
+            }
+            (None, None)
+        },
     )
     .await
     {
@@ -196,7 +207,7 @@ pub async fn llm_google_generate(
         let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google generate 失败 {status}: {reason}"));
         return Ok(LlmGenerateOutcome::err_with(Some("http_error"), format!("Google 接口返回 {status}: {reason}")));
     }
-    Ok(LlmGenerateOutcome::ok(resp, None, None))
+    Ok(LlmGenerateOutcome::ok(resp, input_tokens, output_tokens))
 }
 
 /// 连接测试: invoke("llm_google_test_connection")

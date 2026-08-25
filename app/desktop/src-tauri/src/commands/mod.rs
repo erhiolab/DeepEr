@@ -13,6 +13,7 @@
 //! - [`devtools`] 开发者工具 (DevTools) 运行开关命令
 //! - [`task_manager`] 浏览器任务管理器 (Browser Task Manager) 命令
 
+pub mod context;
 pub mod devtools;
 pub mod first_run;
 pub mod language;

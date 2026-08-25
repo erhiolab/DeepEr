@@ -1,6 +1,7 @@
 import {computed, nextTick, reactive, ref} from "vue"
 import {defineStore} from "pinia"
 import {assetUrl} from "../asset"
+import {contextInsert, contextList, estimateTokens} from "../context"
 import {createStreamingMarkdownSplitter, isFencedCodeBlock} from "../text/markdownSplitter"
 import {logger} from "../logger"
 
@@ -38,6 +39,12 @@ export const useConversationStore = defineStore("conversation", () => {
 
 	// 消息 id 自增
 	let nextId = 1
+
+	// 是否已从 context 表回显过历史 (每个 store 实例只回显一次, 切换窗口不重复)
+	let historyLoaded = false
+
+	// 回显历史条数上限 (最近 N 条 type=talk 记录)
+	const HISTORY_RELOAD_LIMIT = 50
 
 	// 生成一条消息并写入历史 (消息为响应式对象, 便于流式中文本增量更新)
 	const push = (side: ChatSide, text: string, isStreaming = false): ChatMessage => {
@@ -99,12 +106,36 @@ export const useConversationStore = defineStore("conversation", () => {
 	 */
 	const pushCenter = (text: string): ChatMessage => push("center", text)
 
-	// 当前对话历史映射为 LLM 消息 (只取最近的若干条)
+	// LLM 对话消息类型
 	type LLMMsg = {role: "user" | "assistant" | "system", content: string}
-	const toLLMMessages = (): LLMMsg[] => HISTORY.value.slice(-20).map((m): LLMMsg => {
-		const ROLE: LLMMsg["role"] = m.side === "right" ? "user" : m.side === "left" ? "assistant" : "system"
-		return {role: ROLE, content: m.text}
-	})
+
+	// 给 LLM 的上下文 token 预算 (从 context 表取最近历史的累计上限)
+	const CONTEXT_TOKEN_BUDGET = 8000
+
+	/**
+	 * 从 context 表加载历史对话 (type=talk 的 user / assistant 记录), 作为 LLM 上下文.
+	 * 数据库是权威完整历史 (含跨会话), 按 token 预算从最新向前累积, 得到时间正序的消息列表.
+	 */
+	const buildTalkMessages = async (): Promise<LLMMsg[]> => {
+		const RECORDS = await contextList(200, 0)
+		const TALK = RECORDS
+			.filter(record => record.type === "talk" && record.role && record.content.trim())
+			.reverse() // 旧 -> 新
+		const MESSAGES: LLMMsg[] = []
+		let used = 0
+		// 从最新向前累积, 直到预算耗尽
+		for (const record of [...TALK].reverse()) {
+			const COST = record.tokenCount || estimateTokens(record.content)
+			if (MESSAGES.length && used + COST > CONTEXT_TOKEN_BUDGET) break
+			used += COST
+			MESSAGES.push({
+				role: record.role === "assistant" ? "assistant" : "user",
+				content: record.content,
+			})
+		}
+		// MESSAGES 是倒序累积 (最新在前), 翻转得到旧->新
+		return MESSAGES.reverse()
+	}
 
 	// 合成一段文本的语音, 返回可播放 URL (null = 未合成/失败)
 	const synthSegmentTTS = async (seg: string): Promise<string | null> => {
@@ -209,6 +240,15 @@ export const useConversationStore = defineStore("conversation", () => {
 				// 流式结束: 记录完整文本, 把 splitter 里剩余的尾巴作为最后一段入队
 				streamDone = true
 				fullText = RESULT.ok && RESULT.text ? RESULT.text : null
+				// 记录 AI 回复 (含后端返回的真实输出 token)
+				if (RESULT.ok && RESULT.text) {
+					void contextInsert({
+						type: "talk",
+						role: "assistant",
+						content: RESULT.text,
+						tokenCount: RESULT.outputTokens ?? estimateTokens(RESULT.text),
+					})
+				}
 				const REST = SPLITTER.getRest().trim()
 				if (REST) {
 					QUEUE.push(REST)
@@ -232,7 +272,16 @@ export const useConversationStore = defineStore("conversation", () => {
 	 */
 	const sendMessage = async (text: string, onDone?: () => void): Promise<ChatMessage> => {
 		const MSG = pushRight(text)
-		requestLLM(toLLMMessages(), onDone)
+		// 记录用户消息 (保证下次读 DB 历史时已包含本条)
+		await contextInsert({
+			type: "talk",
+			role: "user",
+			content: text,
+			tokenCount: estimateTokens(text),
+		})
+		// 用 DB 历史构建 LLM 上下文 (含跨会话历史, 而非仅当前内存)
+		const HISTORY_MSG = await buildTalkMessages()
+		requestLLM(HISTORY_MSG, onDone)
 		return MSG
 	}
 
@@ -242,7 +291,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	 * @param onDone LLM 回复流程结束后回调 (成功/失败都会触发), 用于解除触摸锁定
 	 */
 	const sendTouch = async (prompt: string, onDone?: () => void): Promise<void> => {
-		const MESSAGES = [...toLLMMessages(), {role: "user" as const, content: prompt}]
+		const MESSAGES = [...(await buildTalkMessages()), {role: "user" as const, content: prompt}]
 		requestLLM(MESSAGES, onDone)
 	}
 
@@ -252,6 +301,25 @@ export const useConversationStore = defineStore("conversation", () => {
 	// 清除对话 (保留 id 递增, 避免冲突)
 	const clear = () => {
 		HISTORY.value = []
+	}
+
+	/**
+	 * 从 context 表恢复最近的 talk 历史到界面 (只回显最近 N 条, 幂等).
+	 * 历史仍作为 LLM 上下文; 这里仅把 DB 记录回填进 UI 的 HISTORY.
+	 */
+	const loadHistory = async (limit = HISTORY_RELOAD_LIMIT): Promise<void> => {
+		if (historyLoaded) return
+		historyLoaded = true
+		const RECORDS = await contextList(limit, 0)
+		const TALK = RECORDS
+			.filter(record => record.type === "talk" && record.role && record.content.trim())
+			.reverse()
+		HISTORY.value = TALK.map(record => ({
+			id: nextId++,
+			side: record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
+			text: record.content,
+			createdAt: record.createdAt * 1000,
+		}))
 	}
 
 	return {
@@ -264,6 +332,7 @@ export const useConversationStore = defineStore("conversation", () => {
 		// 方法
 		sendMessage,
 		sendTouch,
+		loadHistory,
 		setTyping,
 		pushLeft,
 		pushRight,

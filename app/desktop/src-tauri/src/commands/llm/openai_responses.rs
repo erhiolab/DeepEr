@@ -186,7 +186,7 @@ pub async fn llm_openai_generate(
     }
     let body = build_body(&cfg, &args);
     let request_id = args.request_id.unwrap_or_default();
-    let (status, resp) = match stream_generate(
+    let (status, resp, input_tokens, output_tokens) = match stream_generate(
         &app,
         &request_id,
         build_responses_url(&cfg.base_url),
@@ -199,6 +199,18 @@ pub async fn llm_openai_generate(
             } else {
                 None
             }
+        },
+        |json| {
+            // OpenAI Responses usage: 事件 `response.completed` 的 `usage.input_tokens` / `output_tokens`
+            if json.get("type").and_then(|v| v.as_str()) == Some("response.completed") {
+                if let Some(usage) = json.get("usage") {
+                    return (
+                        usage.get("input_tokens").and_then(|v| v.as_u64()),
+                        usage.get("output_tokens").and_then(|v| v.as_u64()),
+                    );
+                }
+            }
+            (None, None)
         },
     )
     .await
@@ -215,7 +227,7 @@ pub async fn llm_openai_generate(
         return Ok(LlmGenerateOutcome::err_with(Some("http_error"), format!("OpenAI 接口返回 {status}: {reason}")));
     }
     let _ = log::write(&app, &LogSource::Backend, "info", "OpenAI generate 流式完成");
-    Ok(LlmGenerateOutcome::ok(resp, None, None))
+    Ok(LlmGenerateOutcome::ok(resp, input_tokens, output_tokens))
 }
 
 /// 连接测试: invoke("llm_openai_test_connection")

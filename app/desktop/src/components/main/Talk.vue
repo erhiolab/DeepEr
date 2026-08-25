@@ -90,6 +90,8 @@ watch([() => CONV.history, () => CONV.isTyping], () => {
 onMounted(async () => {
 	const EL = listEl.value
 	if (EL) EL.addEventListener("scroll", onScroll, {passive: true})
+	// 从 context 表回显最近聊天历史 (只回显一次), 再吸底
+	await CONV.loadHistory()
 	scrollToBottom()
 	await ensureConfig()
 })

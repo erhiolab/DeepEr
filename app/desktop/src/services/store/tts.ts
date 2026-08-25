@@ -4,6 +4,7 @@
 import {computed, ref} from "vue"
 import {defineStore} from "pinia"
 import {logger} from "../logger"
+import {contextInsert, estimateTokens} from "../context"
 import {getActiveAdapterInstance} from "../tts/adapters"
 import type {TtsSynthesizeRequest, TtsSynthesizeResult, TtsTestResult, TTSVoiceInfo} from "../tts/types"
 
@@ -116,21 +117,25 @@ export const useTTSStore = defineStore("tts", () => {
 
 	/**
 	 * 开一次性的 LLM 调用, 让 AI 根据消息内容决定 TTS 参数.
-	 * 提示词与结果解析由各适配器负责 (按自己的参数语义 / 可用音色来源)
-	 * 适配器未实现 AI 调参能力 / LLM 未启用 / 解析失败时返回空对象 (回落默认参数)
 	 */
-	const decideParamsByAI = async (text: string): Promise<Pick<TtsSynthesizeRequest, "voice" | "speed" | "language">> => {
+	const decideParamsByAI = async (text: string): Promise<{
+		params: Pick<TtsSynthesizeRequest, "voice" | "speed" | "language">
+		inputTokens: number
+		outputTokens: number
+	}> => {
+		const EMPTY_RESULT = {params: {}, inputTokens: 0, outputTokens: 0}
 		const ADAPTER = activeAdapter.value
 		if (!ADAPTER || typeof ADAPTER.buildAIParamsPrompt !== "function" || typeof ADAPTER.parseAIParams !== "function") {
-			return {}
+			return EMPTY_RESULT
 		}
 		try {
 			const PROMPT = await ADAPTER.buildAIParamsPrompt()
-			if (!PROMPT) return {}
+			if (!PROMPT) return EMPTY_RESULT
 			// 动态导入避免循环依赖
 			const {useLLMStore} = await import("./llm")
 			const LLM = useLLMStore()
-			const RESULT = await LLM.generate({
+			// 与聊天同用 generateStream(流式)后端路径, 以确保返回真实的输入/输出 token
+			const RESULT = await LLM.generateStream({
 				messages: [
 					{role: "system", content: PROMPT},
 					{role: "user", content: text},
@@ -138,11 +143,15 @@ export const useTTSStore = defineStore("tts", () => {
 				temperature: 0.2,
 				maxTokens: 200,
 			})
-			if (!RESULT.ok || !RESULT.text) return {}
-			return ADAPTER.parseAIParams<Pick<TtsSynthesizeRequest, "voice" | "speed" | "language">>(RESULT.text, voices.value)
+			if (!RESULT.ok || !RESULT.text) return EMPTY_RESULT
+			return {
+				params: ADAPTER.parseAIParams<Pick<TtsSynthesizeRequest, "voice" | "speed" | "language">>(RESULT.text, voices.value),
+				inputTokens: RESULT.inputTokens ?? 0,
+				outputTokens: RESULT.outputTokens ?? 0,
+			}
 		} catch (error) {
 			await logger.error("TTS AI 调参失败, 回落默认参数", error)
-			return {}
+			return EMPTY_RESULT
 		}
 	}
 
@@ -172,8 +181,27 @@ export const useTTSStore = defineStore("tts", () => {
 			lastResult.value = {ok: false, error: "TTS 未启用"}
 			return lastResult.value
 		}
-		const PARAMS = await decideParamsByAI(CLEAN_TEXT)
-		return await synthesize({text: CLEAN_TEXT, ...PARAMS})
+		const AI = await decideParamsByAI(CLEAN_TEXT)
+		// 记录 TTS 请求, 和聊天一样带角色与输入/输出 token:
+		// 输入条 (type=tts, role=user, content=合成文本, token=输入 token)
+		void contextInsert({
+			type: "tts",
+			role: "user",
+			content: CLEAN_TEXT,
+			tokenCount: AI.inputTokens || estimateTokens(CLEAN_TEXT),
+		})
+		// 输出条 (type=tts, role=assistant, content=这次选用的参数, token=输出 token)
+		const PARAM_TEXT = Object.entries(AI.params)
+			.filter(([, v]) => v !== undefined && v !== null && v !== "")
+			.map(([k, v]) => `${k}=${v}`)
+			.join(" ")
+		void contextInsert({
+			type: "tts",
+			role: "assistant",
+			content: PARAM_TEXT || "(tts)",
+			tokenCount: AI.outputTokens || estimateTokens(PARAM_TEXT || "tts"),
+		})
+		return await synthesize({text: CLEAN_TEXT, ...AI.params})
 	}
 
 	/**

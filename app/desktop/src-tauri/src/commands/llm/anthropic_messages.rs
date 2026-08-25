@@ -167,7 +167,7 @@ pub async fn llm_anthropic_generate(
     }
     let body = build_body(&cfg, &args);
     let request_id = args.request_id.unwrap_or_default();
-    let (status, resp) = match stream_generate(
+    let (status, resp, input_tokens, output_tokens) = match stream_generate(
         &app,
         &request_id,
         build_messages_url(&cfg.base_url),
@@ -182,6 +182,29 @@ pub async fn llm_anthropic_generate(
                     .map(|s| s.to_string())
             } else {
                 None
+            }
+        },
+        |json| {
+            let ty = json.get("type").and_then(|v| v.as_str());
+            match ty {
+                // Anthropic usage 输入: 事件 `message_start` 的 `message.usage.input_tokens`
+                Some("message_start") => {
+                    let input = json
+                        .get("message")
+                        .and_then(|m| m.get("usage"))
+                        .and_then(|u| u.get("input_tokens"))
+                        .and_then(|v| v.as_u64());
+                    (input, None)
+                }
+                // Anthropic usage 输出: 事件 `message_delta` 的 `usage.output_tokens`
+                Some("message_delta") => {
+                    let output = json
+                        .get("usage")
+                        .and_then(|u| u.get("output_tokens"))
+                        .and_then(|v| v.as_u64());
+                    (None, output)
+                }
+                _ => (None, None),
             }
         },
     )
@@ -203,7 +226,7 @@ pub async fn llm_anthropic_generate(
         let _ = log::write(&app, &LogSource::Backend, "error", &format!("Anthropic generate 失败 {status}: {reason}"));
         return Ok(LlmGenerateOutcome::err_with(Some("http_error"), format!("Anthropic 接口返回 {status}: {reason}")));
     }
-    Ok(LlmGenerateOutcome::ok(resp, None, None))
+    Ok(LlmGenerateOutcome::ok(resp, input_tokens, output_tokens))
 }
 
 /// 连接测试: invoke("llm_anthropic_test_connection")

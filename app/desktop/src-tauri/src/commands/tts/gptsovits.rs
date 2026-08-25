@@ -207,8 +207,10 @@ pub async fn tts_gptsovits_synthesize(
     let params = build_params(&cfg, &args.text, entry);
     let url = build_tts_url(&cfg.base_url);
 
+    // 长文本逐句推理可能耗时较久, 放宽请求超时, 避免合成未完成就被断掉
+    const SYNTHESIZE_TIMEOUT_SECS: u64 = 300;
     let response = match Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(SYNTHESIZE_TIMEOUT_SECS))
         .build()
     {
         Ok(client) => match client.post(&url).json(&params).send().await {
