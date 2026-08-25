@@ -88,6 +88,14 @@ jobs:
           printf '%s' "$RAW_KEY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' > "$RUNNER_TEMP/deeper.key"
           echo "KEY_PATH=$RUNNER_TEMP/deeper.key" >> "$GITHUB_OUTPUT"
 
+      # ---------- Clean stale bundle artifacts ----------
+      - name: Clean stale bundle artifacts
+        working-directory: app/desktop
+        shell: bash
+        run: |
+          rm -rf src-tauri/target/release/bundle
+          echo "Cleaned src-tauri/target/release/bundle"
+
       - name: Build Tauri release
         working-directory: app/desktop
         env:
