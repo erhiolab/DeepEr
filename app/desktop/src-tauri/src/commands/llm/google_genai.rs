@@ -10,7 +10,7 @@ use std::time::Duration;
 use crate::db;
 use crate::log::{self, LogSource};
 
-use super::{db_conn, decrypt_api_key, read_db_string_or, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
+use super::{db_conn, decrypt_api_key, read_db_string_or, stream_generate, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
 
 /// 配置键前缀 (与前端 llm_google_genai.ts 保持一致)
 const PREFIX: &str = "llm_google_genai";
@@ -128,37 +128,6 @@ fn build_test_body() -> serde_json::Value {
     })
 }
 
-/// 从 generateContent 响应提取文本(candidates[0].content.parts.text)
-fn extract_text(body: &serde_json::Value) -> String {
-    let Some(candidates) = body.get("candidates").and_then(|v| v.as_array()) else {
-        return String::new();
-    };
-    let Some(cand) = candidates.first() else {
-        return String::new();
-    };
-    let Some(content) = cand.get("content") else {
-        return String::new();
-    };
-    let Some(parts) = content.get("parts").and_then(|v| v.as_array()) else {
-        return String::new();
-    };
-    parts
-        .iter()
-        .filter_map(|p| p.get("text").and_then(|v| v.as_str()))
-        .collect()
-}
-
-fn usage_tokens(body: &serde_json::Value) -> (Option<u64>, Option<u64>) {
-    match body.get("usageMetadata") {
-        Some(u) if u.is_object() => {
-            let input = u.get("promptTokenCount").and_then(|v| v.as_u64());
-            let output = u.get("candidatesTokenCount").and_then(|v| v.as_u64());
-            (input, output)
-        }
-        _ => (None, None),
-    }
-}
-
 fn validate(cfg: &Config) -> Result<(), (&'static str, String)> {
     if cfg.api_key.trim().is_empty() {
         return Err(("missing_api_key", "未填写 API Key".to_string()));
@@ -169,7 +138,26 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, String)> {
     Ok(())
 }
 
-/// 生成: invoke("llm_google_generate", { messages, model?, temperature?, maxTokens? })
+/// 构造流式生成地址: 在 generateContent 上追加 `alt=sse`
+fn build_stream_url(cfg: &Config, model: &str) -> String {
+    let base = build_generate_url(cfg, model);
+    if base.contains("?") {
+        format!("{base}&alt=sse")
+    } else {
+        format!("{base}?alt=sse")
+    }
+}
+
+/// 从单个流式 data JSON 提取文本增量 (candidates[0].content.parts[0].text)
+fn extract_stream_delta(json: &serde_json::Value) -> Option<String> {
+    let candidates = json.get("candidates")?.as_array()?;
+    let cand = candidates.first()?;
+    let parts = cand.get("content")?.get("parts")?.as_array()?;
+    parts.iter().find_map(|p| p.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()))
+}
+
+/// 生成: invoke("llm_google_generate", { messages, model?, temperature?, maxTokens?, requestId? })
+/// 使用 SSE 流式返回, 增量通过 `llm-stream-delta` 事件推送前段.
 #[tauri::command]
 pub async fn llm_google_generate(
     app: tauri::AppHandle,
@@ -184,38 +172,31 @@ pub async fn llm_google_generate(
         return Ok(LlmGenerateOutcome::err_with(Some(code), msg));
     }
     let model = args.model.clone().unwrap_or_else(|| cfg.model.clone());
-    let url = build_generate_url(&cfg, &model);
     let body = build_body(&args);
-    let client = Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|e| {
-            let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google generate 创建 HTTP 客户端失败: {e}"));
-            format!("创建 HTTP 客户端失败: {e}")
-        })?;
-    let resp = match client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
+    let request_id = args.request_id.unwrap_or_default();
+    let url = build_stream_url(&cfg, &model);
+    let (status, resp) = match stream_generate(
+        &app,
+        &request_id,
+        url,
+        vec![("Content-Type".to_string(), "application/json".to_string())],
+        body,
+        extract_stream_delta,
+    )
+    .await
     {
-        Ok(r) => r,
+        Ok(v) => v,
         Err(e) => {
-            let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google generate 网络请求失败: {e}"));
-            return Ok(LlmGenerateOutcome::err_with(Some("network_error"), format!("无法连接 {url}: {e}")));
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google generate 流式请求失败: {e}"));
+            return Ok(LlmGenerateOutcome::err_with(Some("network_error"), format!("无法连接: {e}")));
         }
     };
-    let status = resp.status().as_u16();
-    let parsed: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
     if status < 200 || status >= 300 {
-        let reason = truncate(parsed.to_string());
+        let reason = truncate(resp);
         let _ = log::write(&app, &LogSource::Backend, "error", &format!("Google generate 失败 {status}: {reason}"));
         return Ok(LlmGenerateOutcome::err_with(Some("http_error"), format!("Google 接口返回 {status}: {reason}")));
     }
-    let text = extract_text(&parsed);
-    let (input, output) = usage_tokens(&parsed);
-    Ok(LlmGenerateOutcome::ok(text, input, output))
+    Ok(LlmGenerateOutcome::ok(resp, None, None))
 }
 
 /// 连接测试: invoke("llm_google_test_connection")

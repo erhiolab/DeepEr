@@ -1,5 +1,6 @@
-import {computed, ref} from "vue"
+import {computed, reactive, ref} from "vue"
 import {defineStore} from "pinia"
+import {consumeCompleted} from "../text/splitter"
 
 /**
  * 对话消息方向
@@ -17,7 +18,18 @@ export interface ChatMessage {
 	side: ChatSide
 	text: string
 	createdAt: number
+	streaming?: boolean
 }
+
+/**
+ * 相邻两条发送之间的间隔 (毫秒)
+ */
+const REPLY_INTERVAL_MS = 500
+
+/**
+ * 延迟辅助
+ */
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
 /**
  * AI 对话状态
@@ -30,9 +42,9 @@ export const useConversationStore = defineStore("conversation", () => {
 	// 消息 id 自增
 	let nextId = 1
 
-	// 生成一条消息并写入历史
-	const push = (side: ChatSide, text: string): ChatMessage => {
-		const MSG: ChatMessage = {id: nextId++, side, text, createdAt: Date.now()}
+	// 生成一条消息并写入历史 (消息为响应式对象, 便于流式中文本增量更新)
+	const push = (side: ChatSide, text: string, streaming = false): ChatMessage => {
+		const MSG = reactive<ChatMessage>({id: nextId++, side, text, createdAt: Date.now(), streaming}) as ChatMessage
 		HISTORY.value = [...HISTORY.value, MSG]
 		return MSG
 	}
@@ -97,22 +109,75 @@ export const useConversationStore = defineStore("conversation", () => {
 		return {role: ROLE, content: m.text}
 	})
 
-	// 触发一次 LLM 生成, 成功时插入左边回复, 完成后回调并复位键入状态
+	// 触发一次流式 LLM 生成
 	const requestLLM = (messages: LLMMsg[], onDone?: () => void) => {
+		const MSG = push("left", "")
+		MSG.streaming = true
+		// 待发送队列与缓存
+		const QUEUE: string[] = []
+		let buffer = ""
+		let sending = false
+		let streamDone = false
+		let fullText: string | null = null
+		const finalize = () => {
+			if (!MSG.streaming) return
+			// 兜底: 补齐完整文本 (事件缺失导致 MSG.text 不完整时)
+			if (fullText !== null && MSG.text !== fullText) {
+				MSG.text = fullText
+			}
+			MSG.streaming = false
+			setTyping(false)
+			onDone?.()
+		}
+		// 启动带驻发送循环:
+		// - 队列有句子就逐条发送, 每条固定间隔 REPLY_INTERVAL_MS (即使增量一条条来也不连发);
+		// - 队列空但流未结束时短暂轮询等待新句子 (不必等全部文本分割完).
+		const kick = () => {
+			if (sending) return
+			sending = true
+			void (async () => {
+				while (!streamDone || QUEUE.length) {
+					if (QUEUE.length) {
+						const seg = QUEUE.shift()!
+						MSG.text += seg
+						await sleep(REPLY_INTERVAL_MS)
+					} else {
+						await sleep(15)
+					}
+				}
+				sending = false
+				finalize()
+			})()
+		}
 		setTyping(true)
 		void (async () => {
 			try {
 				// 动态导入避免循环依赖
 				const {useLLMStore} = await import("./llm")
-				const RESULT = await useLLMStore().generate({messages})
-				if (RESULT.ok && RESULT.text) {
-					pushLeft(RESULT.text)
+				const RESULT = await useLLMStore().generateStream({messages}, (delta) => {
+					buffer += delta
+					const {done, rest} = consumeCompleted(buffer)
+					if (done.length) {
+						buffer = rest
+						QUEUE.push(...done)
+						// 只要队列有数据就立即发送, 不等流结束
+						kick()
+					}
+				})
+				// 流式结束: 记录完整文本, 余尾入队发完
+				streamDone = true
+				fullText = RESULT.ok && RESULT.text ? RESULT.text : null
+				if (buffer) {
+					QUEUE.push(buffer)
+					buffer = ""
 				}
+				kick()
 			} catch (err) {
 				await import("../logger").then(({logger}) => logger.error("conversation LLM 请求异常", err))
-			} finally {
-				setTyping(false)
-				onDone?.()
+				// 异常: 丢弃剩余队列, 结束发送循环并收尾
+				streamDone = true
+				QUEUE.length = 0
+				kick()
 			}
 		})()
 	}

@@ -27,7 +27,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.37", features = ["bundled"] }
 chrono = "0.4"
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.12", features = ["json", "blocking", "stream"] }
+futures-util = "0.3"
 # 加密: API Key 等敏感配置以 AES-256-GCM 加密后入库
 aes-gcm = "0.10"
 rand = "0.8"

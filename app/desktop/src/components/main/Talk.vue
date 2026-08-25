@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import {computed, nextTick, onMounted, ref, watch} from "vue"
+import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue"
 import Icon from "../common/Icon.vue"
 import {assetUrl} from "../../services/asset.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import {useConversationStore} from "../../services/store/conversation.ts"
+import {splitSentences} from "../../services/text/splitter.ts"
 import fallbackAvatar from "../../assets/images/logo.png"
 
 const L2D = useLive2DStore()
@@ -56,20 +57,49 @@ const sendMessage = () => {
 // 消息列表容器
 const listEl = ref<HTMLElement | null>(null)
 
-// 滚动到底部
+// 是否位于滚动容器底部 (用户上翻看历史时变为 false)
+const atBottom = ref(true)
+
+// 判定是否接近底部 (容差 8px, 避免边缘误差)
+const isAtBottom = (): boolean => {
+	const EL = listEl.value
+	if (!EL) return true
+	return EL.scrollHeight - EL.scrollTop - EL.clientHeight <= 8
+}
+
+// 吸底: 滚到最底部
 const scrollToBottom = () => {
+	atBottom.value = true
 	nextTick(() => {
 		const EL = listEl.value
 		if (EL) EL.scrollTop = EL.scrollHeight
 	})
 }
 
-// 新消息 / 输入状态变化时滚动到底部
-watch([() => CONV.history.length, () => CONV.isTyping], scrollToBottom)
+// 用户滚动: 更新 atBottom. 一旦用户把滚动条翻回最底部, 恢复自动吸底.
+const onScroll = () => {
+	atBottom.value = isAtBottom()
+}
+
+// 新消息 / 文本流式增长 / 输入状态变化时: 仅在位于底部时自动吸底
+// (用户在翻阅历史时不强制滚动, 直到其滚回底部)
+watch(
+	[() => CONV.history, () => CONV.isTyping],
+	() => {
+		if (atBottom.value) scrollToBottom()
+	},
+	{deep: true},
+)
 
 onMounted(async () => {
+	const EL = listEl.value
+	if (EL) EL.addEventListener("scroll", onScroll, {passive: true})
 	scrollToBottom()
 	await ensureConfig()
+})
+
+onUnmounted(() => {
+	listEl.value?.removeEventListener("scroll", onScroll)
 })
 
 // 模型切换时重新加载配置, 及时跟上新名称/头像
@@ -100,8 +130,12 @@ watch(() => L2D.currentModel, (model) => {
 				<template v-for="item in CONV.history" :key="item.id">
 					<div v-if="item.side === 'center'" class="chat-time">{{ item.text }}</div>
 					<div v-else class="msg-row" :class="item.side">
-						<img v-if="item.side === 'left'" class="avatar" :src="peerAvatar" :alt="peerName"/>
-						<div class="bubble">{{ item.text }}</div>
+						<div v-if="item.side === 'left'" class="bubbles">
+							<div v-for="seg in splitSentences(item.text)" :key="item.id + seg" class="bubble">
+								{{ seg }}
+							</div>
+						</div>
+						<div v-else class="bubble">{{ item.text }}</div>
 					</div>
 				</template>
 			</TransitionGroup>
@@ -244,24 +278,22 @@ watch(() => L2D.currentModel, (model) => {
 
 	&.left {
 		justify-content: flex-start;
+		align-items: flex-start;
 	}
 
 	&.right {
 		justify-content: flex-end;
 	}
+}
 
-	.avatar {
-		width: 3.2rem;
-		height: 3.2rem;
-		flex-shrink: 0;
-		border-radius: 50%;
-		object-fit: cover;
-		border: 0.1rem solid var(--line-strong);
-	}
-
-	&.left .avatar {
-		animation: talk-breathe 3.2s ease-in-out infinite;
-	}
+// 对方多段消息纵向排列
+.bubbles {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.5rem;
+	flex: 0 1 auto;
+	min-width: 0;
 }
 
 .bubble {

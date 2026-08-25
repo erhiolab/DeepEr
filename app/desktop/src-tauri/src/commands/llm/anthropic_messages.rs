@@ -10,7 +10,7 @@ use std::time::Duration;
 use crate::db;
 use crate::log::{self, LogSource};
 
-use super::{db_conn, decrypt_api_key, read_db_string_or, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
+use super::{db_conn, decrypt_api_key, read_db_string_or, stream_generate, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
 
 /// 配置键前缀 (与前端 llm_anthropic_messages.ts 保持一致)
 const PREFIX: &str = "llm_anthropic_messages";
@@ -85,6 +85,7 @@ fn build_body(cfg: &Config, args: &LlmGenerateArgs) -> serde_json::Value {
         "model": model,
         "messages": messages,
         "temperature": args.temperature.unwrap_or(1.0),
+        "stream": true,
     });
     if let Some(max) = args.max_tokens.filter(|n| *n > 0) {
         body["max_tokens"] = json!(max);
@@ -102,34 +103,6 @@ fn build_test_body(cfg: &Config) -> serde_json::Value {
         "max_tokens": 1,
         "messages": [{ "role": "user", "content": "ping" }],
     })
-}
-
-/// 从 Messages 响应提取文本 (content[] 中 text 段拼接)
-fn extract_text(body: &serde_json::Value) -> String {
-    let Some(content) = body.get("content").and_then(|v| v.as_array()) else {
-        return String::new();
-    };
-    content
-        .iter()
-        .filter_map(|part| {
-            if part.get("type").and_then(|v| v.as_str()) == Some("text") {
-                part.get("text").and_then(|v| v.as_str())
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn usage_tokens(body: &serde_json::Value) -> (Option<u64>, Option<u64>) {
-    match body.get("usage") {
-        Some(u) if u.is_object() => {
-            let input = u.get("input_tokens").and_then(|v| v.as_u64());
-            let output = u.get("output_tokens").and_then(|v| v.as_u64());
-            (input, output)
-        }
-        _ => (None, None),
-    }
 }
 
 fn validate(cfg: &Config) -> Result<(), (&'static str, String)> {
@@ -172,7 +145,8 @@ async fn post_json(url: String, headers: Vec<(String, String)>, body: serde_json
     Ok((status, parsed))
 }
 
-/// 生成: invoke("llm_anthropic_generate", { messages, model?, temperature?, maxTokens? })
+/// 生成: invoke("llm_anthropic_generate", { messages, model?, temperature?, maxTokens?, requestId? })
+/// 使用 SSE 流式返回, 增量通过 `llm-stream-delta` 事件推送前段.
 #[tauri::command]
 pub async fn llm_anthropic_generate(
     app: tauri::AppHandle,
@@ -192,26 +166,44 @@ pub async fn llm_anthropic_generate(
         return Ok(LlmGenerateOutcome::err_with(Some(code), msg));
     }
     let body = build_body(&cfg, &args);
-    let (status, resp) = match post_json(build_messages_url(&cfg.base_url), auth_headers(&cfg), body).await {
+    let request_id = args.request_id.unwrap_or_default();
+    let (status, resp) = match stream_generate(
+        &app,
+        &request_id,
+        build_messages_url(&cfg.base_url),
+        auth_headers(&cfg),
+        body,
+        |json| {
+            // Anthropic 流式文本增量: 事件 `content_block_delta` 的 `delta.text`
+            if json.get("type").and_then(|v| v.as_str()) == Some("content_block_delta") {
+                json.get("delta")
+                    .and_then(|d| d.get("text"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            } else {
+                None
+            }
+        },
+    )
+    .await
+    {
         Ok(v) => v,
         Err(e) => {
             let _ = log::write(
                 &app,
                 &LogSource::Backend,
                 "error",
-                &format!("Anthropic generate 网络请求失败: {e}"),
+                &format!("Anthropic generate 流式请求失败: {e}"),
             );
             return Ok(LlmGenerateOutcome::err_with(Some("network_error"), e));
         }
     };
     if status < 200 || status >= 300 {
-        let reason = truncate(resp.to_string());
+        let reason = truncate(resp);
         let _ = log::write(&app, &LogSource::Backend, "error", &format!("Anthropic generate 失败 {status}: {reason}"));
         return Ok(LlmGenerateOutcome::err_with(Some("http_error"), format!("Anthropic 接口返回 {status}: {reason}")));
     }
-    let text = extract_text(&resp);
-    let (input, output) = usage_tokens(&resp);
-    Ok(LlmGenerateOutcome::ok(text, input, output))
+    Ok(LlmGenerateOutcome::ok(resp, None, None))
 }
 
 /// 连接测试: invoke("llm_anthropic_test_connection")

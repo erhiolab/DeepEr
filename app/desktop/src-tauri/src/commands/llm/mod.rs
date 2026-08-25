@@ -7,11 +7,21 @@ pub mod anthropic_messages;
 pub mod google_genai;
 pub mod openai_responses;
 
+use std::time::Duration;
+
 use rusqlite::Connection;
+use tauri::Emitter;
+
+use futures_util::StreamExt;
 
 use crate::config::{self, ConfigValue};
 use crate::db;
 use crate::secret;
+
+/// 流式事件名: 增量文本
+pub const STREAM_EVENT_DELTA: &str = "llm-stream-delta";
+/// 流式事件名: 结束 (含完整结果/错误)
+pub const STREAM_EVENT_END: &str = "llm-stream-end";
 
 /// 统一 LLM 生成请求 (跨平台通用入参, 平台专属字段由各命令按需使用)
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -28,6 +38,9 @@ pub struct LlmGenerateArgs {
     /// 最大输出 token 数 (可选, 缺省为平台默认)
     #[serde(default)]
     pub max_tokens: Option<u64>,
+    /// 本次请求唯一标识 (前端生成, 用于匹配流式事件)
+    #[serde(default)]
+    pub request_id: Option<String>,
 }
 
 /// 统一对话消息
@@ -160,4 +173,97 @@ pub fn decrypt_api_key(app: &tauri::AppHandle, encoded: &str) -> Result<String, 
         return Ok(String::new());
     }
     secret::decrypt_str(app, encoded)
+}
+
+/// SSE 流式读取骨架: 发送 POST 请求, 逐行解析 `data:` 负载,
+/// 对每个 data 调用 `extract` 提取文本增量并 `emit` 到前端; 累计完整文本.
+/// 结束时统一 `emit` `STREAM_EVENT_END`.
+///
+/// 返回 `(status, 完整文本)`:
+/// - 非 2xx 时第二个元素为响应原文 (用于错误展示), 不会 emit 增量.
+/// - 2xx 时第二个元素为拼接的完整文本.
+pub async fn stream_generate(
+    app: &tauri::AppHandle,
+    request_id: &str,
+    url: String,
+    headers: Vec<(String, String)>,
+    body: serde_json::Value,
+    extract: fn(&serde_json::Value) -> Option<String>,
+) -> Result<(u16, String), String> {
+    // 结束事件统一收尾
+    let finish = |app: &tauri::AppHandle, request_id: &str, ok: bool, error: Option<String>| {
+        let _ = app.emit(
+            STREAM_EVENT_END,
+            serde_json::json!({
+                "requestId": request_id,
+                "ok": ok,
+                "error": error,
+            }),
+        );
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+    let mut req = client.post(&url);
+    for (k, v) in headers {
+        req = req.header(&k, &v);
+    }
+    let resp = match req.json(&body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            finish(app, request_id, false, Some(format!("无法连接 {url}: {e}")));
+            return Err(format!("无法连接 {url}: {e}"));
+        }
+    };
+    let status = resp.status().as_u16();
+    if status < 200 || status >= 300 {
+        let text = resp.text().await.unwrap_or_default();
+        finish(app, request_id, false, Some(format!("HTTP {status}")));
+        return Ok((status, text));
+    }
+
+    let mut full = String::new();
+    let mut sse_buf: Vec<u8> = Vec::new();
+    let mut bytes = resp.bytes_stream();
+    // 逐块累积并逐行解析
+    while let Some(chunk) = bytes.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => {
+                finish(app, request_id, true, Some(format!("流读取中断: {e}")));
+                return Err(format!("流读取失败: {e}"));
+            }
+        };
+        sse_buf.extend_from_slice(&chunk);
+        loop {
+            let Some(pos) = sse_buf.iter().position(|&b| b == b'\n') else {
+                break;
+            };
+            let line: Vec<u8> = sse_buf.drain(0..=pos).collect();
+            let line = String::from_utf8_lossy(&line);
+            let line = line.trim();
+            if let Some(data) = line.strip_prefix("data:") {
+                let data = data.trim();
+                // OpenAI Responses 流结束标记
+                if data == "[DONE]" {
+                    return Ok((status, full));
+                }
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(delta) = extract(&json) {
+                        if !delta.is_empty() {
+                            full.push_str(&delta);
+                            let _ = app.emit(
+                                STREAM_EVENT_DELTA,
+                                serde_json::json!({ "requestId": request_id, "delta": delta }),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    finish(app, request_id, true, None);
+    Ok((status, full))
 }

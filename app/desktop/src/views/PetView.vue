@@ -211,9 +211,8 @@ const syncConversationToBubbles = () => {
 	const LIST = CONV.history
 	for (const MSG of LIST) {
 		if (MSG.id <= lastSeenId) continue
+		if (MSG.side === "center" || MSG.streaming || !MSG.text) continue
 		lastSeenId = MSG.id
-		// 中间信息不进桌宠气泡
-		if (MSG.side === "center") continue
 		pushBubble(MSG.text)
 	}
 }
@@ -231,7 +230,7 @@ onMounted(async () => {
 	await persistWindowState(0)
 	// 忽略已存在的历史, 只从当前进度开始同步新产生的消息
 	lastSeenId = CONV.history[CONV.history.length - 1]?.id ?? 0
-	watch(() => CONV.history, syncConversationToBubbles)
+	watch(() => CONV.history, syncConversationToBubbles, {deep: true})
 })
 
 onUnmounted(() => {

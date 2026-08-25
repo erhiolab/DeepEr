@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::db;
 use crate::log::{self, LogSource};
 
-use super::{db_conn, decrypt_api_key, read_db_string, read_db_string_or, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
+use super::{db_conn, decrypt_api_key, read_db_string, read_db_string_or, stream_generate, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
 
 /// 配置键前缀 (与前端 llm_openai_responses.ts 保持一致)
 const PREFIX: &str = "llm_openai_responses";
@@ -79,6 +79,7 @@ fn build_body(cfg: &Config, args: &LlmGenerateArgs) -> serde_json::Value {
         "model": model,
         "input": input,
         "temperature": args.temperature.unwrap_or(1.0),
+        "stream": true,
     });
     if let Some(max) = args.max_tokens.filter(|n| *n > 0) {
         body["max_output_tokens"] = json!(max);
@@ -102,40 +103,6 @@ fn build_test_body(cfg: &Config) -> serde_json::Value {
         body["reasoning"] = json!({ "effort": cfg.reasoning_effort });
     }
     body
-}
-
-/// 从 Responses 响应中拼接文本 (output[] 里 type=message 段的 text)
-fn extract_text(body: &serde_json::Value) -> String {
-    let Some(output) = body.get("output").and_then(|v| v.as_array()) else {
-        return String::new();
-    };
-    let mut text = String::new();
-    for part in output {
-        if part.get("type").and_then(|v| v.as_str()) != Some("message") {
-            continue;
-        }
-        let Some(content) = part.get("content").and_then(|v| v.as_array()) else {
-            continue;
-        };
-        for c in content {
-            if let Some(t) = c.get("text").and_then(|v| v.as_str()) {
-                text.push_str(t);
-            }
-        }
-    }
-    text
-}
-
-/// 提取 usage 中的 token 计数
-fn usage_tokens(body: &serde_json::Value) -> (Option<u64>, Option<u64>) {
-    match body.get("usage") {
-        Some(u) if u.is_object() => {
-            let input = u.get("input_tokens").and_then(|v| v.as_u64());
-            let output = u.get("output_tokens").and_then(|v| v.as_u64());
-            (input, output)
-        }
-        _ => (None, None),
-    }
 }
 
 /// 校验配置完整性
@@ -202,7 +169,8 @@ fn auth_headers(cfg: &Config) -> Vec<(String, String)> {
     ]
 }
 
-/// 生成: invoke("llm_openai_generate", { messages, model?, temperature?, maxTokens? })
+/// 生成: invoke("llm_openai_generate", { messages, model?, temperature?, maxTokens?, requestId? })
+/// 使用 SSE 流式返回, 增量通过 `llm-stream-delta` 事件推送前段.
 #[tauri::command]
 pub async fn llm_openai_generate(
     app: tauri::AppHandle,
@@ -217,22 +185,37 @@ pub async fn llm_openai_generate(
         return Ok(LlmGenerateOutcome::err_with(Some(code), msg));
     }
     let body = build_body(&cfg, &args);
-    let (status, resp) = match post_json(build_responses_url(&cfg.base_url), auth_headers(&cfg), body).await {
+    let request_id = args.request_id.unwrap_or_default();
+    let (status, resp) = match stream_generate(
+        &app,
+        &request_id,
+        build_responses_url(&cfg.base_url),
+        auth_headers(&cfg),
+        body,
+        |json| {
+            // OpenAI Responses 流式文本增量: 事件 `response.output_text.delta` 的 `delta` 字段
+            if json.get("type").and_then(|v| v.as_str()) == Some("response.output_text.delta") {
+                json.get("delta").and_then(|v| v.as_str()).map(|s| s.to_string())
+            } else {
+                None
+            }
+        },
+    )
+    .await
+    {
         Ok(v) => v,
         Err(e) => {
-            let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI generate 网络请求失败: {e}"));
+            let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI generate 流式请求失败: {e}"));
             return Ok(LlmGenerateOutcome::err_with(Some("network_error"), e));
         }
     };
     if status < 200 || status >= 300 {
-        let reason = extract_error(&resp);
+        let reason = truncate(resp);
         let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI generate 失败 {status}: {reason}"));
         return Ok(LlmGenerateOutcome::err_with(Some("http_error"), format!("OpenAI 接口返回 {status}: {reason}")));
     }
-    let text = extract_text(&resp);
-    let (input, output) = usage_tokens(&resp);
-    let _ = log::write(&app, &LogSource::Backend, "info", "OpenAI generate 完成");
-    Ok(LlmGenerateOutcome::ok(text, input, output))
+    let _ = log::write(&app, &LogSource::Backend, "info", "OpenAI generate 流式完成");
+    Ok(LlmGenerateOutcome::ok(resp, None, None))
 }
 
 /// 连接测试: invoke("llm_openai_test_connection")
@@ -308,11 +291,10 @@ pub async fn llm_openai_list_models(
     }
 }
 
-/// 从错误响应体提取人类可读信息
-fn extract_error(body: &serde_json::Value) -> String {
-    let mut chunk = body.to_string();
-    if chunk.len() > 240 {
-        chunk.truncate(240);
+/// 截断错误/响应文本便于日志展示
+fn truncate(mut s: String) -> String {
+    if s.len() > 240 {
+        s.truncate(240);
     }
-    chunk
+    s
 }
