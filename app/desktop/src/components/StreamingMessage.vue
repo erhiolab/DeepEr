@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {ref, watch} from "vue"
-import {createStreamingMarkdownSplitter, splitMarkdown} from "../services/text/markdownSplitter"
+import {splitMarkdown} from "../services/text/markdownSplitter"
 import MarkdownRenderer from "./MarkdownRenderer.vue"
 
 const PROPS = defineProps<{
@@ -11,24 +11,10 @@ const PROPS = defineProps<{
 // 已确认分段的列表 (供 UI 逐段渲染)
 const SEGMENTS = ref<string[]>([])
 
-// 流式 Markdown 分割器: 跨增量保持代码块/结构完整
-const SPLITTER = createStreamingMarkdownSplitter()
-
-// 上一次已消费的文本长度 (用于计算本次增量)
-let lastLength = 0
-
+// 每次 text 变化都用完整文本整体重分段, 并立即渲染.
+// 不做增量割分/留尾巴 (那会导致气泡滞后于 store 的逐段推进, 已证明会"配音后才出气泡").
 const render = () => {
-	// 非流式 / 完成 / 静态: 用完整文本一次性重切, 保证与整段解析一致 (避免分段漂移导致渲染错误)
-	if (!PROPS.isStreaming) {
-		SEGMENTS.value = splitMarkdown(PROPS.text)
-		return
-	}
-	// 流式中: 只消费新增部分, 按 md 边界切段
-	if (PROPS.text.length <= lastLength) return
-	const CHUNK = PROPS.text.slice(lastLength)
-	lastLength = PROPS.text.length
-	const {completed} = SPLITTER.consume(CHUNK)
-	if (completed.length) SEGMENTS.value.push(...completed)
+	SEGMENTS.value = splitMarkdown(PROPS.text)
 }
 
 watch(() => [PROPS.text, PROPS.isStreaming], render, {immediate: true})

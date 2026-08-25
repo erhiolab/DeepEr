@@ -1,6 +1,8 @@
-import {computed, reactive, ref} from "vue"
+import {computed, nextTick, reactive, ref} from "vue"
 import {defineStore} from "pinia"
-import {consumeCompleted} from "../text/splitter"
+import {assetUrl} from "../asset"
+import {createStreamingMarkdownSplitter, isFencedCodeBlock} from "../text/markdownSplitter"
+import {logger} from "../logger"
 
 /**
  * 对话消息方向
@@ -20,11 +22,6 @@ export interface ChatMessage {
 	createdAt: number
 	isStreaming?: boolean
 }
-
-/**
- * 相邻两条发送之间的间隔 (毫秒)
- */
-const REPLY_INTERVAL_MS = 500
 
 /**
  * 延迟辅助
@@ -109,13 +106,50 @@ export const useConversationStore = defineStore("conversation", () => {
 		return {role: ROLE, content: m.text}
 	})
 
-	// 触发一次流式 LLM 生成
+	// 合成一段文本的语音, 返回可播放 URL (null = 未合成/失败)
+	const synthSegmentTTS = async (seg: string): Promise<string | null> => {
+		try {
+			// 动态导入避免循环依赖
+			const {useTTSStore} = await import("./tts")
+			const TTS = useTTSStore()
+			const RESULT = await TTS.speak(seg)
+			if (!RESULT.ok || !RESULT.audioAssetPath) {
+				await logger.warn(`[conversation] 段 TTS 未合成: ${RESULT.error ?? "无音频"}`)
+				return null
+			}
+			return assetUrl(RESULT.audioAssetPath)
+		} catch (error) {
+			await logger.error("[conversation] 音频合成失败", error)
+			return null
+		}
+	}
+
+	// 播放一段已合成的音频, 播放结束(或失败)才 resolve
+	const playSegmentTTS = async (url: string): Promise<void> => {
+		await new Promise<void>((resolve) => {
+			const AUDIO = new Audio(url)
+			const DONE = () => {
+				AUDIO.removeEventListener("ended", DONE)
+				AUDIO.removeEventListener("error", DONE)
+				resolve()
+			}
+			AUDIO.addEventListener("ended", DONE)
+			AUDIO.addEventListener("error", DONE)
+			// autoplay 被拦截时同样当作播放完成
+			AUDIO.play().catch(DONE)
+		})
+	}
+
+	// 触发一次 AI 回复
+	// - 按 Markdown 感知把文本切成若干段
+	// - 普通文本段: 合成语音并播放, 播放完才发送该气泡, 播放完才进入下一条
+	// - 代码块段: 不朗读, 立即发送气泡
 	const requestLLM = (messages: LLMMsg[], onDone?: () => void) => {
 		const MSG = push("left", "")
 		MSG.isStreaming = true
-		// 待发送队列与缓存
+		// 待发送队列与增量分割器 (跨增量保持 md 结构完整)
 		const QUEUE: string[] = []
-		let buffer = ""
+		const SPLITTER = createStreamingMarkdownSplitter()
 		let sending = false
 		let streamDone = false
 		let fullText: string | null = null
@@ -129,18 +163,28 @@ export const useConversationStore = defineStore("conversation", () => {
 			setTyping(false)
 			onDone?.()
 		}
-		// 启动带驻发送循环:
-		// - 队列有句子就逐条发送, 每条固定间隔 REPLY_INTERVAL_MS (即使增量一条条来也不连发);
-		// - 队列空但流未结束时短暂轮询等待新句子 (不必等全部文本分割完).
+		// 音频驱动的常驻发送循环
+		// - 普通文本段: 合成语音 + 播放, 播完 `MSG.text += seg` 再取下一条
+		// - 代码块段: 立即出气泡, 不阻塞
+		// - 队列空但流未结束时短暂轮询等待新段
 		const kick = () => {
 			if (sending) return
 			sending = true
 			void (async () => {
 				while (!streamDone || QUEUE.length) {
 					if (QUEUE.length) {
-						const seg = QUEUE.shift()!
-						MSG.text += seg
-						await sleep(REPLY_INTERVAL_MS)
+						const SEG = QUEUE.shift()!
+						if (isFencedCodeBlock(SEG)) {
+							// md 代码块: 不朗读, 直接发送气泡
+							MSG.text += SEG
+						} else {
+							// 普通文本段: 先出气泡 (立即), 渲染完成后再后台合成语音并播放;
+							// 播放完才取下一条
+							MSG.text += SEG
+							await nextTick()
+							const URL = await synthSegmentTTS(SEG)
+							if (URL) await playSegmentTTS(URL)
+						}
 					} else {
 						await sleep(15)
 					}
@@ -155,25 +199,24 @@ export const useConversationStore = defineStore("conversation", () => {
 				// 动态导入避免循环依赖
 				const {useLLMStore} = await import("./llm")
 				const RESULT = await useLLMStore().generateStream({messages}, (delta) => {
-					buffer += delta
-					const {done, rest} = consumeCompleted(buffer)
-					if (done.length) {
-						buffer = rest
-						QUEUE.push(...done)
-						// 只要队列有数据就立即发送, 不等流结束
+					const {completed} = SPLITTER.consume(delta)
+					if (completed.length) {
+						QUEUE.push(...completed)
+						// 只要队列有数据就立即启动发送 (不等流结束)
 						kick()
 					}
 				})
-				// 流式结束: 记录完整文本, 余尾入队发完
+				// 流式结束: 记录完整文本, 把 splitter 里剩余的尾巴作为最后一段入队
 				streamDone = true
 				fullText = RESULT.ok && RESULT.text ? RESULT.text : null
-				if (buffer) {
-					QUEUE.push(buffer)
-					buffer = ""
+				const REST = SPLITTER.getRest().trim()
+				if (REST) {
+					QUEUE.push(REST)
+					SPLITTER.reset()
 				}
 				kick()
 			} catch (err) {
-				await import("../logger").then(({logger}) => logger.error("conversation LLM 请求异常", err))
+				await logger.error("conversation LLM 请求异常", err)
 				// 异常: 丢弃剩余队列, 结束发送循环并收尾
 				streamDone = true
 				QUEUE.length = 0

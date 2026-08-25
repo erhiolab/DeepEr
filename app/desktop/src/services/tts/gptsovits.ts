@@ -246,4 +246,41 @@ export const gptSovitsAdapter: TTSAdapter<GptSoVitsConfig> = {
 			description: entry.audioPath || undefined,
 		}))
 	},
+	async buildAIParamsPrompt(): Promise<string | null> {
+		const CFG = await this.loadConfig()
+		if (!CFG.emotions.length) {
+			return null
+		}
+		const VOICE_LIST = CFG.emotions.map(entry => entry.name).join("/")
+		const LANGUAGE_LIST = GPT_SOVITS_LANGUAGES.join("/")
+		return [
+			"你是 GPT-SoVITS 语音合成参数助手. 用户会给你一段要朗读的文本, 请根据文本的语气选择合适的音色. ",
+			`可用音色(参考音频): ${VOICE_LIST}`,
+			`语言可选 ${LANGUAGE_LIST}; 无法确定的字段省略. `,
+			"只输出一个 JSON 对象, 不要输出任何其他文字. ",
+			'格式: {"voice": "音色名", "language": "zh"}',
+			`规则: voice 必须来自上面的可用音色列表; language 可选 ${LANGUAGE_LIST}; 无法确定的字段省略. `,
+		].join("\n")
+	},
+	parseAIParams<T extends Pick<TtsSynthesizeRequest, "voice" | "language" | "speed">>(raw: string, voices: TTSVoiceInfo[]): T {
+		let text = raw.trim()
+		const FENCE = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+		if (FENCE) text = FENCE[1].trim()
+		const START = text.indexOf("{")
+		const END = text.lastIndexOf("}")
+		if (START === -1 || END <= START) return {} as T
+		try {
+			const OBJ = JSON.parse(text.slice(START, END + 1)) as Record<string, unknown>
+			const OUT: Pick<TtsSynthesizeRequest, "voice" | "language" | "speed"> = {}
+			const VOICE = String(OBJ.voice ?? "").trim()
+			// 音色必须来自参考音频列表 (GPT-SoVITS 由用户配置)
+			if (VOICE && voices.some(v => v.name === VOICE)) OUT.voice = VOICE
+			const LANG = String(OBJ.language ?? "").trim()
+			// 语言必须是 GPT-SoVITS 支持值之一
+			if (LANG && GPT_SOVITS_LANGUAGES.includes(LANG)) OUT.language = LANG
+			return OUT as T
+		} catch {
+			return {} as T
+		}
+	},
 }

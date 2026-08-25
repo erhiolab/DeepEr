@@ -120,14 +120,3 @@ export const consumeCompleted = (text: string): {done: string[], rest: string} =
 	}
 	return {done, rest: text.slice(restStart)}
 }
-
-/**
- * 把一条完整的文本按分段规则拆成分段 (供界面展示)
- * 换行按段落边界切分, 段落内按句子标点切分; 末尾无结尾标点的尾巴也保留
- */
-export const splitSentences = (text: string): string[] => {
-	if (!text) return []
-	const {done, rest} = consumeCompleted(text)
-	const REST = rest.trim()
-	return REST ? [...done, REST] : done
-}

@@ -101,8 +101,12 @@ const splitBlock = (block: string, options: Required<SplitOptions>): string[] =>
 	)
 }
 
-// 判断是否为完整 fenced code block
-const isFencedCodeBlock = (text: string): boolean => {
+/**
+ * 判断是否为完整 fenced code block
+ * @param text 要判断的文本
+ * @returns 是否为完整 fenced code block
+ */
+export const isFencedCodeBlock = (text: string): boolean => {
 	const TRIMMED = text.trim()
 	return (
 		/^(```|~~~)/.test(TRIMMED) &&

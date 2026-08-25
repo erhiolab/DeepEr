@@ -76,20 +76,16 @@ const scrollToBottom = () => {
 	})
 }
 
-// 用户滚动: 更新 atBottom. 一旦用户把滚动条翻回最底部, 恢复自动吸底.
+// 用户滚动: 更新 atBottom. 一旦用户把滚动条翻回最底部, 恢复自动吸底
 const onScroll = () => {
 	atBottom.value = isAtBottom()
 }
 
 // 新消息 / 文本流式增长 / 输入状态变化时: 仅在位于底部时自动吸底
 // (用户在翻阅历史时不强制滚动, 直到其滚回底部)
-watch(
-	[() => CONV.history, () => CONV.isTyping],
-	() => {
-		if (atBottom.value) scrollToBottom()
-	},
-	{deep: true},
-)
+watch([() => CONV.history, () => CONV.isTyping], () => {
+	if (atBottom.value) scrollToBottom()
+}, {deep: true})
 
 onMounted(async () => {
 	const EL = listEl.value
@@ -118,7 +114,9 @@ watch(() => L2D.currentModel, (model) => {
 				</div>
 				<div class="peer-meta">
 					<h2 class="peer-name">{{ peerName }}</h2>
-					<p class="peer-state" :class="{typing: CONV.isTyping}">{{ CONV.isTyping ? "对方正在输入..." : "在线" }}</p>
+					<p class="peer-state" :class="{typing: CONV.isTyping}">
+						{{CONV.isTyping ? "对方正在输入..." : "在线"}}
+					</p>
 				</div>
 			</div>
 			<button class="more-btn" title="更多">
@@ -300,6 +298,7 @@ watch(() => L2D.currentModel, (model) => {
 .bubble {
 	padding: 0.8rem 1.1rem;
 	position: relative;
+	width: fit-content;
 	max-width: 32rem;
 	border-radius: var(--radius-md);
 	font-size: 1.3rem;
@@ -328,6 +327,7 @@ watch(() => L2D.currentModel, (model) => {
 
 .msg-row.left :deep(.streaming-message .markdown-body) {
 	padding: 0.8rem 1.1rem;
+	width: fit-content;
 	max-width: 32rem;
 	border-radius: var(--radius-md);
 	background-color: rgba(255, 255, 255, 0.05);

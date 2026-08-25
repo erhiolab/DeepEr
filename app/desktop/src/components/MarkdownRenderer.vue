@@ -104,6 +104,8 @@ const onRootClick = (event: MouseEvent) => {
 	font-size: 1.3rem;
 	line-height: 1.6;
 	color: var(--text-body);
+	width: fit-content;
+	max-width: 100%;
 
 	:deep(p) {
 		margin: 0.8rem 0;

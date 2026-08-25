@@ -148,4 +148,12 @@ export interface TTSAdapter<TConfig = unknown> {
 	 * 枚举当前可用音色 (可选能力)
 	 */
 	listVoices?(): Promise<TTSVoiceInfo[]>
+	/**
+	 * 构造 "由 AI 决定 TTS 参数" 的提示词 (可选能力)
+	 */
+	buildAIParamsPrompt?(): Promise<string | null>
+	/**
+	 * 解析 AI 返回的 TTS 参数 (可选能力, 与 buildAIParamsPrompt 成对)
+	 */
+	parseAIParams?<T extends Pick<TtsSynthesizeRequest, "voice" | "language" | "speed">>(raw: string, voices: TTSVoiceInfo[]): T
 }
