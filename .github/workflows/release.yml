@@ -95,11 +95,10 @@ jobs:
           fi
           echo "KEY_PATH=$RUNNER_TEMP/deeper.key" >> "$GITHUB_OUTPUT"
 
-      # ---------- Tauri build (signed) ----------
       - name: Build Tauri release
         working-directory: app/desktop
         env:
-          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ steps.signing-key.outputs.KEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ steps.signing-key.outputs.KEY_PATH }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           CI: true
         run: pnpm tauri:build
