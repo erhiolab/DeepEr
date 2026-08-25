@@ -18,7 +18,7 @@ export interface ChatMessage {
 	side: ChatSide
 	text: string
 	createdAt: number
-	streaming?: boolean
+	isStreaming?: boolean
 }
 
 /**
@@ -43,8 +43,8 @@ export const useConversationStore = defineStore("conversation", () => {
 	let nextId = 1
 
 	// 生成一条消息并写入历史 (消息为响应式对象, 便于流式中文本增量更新)
-	const push = (side: ChatSide, text: string, streaming = false): ChatMessage => {
-		const MSG = reactive<ChatMessage>({id: nextId++, side, text, createdAt: Date.now(), streaming}) as ChatMessage
+	const push = (side: ChatSide, text: string, isStreaming = false): ChatMessage => {
+		const MSG = reactive<ChatMessage>({id: nextId++, side, text, createdAt: Date.now(), isStreaming}) as ChatMessage
 		HISTORY.value = [...HISTORY.value, MSG]
 		return MSG
 	}
@@ -112,7 +112,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	// 触发一次流式 LLM 生成
 	const requestLLM = (messages: LLMMsg[], onDone?: () => void) => {
 		const MSG = push("left", "")
-		MSG.streaming = true
+		MSG.isStreaming = true
 		// 待发送队列与缓存
 		const QUEUE: string[] = []
 		let buffer = ""
@@ -120,12 +120,12 @@ export const useConversationStore = defineStore("conversation", () => {
 		let streamDone = false
 		let fullText: string | null = null
 		const finalize = () => {
-			if (!MSG.streaming) return
+			if (!MSG.isStreaming) return
 			// 兜底: 补齐完整文本 (事件缺失导致 MSG.text 不完整时)
 			if (fullText !== null && MSG.text !== fullText) {
 				MSG.text = fullText
 			}
-			MSG.streaming = false
+			MSG.isStreaming = false
 			setTyping(false)
 			onDone?.()
 		}

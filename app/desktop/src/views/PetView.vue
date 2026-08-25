@@ -211,7 +211,7 @@ const syncConversationToBubbles = () => {
 	const LIST = CONV.history
 	for (const MSG of LIST) {
 		if (MSG.id <= lastSeenId) continue
-		if (MSG.side === "center" || MSG.streaming || !MSG.text) continue
+		if (MSG.side === "center" || MSG.isStreaming || !MSG.text) continue
 		lastSeenId = MSG.id
 		pushBubble(MSG.text)
 	}

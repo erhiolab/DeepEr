@@ -4,7 +4,7 @@ import Icon from "../common/Icon.vue"
 import {assetUrl} from "../../services/asset.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import {useConversationStore} from "../../services/store/conversation.ts"
-import {splitSentences} from "../../services/text/splitter.ts"
+import StreamingMessage from "../StreamingMessage.vue"
 import fallbackAvatar from "../../assets/images/logo.png"
 
 const L2D = useLive2DStore()
@@ -131,9 +131,10 @@ watch(() => L2D.currentModel, (model) => {
 					<div v-if="item.side === 'center'" class="chat-time">{{ item.text }}</div>
 					<div v-else class="msg-row" :class="item.side">
 						<div v-if="item.side === 'left'" class="bubbles">
-							<div v-for="seg in splitSentences(item.text)" :key="item.id + seg" class="bubble">
-								{{ seg }}
-							</div>
+							<StreamingMessage
+								:text="item.text"
+								:is-streaming="CONV.isTyping && item.id === CONV.history[CONV.history.length - 1].id"
+							/>
 						</div>
 						<div v-else class="bubble">{{ item.text }}</div>
 					</div>
@@ -323,6 +324,16 @@ watch(() => L2D.currentModel, (model) => {
 		border-right-color: rgba(255, 255, 255, 0.05);
 		border-left: none;
 	}
+}
+
+.msg-row.left :deep(.streaming-message .markdown-body) {
+	padding: 0.8rem 1.1rem;
+	max-width: 32rem;
+	border-radius: var(--radius-md);
+	background-color: rgba(255, 255, 255, 0.05);
+	border: 0.1rem solid var(--line-subtle);
+	border-top-left-radius: 0.3rem;
+	color: var(--text-body);
 }
 
 .msg-row.right .bubble {
