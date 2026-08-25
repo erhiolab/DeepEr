@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import {computed} from "vue"
+import {computed, ref} from "vue"
+import {check} from "@tauri-apps/plugin-updater"
+import {relaunch} from "@tauri-apps/plugin-process"
 import {openUrl} from "@tauri-apps/plugin-opener"
-import {toast} from "vue3-toastify"
+import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import Icon from "../common/Icon.vue"
 import logo from "../../assets/images/logo.png"
@@ -43,13 +45,108 @@ const CONTRIBUTORS: Contributor[] = [
 	}
 ]
 
+
+// 更新状态
+type UpdateStatus =
+	| "idle"        // 未检查
+	| "checking"    // 检查中
+	| "up-to-date"  // 已是最新
+	| "updating"    // 正在下载安装
+	| "updated"     // 更新完成, 等待重启
+	| "failed"      // 更新失败, 可手动更新
+	| "error"       // 检查出错
+const updateStatus = ref<UpdateStatus>("idle")
+
+// 更新版本号
+const updateVersion = ref<string>("")
+
+// 更新错误信息
+const updateError = ref<string>("")
+
+// 更新说明
+const updateNotes = ref<string>("")
+
+// 新版本信息摘要
+const updateSummary = computed(() => {
+	if (updateStatus.value === "up-to-date") return ""
+	return I18N.value.update.latestVersion.replace("{version}", updateVersion.value)
+})
+
+// 手动更新地址 (GitHub Releases)
+const RELEASE_URL = "https://github.com/erhiolab/DeepEr/releases"
+
+// 检查更新
+const checkForUpdates = async () => {
+	// 防止重复点击
+	if (updateStatus.value === "checking" || updateStatus.value === "updating") return
+	updateStatus.value = "checking"
+	updateError.value = ""
+	updateVersion.value = ""
+	updateNotes.value = ""
+	try {
+		const update = await check()
+		if (!update) {
+			// 没有新版本
+			updateStatus.value = "up-to-date"
+			return
+		}
+		// 发现新版本
+		updateVersion.value = update.version
+		updateNotes.value = update.body || ""
+		updateStatus.value = "updating"
+		// 自动下载并安装
+		await update.downloadAndInstall((progressEvent) => {
+			if (progressEvent.event === "Started") {
+				logger.debug("开始下载更新")
+			} else if (progressEvent.event === "Progress") {
+				logger.debug(`更新下载中: 本次块 ${progressEvent.data.chunkLength} bytes`)
+			} else if (progressEvent.event === "Finished") {
+				logger.debug("更新下载完成")
+			}
+		})
+		// 安装完成, 需要重启生效
+		updateStatus.value = "updated"
+	} catch (error) {
+		// 检查或下载失败
+		await logger.error("检查更新失败:", error)
+		updateError.value = error instanceof Error ? error.message : String(error)
+		// 区分: 检查失败 vs 下载安装失败
+		if (updateStatus.value === "checking") {
+			// 检查阶段就失败
+			updateStatus.value = "error"
+		} else {
+			// 下载安装阶段失败 → 手动更新
+			updateStatus.value = "failed"
+		}
+	}
+}
+
+// 重启应用完成更新
+const restartToApply = async () => {
+	try {
+		await relaunch()
+	} catch (error) {
+		await logger.error("重启应用失败:", error)
+		updateError.value = I18N.value.update.restartFailed
+		updateStatus.value = "failed"
+	}
+}
+
+// 跳转到 GitHub Releases 手动下载
+const manualUpdate = async () => {
+	try {
+		await openUrl(RELEASE_URL)
+	} catch (error) {
+		console.error("打开 GitHub Releases 失败:", error)
+	}
+}
+
 // 打开外部链接
 const openLink = async (url: string) => {
 	try {
 		await openUrl(url)
 	} catch (error) {
-		console.error("打开链接失败:", error)
-		toast.error(I18N.value.thanksPlaceholder)
+		await logger.error("打开链接失败:", error)
 	}
 }
 </script>
@@ -80,6 +177,98 @@ const openLink = async (url: string) => {
 						<span class="contrib-name">{{ c.name }}</span>
 					</span>
 				</button>
+			</div>
+			<h3 class="block-title">{{ I18N.update.title }}</h3>
+			<div class="update-card" :class="`update-${updateStatus}`">
+				<div class="update-info">
+					<!-- 最新版本 -->
+					<span v-if="updateStatus === 'up-to-date'" class="update-version">
+						<Icon name="check" :size="14"/>
+						{{ I18N.update.upToDate }}
+					</span>
+					<!-- 发现新版本 -->
+					<span v-else-if="updateVersion" class="update-version">
+						{{ updateSummary }}
+					</span>
+					<!-- 更新完成提示 -->
+					<span v-if="updateStatus === 'updated'" class="update-done">
+						{{ I18N.update.done }}
+					</span>
+					<!-- 检查出错提示 -->
+					<span v-if="updateStatus === 'error'" class="update-error">
+						{{ I18N.update.checkFailed }}
+					</span>
+					<!-- 自动更新失败提示 -->
+					<span v-if="updateStatus === 'failed'" class="update-error">
+						{{ I18N.update.autoFailed }}
+					</span>
+					<!-- 更新备注 -->
+					<span v-if="updateNotes && (updateStatus === 'updated' || updateStatus === 'failed' || updateStatus === 'error')" class="update-notes">
+						{{ updateNotes }}
+					</span>
+					<!-- 错误详情 -->
+					<span v-if="updateError && (updateStatus === 'failed' || updateStatus === 'error')" class="update-error-detail">
+						{{ updateError }}
+					</span>
+					<!-- 默认提示 -->
+					<span v-else-if="!updateVersion && updateStatus === 'idle'" class="update-hint">
+						{{ I18N.update.hint }}
+					</span>
+				</div>
+				<div class="update-actions">
+					<!-- 检查更新 (默认 / 已是最新) -->
+					<button
+						v-if="updateStatus === 'idle' || updateStatus === 'up-to-date'"
+						class="update-btn"
+						@click="checkForUpdates"
+					>
+						{{ I18N.update.check }}
+					</button>
+					<!-- 检查中 -->
+					<button
+						v-if="updateStatus === 'checking'"
+						class="update-btn"
+						disabled
+					>
+						<Icon name="loading" :size="14"/>
+						{{ I18N.update.checking }}
+					</button>
+					<!-- 检查出错 → 重新检查 -->
+					<button
+						v-if="updateStatus === 'error'"
+						class="update-btn"
+						@click="checkForUpdates"
+					>
+						<Icon name="refresh" :size="14"/>
+						{{ I18N.update.retry }}
+					</button>
+					<!-- 更新完成 → 重启 -->
+					<button
+						v-if="updateStatus === 'updated'"
+						class="update-btn primary"
+						@click="restartToApply"
+					>
+						{{ I18N.update.restart }}
+					</button>
+					<!-- 自动更新失败 → 手动更新 -->
+					<button
+						v-if="updateStatus === 'failed'"
+						class="update-btn primary"
+						@click="manualUpdate"
+					>
+						<Icon name="arrow-right" :size="14"/>
+						{{ I18N.update.manual }}
+					</button>
+					<!-- 正在下载安装 -->
+					<button
+						v-if="updateStatus === 'updating'"
+						class="update-btn"
+						disabled
+					>
+						<Icon name="loading" :size="14"/>
+						{{ I18N.update.updating }}
+					</button>
+				</div>
 			</div>
 			<h3 class="block-title">{{ I18N.linksTitle }}</h3>
 			<div class="links">
@@ -296,6 +485,141 @@ const openLink = async (url: string) => {
 	:deep(svg) {
 		width: 1.5rem;
 		height: 1.5rem;
+	}
+}
+
+/* ---------- 更新模块 ---------- */
+.update-card {
+	padding: 0.8rem 1.2rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.8rem;
+	border-radius: var(--radius-sm);
+	background-color: rgba(125, 227, 255, 0.04);
+	border: 0.1rem solid var(--line-subtle);
+	transition: all 0.2s ease;
+
+	&.update-up-to-date {
+		border-color: var(--deep-teal-soft);
+	}
+
+	&.update-failed,
+	&.update-error {
+		border-color: rgba(244, 114, 182, 0.5);
+		background-color: rgba(244, 114, 182, 0.04);
+	}
+
+	&.update-updated {
+		border-color: var(--deep-teal-soft);
+		background-color: rgba(34, 197, 94, 0.06);
+		box-shadow: 0 0 1.2rem var(--glow-teal-soft);
+	}
+}
+
+.update-info {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	min-height: 1.6rem;
+}
+
+.update-version {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	font-size: 1.2rem;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.update-notes {
+	font-size: 1.05rem;
+	line-height: 1.5;
+	color: var(--text-body);
+	word-break: break-word;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.update-error {
+	font-size: 1.05rem;
+	color: #f472b6;
+	line-height: 1.4;
+}
+
+.update-error-detail {
+	font-size: 1.05rem;
+	color: rgba(244, 114, 182, 0.7);
+	line-height: 1.4;
+	word-break: break-word;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.update-done {
+	font-size: 1.1rem;
+	font-weight: 600;
+	color: #4ade80;
+}
+
+.update-hint {
+	font-size: 1.05rem;
+	color: var(--text-faint);
+}
+
+.update-actions {
+	display: flex;
+	gap: 0.5rem;
+	align-items: center;
+	flex-wrap: wrap;
+	margin-top: 0.2rem;
+}
+
+.update-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.4rem 0.9rem;
+	border-radius: var(--radius-sm);
+	border: 0.1rem solid var(--deep-teal-soft);
+	background-color: rgba(125, 227, 255, 0.08);
+	color: var(--deep-teal);
+	font-size: 1.05rem;
+	font-family: inherit;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 0.2s ease;
+
+	&:hover:not(:disabled) {
+		background-color: rgba(125, 227, 255, 0.2);
+		border-color: var(--deep-teal);
+		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
+	}
+
+	&:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	&.primary {
+		background-color: rgba(34, 197, 94, 0.15);
+		border-color: rgba(34, 197, 94, 0.4);
+		color: #4ade80;
+
+		&:hover:not(:disabled) {
+			background-color: rgba(34, 197, 94, 0.28);
+			border-color: #4ade80;
+			box-shadow: 0 0 0.8rem rgba(34, 197, 94, 0.25);
+		}
+	}
+
+	:deep(svg) {
+		width: 1.1rem;
+		height: 1.1rem;
 	}
 }
 </style>

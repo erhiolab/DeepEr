@@ -21,6 +21,10 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         // 插件: 文件 / 目录对话框
         .plugin(tauri_plugin_dialog::init())
+        // 插件: 进程控制 (应用重启)
+        .plugin(tauri_plugin_process::init())
+        // 插件: 自动更新
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_handle = app.handle();
             // 初始化托盘

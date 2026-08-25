@@ -25,6 +25,8 @@
 		"dialog:default",
 		"core:window:allow-outer-size",
 		"core:window:default",
-		"core:window:allow-center"
+		"core:window:allow-center",
+		"updater:default",
+		"process:default"
 	]
 }

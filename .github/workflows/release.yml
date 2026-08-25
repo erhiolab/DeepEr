@@ -1,0 +1,189 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          # - platform: macos-latest    # 需要 macOS 签名证书
+          # - platform: ubuntu-latest   # 需要 libwebkit2gtk 等系统库
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      # ---------- Checkout ----------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---------- Toolchain ----------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/desktop/src-tauri/target
+          key: release-${{ runner.os }}-${{ hashFiles('app/desktop/src-tauri/Cargo.lock') }}
+
+      # ---------- System deps ----------
+      - name: Install Linux deps
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Windows C++ Build Tools
+        if: startsWith(matrix.platform, 'windows')
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # ---------- Frontend build ----------
+      - name: Install JS deps
+        working-directory: app/desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: app/desktop
+        run: pnpm build
+
+      # ---------- Prepare signing key ----------
+      # 从 GitHub Secrets 恢复 Tauri 签名私钥:
+      # - 若 secret 是完整的 minisign key (以 "untrusted comment:" 开头), 直接使用
+      # - 若 secret 是单行 base64 (CI 友好), 包装为标准格式
+      - name: Prepare Tauri signing key
+        id: signing-key
+        shell: bash
+        env:
+          RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$RAW_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set!"
+            exit 1
+          fi
+          if grep -q "^untrusted comment:" <<< "$RAW_KEY"; then
+            printf '%s\n' "$RAW_KEY" > "$RUNNER_TEMP/deeper.key"
+          else
+            printf 'untrusted comment: tauri updater signing key\n%s\n' "$RAW_KEY" > "$RUNNER_TEMP/deeper.key"
+          fi
+          echo "KEY_PATH=$RUNNER_TEMP/deeper.key" >> "$GITHUB_OUTPUT"
+
+      # ---------- Tauri build (signed) ----------
+      - name: Build Tauri release
+        working-directory: app/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ steps.signing-key.outputs.KEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CI: true
+        run: pnpm tauri:build
+
+      # ---------- Verify artifacts ----------
+      - name: Verify updater artifacts
+        working-directory: app/desktop
+        shell: bash
+        run: |
+          echo "=== All bundle files ==="
+          find src-tauri/target/release/bundle -type f
+
+      # ---------- Generate latest.json manifest ----------
+      - name: Generate latest.json manifest
+        shell: bash
+        env:
+          BUNDLE: app/desktop/src-tauri/target/release/bundle
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          BUNDLE_DIR="$BUNDLE"
+          VER="${TAG#v}"
+          BASE="https://github.com/${REPO}/releases/download/${TAG}"
+          echo "Version: $VER"
+          echo "Base URL: $BASE"
+
+          BUNDLE_DIR="$BUNDLE_DIR" BASE="$BASE" VER="$VER" node > latest.json << 'NODE_SCRIPT'
+          const fs = require('fs');
+          const path = require('path');
+          const bundle = process.env.BUNDLE_DIR;
+          const base   = process.env.BASE;
+          const ver    = process.env.VER;
+
+          const platforms = {};
+
+          function walk(dir, depth, acc) {
+            if (depth > 5) return;
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = path.join(dir, e.name);
+              if (e.isDirectory()) { walk(full, depth + 1, acc); continue; }
+              if (e.name.endsWith('.nsis.zip') && !acc.nsis) acc.nsis = full;
+              else if (e.name.endsWith('.msi.zip') && !acc.msi) acc.msi = full;
+              else if (e.name.endsWith('.aarch64.app.tar.gz') && !acc.macArm) acc.macArm = full;
+              else if (e.name.endsWith('.x86_64.app.tar.gz') && !acc.macX64) acc.macX64 = full;
+              else if (e.name.endsWith('.AppImage.tar.gz') && !acc.linux) acc.linux = full;
+            }
+          }
+
+          const readSig = (p) => {
+            try { return fs.readFileSync(p + '.sig', 'utf8').trim(); } catch (e) { return ''; }
+          };
+
+          const acc = { nsis: null, msi: null, macArm: null, macX64: null, linux: null };
+          walk(bundle, 0, acc);
+
+          if (acc.nsis)   platforms['windows-x86_64']      = { url: `${base}/${path.basename(acc.nsis)}`,   signature: readSig(acc.nsis) };
+          if (acc.msi)    platforms['windows-x86_64-msi']  = { url: `${base}/${path.basename(acc.msi)}`,    signature: readSig(acc.msi) };
+          if (acc.macArm) platforms['darwin-aarch64']       = { url: `${base}/${path.basename(acc.macArm)}`, signature: readSig(acc.macArm) };
+          if (acc.macX64) platforms['darwin-x86_64']        = { url: `${base}/${path.basename(acc.macX64)}`, signature: readSig(acc.macX64) };
+          if (acc.linux)  platforms['linux-x86_64']         = { url: `${base}/${path.basename(acc.linux)}`,  signature: readSig(acc.linux) };
+
+          console.log(JSON.stringify({ version: ver, notes: '', pub_date: new Date().toISOString(), platforms }, null, 2));
+          NODE_SCRIPT
+
+          echo "=== latest.json ==="
+          cat latest.json
+
+      # ---------- Create GitHub Release ----------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## DeepEr ${{ github.ref_name }}
+
+            Auto-generated release from [GitHub Actions](.github/workflows/release.yml).
+
+            ### 下载
+            - **Windows x64**: 见下方 Assets 中的 `*.exe` 安装包
+          draft: false
+          prerelease: false
+          files: |
+            app/desktop/src-tauri/target/release/bundle/**/*.exe
+            app/desktop/src-tauri/target/release/bundle/**/*.msi
+            app/desktop/src-tauri/target/release/bundle/**/*.zip
+            app/desktop/src-tauri/target/release/bundle/**/*.sig
+            latest.json

@@ -114,7 +114,23 @@ export default {
 				issues: {
 					label: "反馈问题",
 					sub: "有任何问题欢迎提交 Issue",
-				}
+				},
+				update: {
+					title: "检查更新",
+					hint: "发现新版本时可自动更新或前往 GitHub 手动下载",
+					check: "检查更新",
+					checking: "检查中...",
+					updating: "正在下载安装...",
+					upToDate: "已是最新版本",
+					latestVersion: "发现新版本 v{version}",
+					manual: "自动更新失败, 手动更新",
+					retry: "重新检查",
+					restart: "重启应用",
+					done: "更新完成, 重启后生效",
+					autoFailed: "自动更新失败",
+					checkFailed: "检查更新失败",
+					restartFailed: "重启应用失败, 请手动重启",
+				},
 			},
 			agreement: {
 				title: "协议声明",
