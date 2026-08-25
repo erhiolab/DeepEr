@@ -128,30 +128,43 @@ jobs:
           const platforms = {};
 
           function walk(dir, depth, acc) {
-            if (depth > 5) return;
+            if (depth > 6) return;
             for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
               const full = path.join(dir, e.name);
               if (e.isDirectory()) { walk(full, depth + 1, acc); continue; }
-              if (e.name.endsWith('.nsis.zip') && !acc.nsis) acc.nsis = full;
-              else if (e.name.endsWith('.msi.zip') && !acc.msi) acc.msi = full;
-              else if (e.name.endsWith('.aarch64.app.tar.gz') && !acc.macArm) acc.macArm = full;
-              else if (e.name.endsWith('.x86_64.app.tar.gz') && !acc.macX64) acc.macX64 = full;
-              else if (e.name.endsWith('.AppImage.tar.gz') && !acc.linux) acc.linux = full;
+              const low = e.name.toLowerCase();
+              // Windows NSIS: -setup.exe (+ .exe.sig)
+              if (low.endsWith('-setup.exe') && !acc.nsis) acc.nsis = full;
+              // 兜底: 任意 .exe (+ .exe.sig)
+              else if (low.endsWith('.exe') && !acc.nsis && !acc.anyExe) acc.anyExe = full;
+              // Windows MSI: .msi (+ .msi.sig)
+              else if (low.endsWith('.msi') && !acc.msi) acc.msi = full;
+              // macOS: aarch64 / x86_64 Apple 应用
+              else if (low.endsWith('.aarch64.app.tar.gz') && !acc.macArm) acc.macArm = full;
+              else if (low.endsWith('.x86_64.app.tar.gz') && !acc.macX64) acc.macX64 = full;
+              else if (low.endsWith('.app.tar.gz') && !acc.macGeneric) acc.macGeneric = full;
+              // Linux: AppImage (raw 或 .tar.gz 均可后续处理)
+              else if (low.endsWith('.appimage') && !acc.linux) acc.linux = full;
             }
           }
 
           const readSig = (p) => {
             try { return fs.readFileSync(p + '.sig', 'utf8').trim(); } catch (e) { return ''; }
           };
+          // URL 中文件名部分做编码 (空格 → %20), 避免下载 404
+          const enc = (p) => base + '/' + encodeURIComponent(path.basename(p));
 
-          const acc = { nsis: null, msi: null, macArm: null, macX64: null, linux: null };
+          const acc = { nsis: null, anyExe: null, msi: null, macArm: null, macX64: null, macGeneric: null, linux: null };
           walk(bundle, 0, acc);
 
-          if (acc.nsis)   platforms['windows-x86_64']      = { url: `${base}/${path.basename(acc.nsis)}`,   signature: readSig(acc.nsis) };
-          if (acc.msi)    platforms['windows-x86_64-msi']  = { url: `${base}/${path.basename(acc.msi)}`,    signature: readSig(acc.msi) };
-          if (acc.macArm) platforms['darwin-aarch64']       = { url: `${base}/${path.basename(acc.macArm)}`, signature: readSig(acc.macArm) };
-          if (acc.macX64) platforms['darwin-x86_64']        = { url: `${base}/${path.basename(acc.macX64)}`, signature: readSig(acc.macX64) };
-          if (acc.linux)  platforms['linux-x86_64']         = { url: `${base}/${path.basename(acc.linux)}`,  signature: readSig(acc.linux) };
+          // Windows x86_64 首选 NSIS, 兜底任意 exe
+          const winExe = acc.nsis || acc.anyExe;
+          if (winExe)  platforms['windows-x86_64']      = { url: enc(winExe),       signature: readSig(winExe) };
+          if (acc.msi) platforms['windows-x86_64-msi']  = { url: enc(acc.msi),       signature: readSig(acc.msi) };
+          if (acc.macArm)    platforms['darwin-aarch64'] = { url: enc(acc.macArm),       signature: readSig(acc.macArm) };
+          if (acc.macX64)    platforms['darwin-x86_64']  = { url: enc(acc.macX64),       signature: readSig(acc.macX64) };
+          if (!acc.macArm && !acc.macX64 && acc.macGeneric) platforms['darwin-x86_64'] = { url: enc(acc.macGeneric), signature: readSig(acc.macGeneric) };
+          if (acc.linux) platforms['linux-x86_64']       = { url: enc(acc.linux),       signature: readSig(acc.linux) };
 
           console.log(JSON.stringify({ version: ver, notes: '', pub_date: new Date().toISOString(), platforms }, null, 2));
           NODE_SCRIPT

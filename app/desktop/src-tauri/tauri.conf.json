@@ -1,6 +1,6 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "Deep El",
+	"productName": "DeepEr",
 	"version": "0.1.0",
 	"identifier": "cn.erhio.deeper",
 	"build": {
