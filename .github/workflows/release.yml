@@ -74,25 +74,18 @@ jobs:
         working-directory: app/desktop
         run: pnpm build
 
-      # ---------- Prepare signing key ----------
-      # 从 GitHub Secrets 恢复 Tauri 签名私钥:
-      # - 若 secret 是完整的 minisign key (以 "untrusted comment:" 开头), 直接使用
-      # - 若 secret 是单行 base64 (CI 友好), 包装为标准格式
       - name: Prepare Tauri signing key
         id: signing-key
         shell: bash
         env:
           RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
           if [ -z "$RAW_KEY" ]; then
             echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set!"
             exit 1
           fi
-          if grep -q "^untrusted comment:" <<< "$RAW_KEY"; then
-            printf '%s\n' "$RAW_KEY" > "$RUNNER_TEMP/deeper.key"
-          else
-            printf 'untrusted comment: tauri updater signing key\n%s\n' "$RAW_KEY" > "$RUNNER_TEMP/deeper.key"
-          fi
+          printf '%s' "$RAW_KEY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' > "$RUNNER_TEMP/deeper.key"
           echo "KEY_PATH=$RUNNER_TEMP/deeper.key" >> "$GITHUB_OUTPUT"
 
       - name: Build Tauri release
