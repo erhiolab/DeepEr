@@ -11,56 +11,89 @@ const I18N = computed(() => useLanguages().components.main.touch)
 
 const L2D = useLive2DStore()
 
-// 触摸区域画布
 const canvas = ref<HTMLCanvasElement | null>(null)
 
-// 草稿触摸区域
-const draft = ref<{ x: number, y: number, w: number, h: number } | null>(null)
+/**
+ * 编辑状态
+ *
+ * idle      : 空闲, 可以新建或选择区域
+ * drawing   : 正在绘制新区域
+ * new       : 新区域已经绘制完成, 正在填写表单
+ * editing   : 正在编辑已有区域
+ * moving    : 移动区域
+ * resizing  : 调整区域大小
+ */
+type Mode = "idle" | "drawing" | "new" | "editing" | "moving" | "resizing"
+let mode: Mode = "idle"
 
-// 编辑触摸触摸区域
+// 新建区域草稿
+const draft = ref<{
+	x: number
+	y: number
+	w: number
+	h: number
+} | null>(null)
+
+// 当前编辑中的已有区域
 const editing = ref<TouchArea | null>(null)
 
-// 编辑触摸触摸区域索引
-const editingIndex = ref(-1)
-
-// 编辑触摸触摸区域名称
+// 编辑区域表单
 const editName = ref("")
-
-// 编辑触摸触摸区域类型
 const editType = ref<TouchType>("tap")
-
-// 编辑触摸触摸区域提示词
 const editPrompt = ref("")
 
-// 请求动画帧
 let raf = 0
 
-// 触摸区域编辑模式
-let mode: "idle" | "draw" | "move" = "idle"
-
-// 当前触摸指针 ID
 let pointerId = -1
 
-// 触摸区域编辑起始点
 let start = {x: 0, y: 0}
 
-// 触摸区域编辑原始点
+// 当前拖动开始时的区域左上角
 let origin = {x: 0, y: 0}
 
-// 当前移动触摸触摸区域 ID
-let movingId: string | null = null
+// 当前调整大小开始时的区域矩形
+let resizeOrigin = {
+	x: 0,
+	y: 0,
+	w: 0,
+	h: 0
+}
 
-// 是否正在移动草稿触摸区域
-let movingDraft = false
+// 调整大小句柄
+const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const
+type Handle = typeof HANDLES[number]
 
-// 计算触摸区域编辑起始点和原始点
+// 调整大小句柄轴向
+const HANDLE_AXIS: Record<Handle, { sx: number, sy: number }> = {
+	nw: {sx: 0, sy: 0},
+	n: {sx: 0.5, sy: 0},
+	ne: {sx: 1, sy: 0},
+	e: {sx: 1, sy: 0.5},
+	se: {sx: 1, sy: 1},
+	s: {sx: 0.5, sy: 1},
+	sw: {sx: 0, sy: 1},
+	w: {sx: 0, sy: 0.5}
+}
+
+// 当前调整大小句柄
+let resizeHandle: Handle | null = null
+
+// 当前悬停的句柄
+const hovering = ref<Handle | null>(null)
+
+// Live2D contain
 const contain = (sw: number, sh: number, w: number, h: number) => {
 	if (!sw || !sh || !w || !h) return null
 	const S = Math.min(w / sw, h / sh)
-	return {dw: sw * S, dh: sh * S, ox: (w - sw * S) / 2, oy: (h - sh * S) / 2}
+	return {
+		dw: sw * S,
+		dh: sh * S,
+		ox: (w - sw * S) / 2,
+		oy: (h - sh * S) / 2
+	}
 }
 
-// 计算触摸区域编辑起始点和原始点
+// 鼠标 / Pointer 坐标转换到 Live2D 逻辑坐标
 const point = (e: PointerEvent) => {
 	const EL = canvas.value
 	if (!EL) return {x: 0, y: 0}
@@ -77,10 +110,13 @@ const point = (e: PointerEvent) => {
 			}
 		}
 	}
-	return {x: PX / R.width, y: PY / R.height}
+	return {
+		x: PX / R.width,
+		y: PY / R.height
+	}
 }
 
-// 计算触摸区域编辑起始点和原始点
+// 逻辑坐标 -> CSS 坐标
 const style = (t: { x: number, y: number, w: number, h: number }) => {
 	const EL = canvas.value
 	const SRC = L2D.canvas
@@ -96,87 +132,305 @@ const style = (t: { x: number, y: number, w: number, h: number }) => {
 	}
 }
 
-// 判断触摸点是否在触摸区域内
-const contains = (p: { x: number, y: number }, t: {
-	x: number,
-	y: number,
-	w: number,
-	h: number
-}) => p.x >= t.x && p.x <= t.x + t.w && p.y >= t.y && p.y <= t.y + t.h
+// 获取逻辑坐标对应的布局信息
+const layout = () => {
+	const EL = canvas.value
+	const SRC = L2D.canvas
+	if (!EL || !SRC?.width || !SRC?.height) return null
+	const R = EL.getBoundingClientRect()
+	const C = contain(SRC.width, SRC.height, R.width, R.height)
+	if (!C) return null
+	return {
+		left: (x: number) => (C.ox + x * C.dw) / R.width * 100,
+		top: (y: number) => (C.oy + y * C.dh) / R.height * 100,
+		perX: C.dw,
+		perY: C.dh
+	}
+}
 
-// 查找触摸点所属触摸触摸区域
+// 当前正在编辑 / 新建的区域
+const activeRect = computed(() => {
+	if (draft.value) return draft.value
+	if (editing.value) return editing.value
+	return null
+})
+
+// 当前需要显示 8 个手柄的区域
+const targetRect = computed(() => activeRect.value)
+
+// 判断点是否在区域内部
+const contains = (
+	p: { x: number, y: number },
+	t: { x: number, y: number, w: number, h: number }
+) => {
+	return (
+		p.x >= t.x &&
+		p.x <= t.x + t.w &&
+		p.y >= t.y &&
+		p.y <= t.y + t.h
+	)
+}
+
+// 查找鼠标下方的已保存区域
 const hit = (p: { x: number, y: number }) => {
 	for (let i = L2D.touches.length - 1; i >= 0; i--) {
 		const T = L2D.touches[i]
-		if (contains(p, T)) return T
+		if (contains(p, T)) {
+			return T
+		}
 	}
 	return null
 }
 
-// 重置触摸指针
-const resetPointer = () => {
-	mode = "idle"
-	pointerId = -1
-	movingId = null
-	movingDraft = false
+// 手柄所在位置
+const handleStyle = (
+	t: { x: number, y: number, w: number, h: number },
+	handle: Handle
+) => {
+	const L = layout()
+	if (!L) return {}
+	const A = HANDLE_AXIS[handle]
+	const cx = t.x + A.sx * t.w
+	const cy = t.y + A.sy * t.h
+	return {
+		left: `${L.left(cx)}%`,
+		top: `${L.top(cy)}%`
+	}
 }
 
-// 触摸指针按下事件
-const down = (e: PointerEvent) => {
+// 判断鼠标是否命中 8 个手柄
+const hitHandle = (
+	rect: { x: number, y: number, w: number, h: number },
+	p: { x: number, y: number }
+) => {
+	const L = layout()
+	if (!L) return null
+	const EDGE = 20
+	if (
+		p.x < rect.x - EDGE / L.perX ||
+		p.x > rect.x + rect.w + EDGE / L.perX ||
+		p.y < rect.y - EDGE / L.perY ||
+		p.y > rect.y + rect.h + EDGE / L.perY
+	) {
+		return null
+	}
+	const dL = (p.x - rect.x) * L.perX
+	const dR = (rect.x + rect.w - p.x) * L.perX
+	const dT = (p.y - rect.y) * L.perY
+	const dB = (rect.y + rect.h - p.y) * L.perY
+	const minH = Math.min(dL, dR)
+	const minV = Math.min(dT, dB)
+	if (minH >= EDGE && minV >= EDGE) return null
+	let best: Handle | null = null
+	let bestDist = Infinity
+	for (const H of HANDLES) {
+		const A = HANDLE_AXIS[H]
+		const CX = rect.x + A.sx * rect.w
+		const CY = rect.y + A.sy * rect.h
+		const DX = (CX - p.x) * L.perX
+		const DY = (CY - p.y) * L.perY
+		const DIST = DX * DX + DY * DY
+		if (DIST < bestDist) {
+			bestDist = DIST
+			best = H
+		}
+	}
+	return best
+}
+
+// 当前 hover 到哪个手柄
+const updateHover = (e: PointerEvent) => {
+	if (mode !== "idle" && mode !== "new" && mode !== "editing") {
+		hovering.value = null
+		return
+	}
+	const RECT = activeRect.value
+	if (!RECT) {
+		hovering.value = null
+		return
+	}
+	hovering.value = hitHandle(RECT, point(e))
+}
+
+// 重置 pointer 状态, 回到对应的基础状态
+const resetPointer = () => {
+	mode = draft.value ? "new" : editing.value ? "editing" : "idle"
+	pointerId = -1
+	resizeHandle = null
+}
+
+// 开始编辑已有区域
+const startEdit = (t: TouchArea) => {
+	// 新建或正在编辑时禁止切换
+	if (mode === "drawing" || mode === "new" || mode === "editing") return
+	draft.value = null
+	editing.value = {...t}
+	editName.value = t.name
+	editType.value = t.type
+	editPrompt.value = t.prompt
+	mode = "editing"
+}
+
+// 开始绘制新区域
+const startDrawing = (e: PointerEvent) => {
+	// 编辑状态下直接拒绝
 	if (mode !== "idle") return
+	const P = point(e)
+	draft.value = {
+		x: P.x,
+		y: P.y,
+		w: 0,
+		h: 0
+	}
+	// 初始化表单(若为空才给默认名, 以便"重新绘制"后能保留已填内容)
+	if (!editName.value.trim()) editName.value = I18N.value.defaultName(L2D.touches.length + 1)
+	editType.value = editType.value || "tap"
+	editPrompt.value = editPrompt.value || ""
+	mode = "drawing"
+	start = P
+}
+
+// Pointer Down
+const down = (e: PointerEvent) => {
+	// 新建或正在编辑时禁止切换
+	if (mode === "drawing" || mode === "moving" || mode === "resizing") return
 	const EL = e.currentTarget as HTMLElement
 	const P = point(e)
+	hovering.value = null
+	// 新建完成后的状态, 允许继续调整刚刚绘制的区域, 但不能编辑其他区域, 也不能新建第二个区域
+	if (mode === "new" && draft.value) {
+		const H = hitHandle(draft.value, P)
+		if (H) {
+			pointerId = e.pointerId
+			EL.setPointerCapture(e.pointerId)
+			mode = "resizing"
+			resizeHandle = H
+			resizeOrigin = {...draft.value}
+			start = P
+			return
+		}
+		if (contains(P, draft.value)) {
+			pointerId = e.pointerId
+			EL.setPointerCapture(e.pointerId)
+			mode = "moving"
+			origin = {
+				x: draft.value.x,
+				y: draft.value.y
+			}
+			start = P
+			return
+		}
+		return
+	}
+	// 编辑已有区域
+	if (mode === "editing" && editing.value) {
+		const H = hitHandle(editing.value, P)
+		if (H) {
+			pointerId = e.pointerId
+			EL.setPointerCapture(e.pointerId)
+			mode = "resizing"
+			resizeHandle = H
+			resizeOrigin = {...editing.value}
+			start = P
+			return
+		}
+		if (contains(P, editing.value)) {
+			pointerId = e.pointerId
+			EL.setPointerCapture(e.pointerId)
+			mode = "moving"
+			origin = {
+				x: editing.value.x,
+				y: editing.value.y
+			}
+			start = P
+			return
+		}
+		return
+	}
+	// idle 状态, 点击已有区域 -> 编辑. 点击空白区域 -> 新建
+	if (mode !== "idle") return
 	const T = hit(P)
+	if (T) {
+		startEdit(T)
+		return
+	}
+	// 新建: 记录指针并捕获, 保证 move/up 能更新草稿并进入 new
 	pointerId = e.pointerId
 	EL.setPointerCapture(e.pointerId)
-	if (draft.value && contains(P, draft.value)) {
-		mode = "move"
-		movingDraft = true
-		start = P
-		origin = {x: draft.value.x, y: draft.value.y}
-		return
-	}
-	if (T) {
-		if (editing.value?.id === T.id) {
-			mode = "move"
-			movingId = T.id
-			start = P
-			origin = {x: T.x, y: T.y}
-			return
-		}
-		resetPointer()
-		return
-	}
-	if (draft.value) {
-		resetPointer()
-		return
-	}
-	mode = "draw"
-	start = P
-	draft.value = {x: P.x, y: P.y, w: 0, h: 0}
+	startDrawing(e)
 }
 
-// 触摸指针移动事件
+// Pointer Move
 const move = (e: PointerEvent) => {
-	if (e.pointerId !== pointerId) return
+	if (e.pointerId !== pointerId) {
+		updateHover(e)
+		return
+	}
 	const P = point(e)
-	if (mode === "move") {
-		if (movingDraft && draft.value) {
-			draft.value.x = Math.max(0, Math.min(1 - draft.value.w, origin.x + P.x - start.x))
-			draft.value.y = Math.max(0, Math.min(1 - draft.value.h, origin.y + P.y - start.y))
-			return
+	// 调整大小
+	if (mode === "resizing") {
+		if (!resizeHandle) return
+		const A = HANDLE_AXIS[resizeHandle]
+		const ORIG = resizeOrigin
+		const MIN = 0.02
+		const NX = ORIG.x + A.sx * ORIG.w + (P.x - start.x)
+		const NY = ORIG.y + A.sy * ORIG.h + (P.y - start.y)
+		let left = ORIG.x
+		let right = ORIG.x + ORIG.w
+		let top = ORIG.y
+		let bottom = ORIG.y + ORIG.h
+		if (A.sx < 0.5) {
+			left = NX
+		} else if (A.sx > 0.5) {
+			right = NX
 		}
-		if (movingId) {
-			const T = L2D.touches.find(v => v.id === movingId)
-			if (!T) return
-			L2D.moveTouch(T.id, {
-				x: Math.max(0, Math.min(1 - T.w, origin.x + P.x - start.x)),
-				y: Math.max(0, Math.min(1 - T.h, origin.y + P.y - start.y))
-			})
+		if (A.sy < 0.5) {
+			top = NY
+		} else if (A.sy > 0.5) {
+			bottom = NY
+		}
+		let x = left
+		let y = top
+		let w = right - left
+		let h = bottom - top
+		if (w < MIN) {
+			x = right - MIN
+			w = MIN
+		}
+		if (h < MIN) {
+			y = bottom - MIN
+			h = MIN
+		}
+		x = Math.max(0, Math.min(1 - w, x))
+		y = Math.max(0, Math.min(1 - h, y))
+		const NEXT = {x, y, w, h}
+		if (draft.value) {
+			draft.value = {
+				...draft.value,
+				...NEXT
+			}
+		} else if (editing.value) {
+			editing.value = {
+				...editing.value,
+				...NEXT
+			}
 		}
 		return
 	}
-	if (mode === "draw") {
+	// 移动
+	if (mode === "moving") {
+		const SIZE = draft.value ? draft.value : editing.value
+		const X = Math.max(0, Math.min(1 - (SIZE?.w ?? 0), origin.x + P.x - start.x))
+		const Y = Math.max(0, Math.min(1 - (SIZE?.h ?? 0), origin.y + P.y - start.y))
+		if (draft.value) {
+			draft.value = {...draft.value, x: X, y: Y}
+		} else if (editing.value) {
+			editing.value = {...editing.value, x: X, y: Y}
+		}
+		return
+	}
+	// 新建区域绘制
+	if (mode === "drawing" && draft.value) {
 		draft.value = {
 			x: Math.min(start.x, P.x),
 			y: Math.min(start.y, P.y),
@@ -186,60 +440,120 @@ const move = (e: PointerEvent) => {
 	}
 }
 
-// 触摸指针松开事件
-const up = async (e: PointerEvent) => {
+// Pointer Up
+const up = (e: PointerEvent) => {
 	if (e.pointerId !== pointerId) return
 	const EL = e.currentTarget as HTMLElement
 	if (EL.hasPointerCapture(e.pointerId)) EL.releasePointerCapture(e.pointerId)
-	if (mode === "move") {
-		if (movingId) await L2D.saveConfig()
+	// 绘制完成
+	if (mode === "drawing") {
+		if (!draft.value || draft.value.w < 0.03 || draft.value.h < 0.03) {
+			draft.value = null
+			mode = "idle"
+			pointerId = -1
+			return
+		}
+		// drawing -> new: 区域与表单已存在, 禁止编辑其他区域/禁止再新建
+		mode = "new"
+		pointerId = -1
+		return
+	}
+	if (mode === "moving" || mode === "resizing") {
 		resetPointer()
 		return
 	}
-	if (mode === "draw" && draft.value) {
-		if (draft.value.w < 0.03 || draft.value.h < 0.03) {
-			draft.value = null
-			resetPointer()
-			return
-		}
-		if (editing.value && editing.value.id === "" && editingIndex.value < 0) {
-			editing.value = {
-				...editing.value,
-				x: draft.value.x,
-				y: draft.value.y,
-				w: draft.value.w,
-				h: draft.value.h
-			}
-		} else {
-			editName.value = I18N.value.defaultName(L2D.touches.length + 1)
-			editType.value = "tap"
-			editPrompt.value = ""
-			editing.value = {
-				id: "",
-				name: editName.value,
-				type: "tap",
-				x: draft.value.x,
-				y: draft.value.y,
-				w: draft.value.w,
-				h: draft.value.h,
-				prompt: ""
-			}
-			editingIndex.value = -1
-		}
-	}
-	resetPointer()
+	pointerId = -1
 }
 
-// 重绘制触摸区域
+// 重新绘制
 const redraw = () => {
+	if (mode !== "new") return
 	draft.value = null
 	mode = "idle"
-	pointerId = -1
-	movingId = null
-	movingDraft = false
 }
 
-// 渲染触摸区域
+// 保存, 新建 -> addTouch; 编辑 -> updateTouch. 位置/大小/名称/类型/Prompt 一起落盘
+const confirmEdit = async () => {
+	// 新建
+	if (mode === "new" && draft.value) {
+		const NAME = editName.value.trim() || I18N.value.untitled
+		await L2D.addTouch({
+			name: NAME,
+			type: editType.value,
+			x: draft.value.x,
+			y: draft.value.y,
+			w: draft.value.w,
+			h: draft.value.h,
+			prompt: editPrompt.value
+		})
+		await logger.info(`添加触摸区域: ${NAME}`)
+		draft.value = null
+		editing.value = null
+		editName.value = ""
+		editType.value = "tap"
+		editPrompt.value = ""
+		mode = "idle"
+		return
+	}
+	// 编辑已有区域
+	if (mode === "editing" && editing.value) {
+		const NAME = editName.value.trim() || I18N.value.untitled
+		await L2D.updateTouch(editing.value.id, {
+			name: NAME,
+			type: editType.value,
+			x: editing.value.x,
+			y: editing.value.y,
+			w: editing.value.w,
+			h: editing.value.h,
+			prompt: editPrompt.value
+		})
+		await logger.info(`更新触摸区域: ${NAME}`)
+		editing.value = null
+		editName.value = ""
+		editType.value = "tap"
+		editPrompt.value = ""
+		mode = "idle"
+	}
+}
+
+// 取消, 编辑: Store 从未被修改, 直接丢弃 editing, 新建: 区域与表单全部清空.
+const cancelEdit = () => {
+	draft.value = null
+	editing.value = null
+	editName.value = ""
+	editType.value = "tap"
+	editPrompt.value = ""
+	mode = "idle"
+	pointerId = -1
+	resizeHandle = null
+	hovering.value = null
+}
+
+// 删除
+const pendingRemove = ref<TouchArea | null>(null)
+
+// 删除确认弹窗
+const showRemoveConfirm = ref(false)
+
+// 删除确认
+const remove = (t: TouchArea) => {
+	// 编辑 / 新建期间禁止删除其他区域
+	if (mode !== "idle") return
+	pendingRemove.value = t
+	showRemoveConfirm.value = true
+}
+
+// 删除执行
+const doRemove = async () => {
+	const T = pendingRemove.value
+	pendingRemove.value = null
+	showRemoveConfirm.value = false
+	if (!T) return
+	await L2D.removeTouch(T.id)
+	await logger.info(`删除触摸区域: ${T.name}`)
+}
+
+// 渲染 Live2D
 const render = () => {
 	raf = requestAnimationFrame(render)
 	const DST = canvas.value
@@ -258,75 +572,6 @@ const render = () => {
 	if (!SRC.width || !SRC.height) return
 	const C = contain(SRC.width, SRC.height, W, H)
 	if (C) CTX.drawImage(SRC, C.ox, C.oy, C.dw, C.dh)
-}
-
-// 开始编辑触摸区域
-const startEdit = (t: TouchArea, i: number) => {
-	draft.value = null
-	editing.value = t
-	editingIndex.value = i
-	editName.value = t.name
-	editType.value = t.type
-	editPrompt.value = t.prompt
-}
-
-// 确认编辑触摸区域
-const confirmEdit = async () => {
-	if (!editing.value) return
-	const NAME = editName.value.trim() || I18N.value.untitled
-	if (editingIndex.value < 0) {
-		await L2D.addTouch({
-			name: NAME,
-			type: editType.value,
-			x: editing.value.x,
-			y: editing.value.y,
-			w: editing.value.w,
-			h: editing.value.h
-		})
-		await logger.info(`添加触摸区域: ${NAME}`)
-	} else {
-		await L2D.updateTouch(editing.value.id, {
-			name: NAME,
-			type: editType.value,
-			prompt: editPrompt.value
-		})
-		await logger.info(`更新触摸区域: ${NAME}`)
-	}
-	editing.value = null
-	editingIndex.value = -1
-	draft.value = null
-}
-
-// 取消编辑触摸区域: 放弃草稿并清空表单, 完全退出编辑
-const cancelEdit = () => {
-	editing.value = null
-	editingIndex.value = -1
-	draft.value = null
-	editName.value = ""
-	editType.value = "tap"
-	editPrompt.value = ""
-}
-
-// 待删除的触摸区域 (二次确认弹窗确认后执行)
-const pendingRemove = ref<TouchArea | null>(null)
-
-// 删除触摸区域二次确认弹窗
-const showRemoveConfirm = ref(false)
-
-// 请求删除触摸区域 (打开确认弹窗)
-const remove = (t: TouchArea) => {
-	pendingRemove.value = t
-	showRemoveConfirm.value = true
-}
-
-// 确认删除触摸区域
-const doRemove = async () => {
-	const T = pendingRemove.value
-	pendingRemove.value = null
-	showRemoveConfirm.value = false
-	if (!T) return
-	await L2D.removeTouch(T.id)
-	await logger.info(`删除触摸区域: ${T.name}`)
 }
 
 onMounted(() => {
@@ -357,50 +602,85 @@ watch(() => L2D.currentModel, async m => {
 			<div class="touch-left">
 				<div
 					class="touch-canvas"
-					:class="{locked: !!draft}"
+					:class="[
+						{
+							locked: mode === 'drawing',
+							editing: mode === 'editing' || mode === 'new'
+						},
+						hovering ? `handle-${hovering}` : ''
+					]"
 					@pointerdown="down"
 					@pointermove="move"
 					@pointerup="up"
 					@pointercancel="up"
+					@pointerleave="hovering = null"
 				>
 					<canvas ref="canvas" class="touch-model-preview"/>
 					<div
 						v-for="t in L2D.touches"
 						:key="t.id"
 						class="touch-box saved"
-						:class="t.type"
-						:style="style(t)"
+						:class="[
+							editing?.id === t.id ? editing?.type : t.type,
+							{
+								active: mode === 'editing' && editing?.id === t.id,
+								editing: mode === 'editing' && editing?.id === t.id,
+								dimmed:
+									(mode === 'editing' && editing?.id !== t.id) ||
+									mode === 'new'
+							}
+						]"
+						:style="style(editing?.id === t.id ? editing : t)"
 					>
-						{{ t.name }}
+						<span class="touch-box-name">{{ editing?.id === t.id ? editName || t.name : t.name }}</span>
 					</div>
-					<div v-if="draft" class="touch-box draft locked" :style="style(draft)">
-						{{ editing?.name || I18N.draftLabel }}
+					<div v-if="draft" class="touch-box active draft" :style="style(draft)">
+						<span class="touch-box-name">{{ editName || I18N.draftLabel }}</span>
 					</div>
+					<template v-if="targetRect">
+						<div
+							v-for="h in HANDLES"
+							:key="h"
+							class="touch-handle"
+							:class="h"
+							:style="handleStyle(targetRect, h)"
+						/>
+					</template>
 					<span v-if="!L2D.isInitialized" class="touch-hint">{{ I18N.loadingModel }}</span>
 				</div>
 			</div>
 			<aside class="touch-right">
 				<ul v-if="L2D.touches.length" class="touch-list">
-					<li v-for="(t, i) in L2D.touches" :key="t.id" class="touch-item">
+					<li
+						v-for="t in L2D.touches"
+						:key="t.id"
+						class="touch-item"
+						:class="{ disabled: mode !== 'idle' && editing?.id !== t.id }"
+					>
 						<span class="touch-item-type" :class="t.type">
-							{{t.type === "tap" ? I18N.typeTap : t.type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy}}
+							{{
+								t.type === "tap" ? I18N.typeTap : t.type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy
+							}}
 						</span>
 						<span class="touch-item-name">{{ t.name }}</span>
 						<span class="touch-item-size">
 							({{ (t.w * 100).toFixed(0) }}% × {{ (t.h * 100).toFixed(0) }}%)
 						</span>
 						<div class="touch-item-actions">
-							<button class="mini-btn" @click="startEdit(t, i)">
+							<button class="mini-btn" :disabled="mode !== 'idle'" @click="startEdit(t)">
 								<Icon name="settings" :size="13"/>
 							</button>
-							<button class="mini-btn danger" @click="remove(t)">
+							<button class="mini-btn danger" :disabled="mode !== 'idle'" @click="remove(t)">
 								<Icon name="close" :size="13"/>
 							</button>
 						</div>
 					</li>
 				</ul>
 				<p v-else class="touch-empty">{{ I18N.empty }}</p>
-				<div v-if="editing" class="touch-editor">
+				<div
+					v-if="mode === 'new' || mode === 'editing' || mode === 'moving' || mode === 'resizing'"
+					class="touch-editor"
+				>
 					<div class="editor-label">{{ I18N.name }}</div>
 					<input v-model="editName" class="editor-input" :placeholder="I18N.namePlaceholder">
 					<div class="editor-label">{{ I18N.type }}</div>
@@ -423,13 +703,13 @@ watch(() => L2D.currentModel, async m => {
 							<Icon name="close" :size="14"/>
 							<span>{{ I18N.cancel }}</span>
 						</button>
-						<button v-if="draft" class="exc-btn redraw" @click="redraw">
+						<button v-if="mode === 'new'" class="exc-btn redraw" @click="redraw">
 							<Icon name="refresh" :size="14"/>
 							<span>{{ I18N.redraw }}</span>
 						</button>
 						<button class="exc-btn done" @click="confirmEdit">
 							<Icon name="check" :size="14"/>
-							<span>{{ editingIndex < 0 ? I18N.add : I18N.save }}</span>
+							<span>{{ mode === "new" ? I18N.add : I18N.save }}</span>
 						</button>
 					</div>
 				</div>
@@ -530,8 +810,28 @@ watch(() => L2D.currentModel, async m => {
 	touch-action: none;
 	cursor: crosshair;
 
-	&.locked {
+	&.editing {
 		cursor: default;
+	}
+
+	&.handle-nw, &.handle-se {
+		cursor: nwse-resize;
+	}
+
+	&.handle-ne, &.handle-sw {
+		cursor: nesw-resize;
+	}
+
+	&.handle-n, &.handle-s {
+		cursor: ns-resize;
+	}
+
+	&.handle-e, &.handle-w {
+		cursor: ew-resize;
+	}
+
+	&.locked {
+		cursor: crosshair;
 	}
 }
 
@@ -569,16 +869,41 @@ watch(() => L2D.currentModel, async m => {
 		background-color: color-mix(in srgb, var(--touch-frenzy) 18%, transparent);
 	}
 
+	&.active {
+		z-index: 5;
+	}
+
 	&.draft {
 		border-style: dashed;
 		border-color: var(--touch-draft);
 		background-color: color-mix(in srgb, var(--touch-draft) 22%, transparent);
-
-		&.locked {
-			border-style: solid;
-			box-shadow: 0 0 1rem var(--glow-teal-soft);
-		}
 	}
+
+	&.editing {
+		box-shadow: 0 0 1rem var(--glow-teal-soft);
+	}
+
+	&.dimmed {
+		opacity: 0.45;
+	}
+}
+
+.touch-box-name {
+	pointer-events: none;
+	user-select: none;
+}
+
+.touch-handle {
+	position: absolute;
+	width: 1.3rem;
+	height: 1.3rem;
+	box-sizing: border-box;
+	transform: translate(-50%, -50%);
+	border: 0.18rem solid var(--deep-teal-bright);
+	background-color: #071318;
+	border-radius: 0.3rem;
+	pointer-events: none;
+	box-shadow: 0 0 0.4rem var(--glow-teal-soft), 0 0 0.2rem rgba(0, 0, 0, 0.9);
 }
 
 .touch-hint {
@@ -729,6 +1054,10 @@ watch(() => L2D.currentModel, async m => {
 	background-color: rgba(255, 255, 255, 0.03);
 	flex-shrink: 0;
 
+	&.disabled {
+		opacity: 0.5;
+	}
+
 	.touch-item-type {
 		padding: 0.15rem 0.5rem;
 		font-size: 0.9rem;
@@ -776,6 +1105,11 @@ watch(() => L2D.currentModel, async m => {
 	color: var(--text-muted);
 	cursor: pointer;
 	transition: all 0.2s ease;
+
+	&:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
 
 	&:hover {
 		background-color: rgba(255, 255, 255, 0.08);

@@ -209,11 +209,11 @@ export const useLive2DStore = defineStore("live2d", () => {
 	}
 
 	// 添加一个触摸区域
-	const addTouch = async (data: Omit<TouchArea, "id" | "prompt">) => {
+	const addTouch = async (data: Omit<TouchArea, "id">) => {
 		config.value.touches.push({
 			...data,
 			id: uid(),
-			prompt: "",
+			prompt: data.prompt ?? "",
 		})
 		await saveConfig()
 	}
@@ -239,6 +239,22 @@ export const useLive2DStore = defineStore("live2d", () => {
 			const fin = (v: number, d: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d)
 			next.x = fin(next.x, t.x)
 			next.y = fin(next.y, t.y)
+			return next
+		})
+	}
+
+	// 拖动中实时更新某个触摸区域的尺寸 (仅改内存, 不落盘)
+	const resizeTouch = (id: string, patch: Partial<Pick<TouchArea, "x" | "y" | "w" | "h">>) => {
+		config.value.touches = config.value.touches.map((t) => {
+			if (t.id !== id) return t
+			const next = {
+				...t,
+				...patch,
+			}
+			const fin = (v: number, d: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d)
+			// 保持最小尺寸, 防止缩成负宽高导致区域反向
+			next.w = Math.max(0.02, fin(next.w, t.w))
+			next.h = Math.max(0.02, fin(next.h, t.h))
 			return next
 		})
 	}
@@ -1070,6 +1086,7 @@ export const useLive2DStore = defineStore("live2d", () => {
 		addTouch,
 		updateTouch,
 		moveTouch,
+		resizeTouch,
 		removeTouch,
 		setConfigRender,
 		setConfigQuality,
