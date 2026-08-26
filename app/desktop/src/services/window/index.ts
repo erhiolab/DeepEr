@@ -61,6 +61,34 @@ export const setUnresizableWindow = async () => {
 }
 
 /**
+ * 最小化窗口
+ */
+export const minimizeWindow = async () => {
+	await appWindow.minimize()
+}
+
+/**
+ * 切换窗口最大化状态 (最大化与恢复原大小之间切换)
+ * Windows 无边框窗口需 resizable=true 才能最大化, 故切换前先确保可调整大小.
+ */
+export const toggleMaximizeWindow = async () => {
+	await appWindow.setResizable(true)
+	if (await appWindow.isMaximized()) {
+		await appWindow.unmaximize()
+	} else {
+		await appWindow.maximize()
+	}
+}
+
+/**
+ * 设置窗口是否在任务栏显示图标
+ * @param skip 为 true 时隐藏任务栏图标, 为 false 时显示
+ */
+export const setSkipTaskbar = async (skip: boolean) => {
+	await appWindow.setSkipTaskbar(skip)
+}
+
+/**
  * 开启点击穿透
  */
 export const setPassthrough = async () => {
@@ -182,6 +210,8 @@ export const setFirstRunWindow = async () => {
 	await appWindow.setAlwaysOnTop(false)
 	// 不允许调整大小
 	await appWindow.setResizable(false)
+	// 显示任务栏图标 (首次运行属于"其他页面")
+	await appWindow.setSkipTaskbar(false)
 	// 居中窗口
 	await appWindow.center()
 	// 显示窗口
@@ -200,8 +230,10 @@ export const setMainWindow = async () => {
 	await appWindow.setSize(new LogicalSize(1300, 750))
 	// 不置顶
 	await appWindow.setAlwaysOnTop(false)
-	// 不允许调整大小
-	await appWindow.setResizable(false)
+	// 允许调整大小 (配合标题栏最大/最小化按钮)
+	await appWindow.setResizable(true)
+	// 显示任务栏图标 (主界面属于"其他页面")
+	await appWindow.setSkipTaskbar(false)
 	// 居中窗口, 避免在角落打开主界面
 	await appWindow.center()
 	// 显示窗口
@@ -230,6 +262,8 @@ export const setPetWindow = async () => {
 		await appWindow.setResizable(false)
 		// 窗口置顶
 		await appWindow.setAlwaysOnTop(true)
+		// 桌宠页面隐藏任务栏图标
+		await appWindow.setSkipTaskbar(true)
 		// 显示窗口
 		await appWindow.show()
 		// 获取焦点
@@ -262,6 +296,8 @@ export const resetPetWindow = async (): Promise<void> => {
 		await appWindow.setResizable(false)
 		// 窗口置顶
 		await appWindow.setAlwaysOnTop(true)
+		// 桌宠页面隐藏任务栏图标
+		await appWindow.setSkipTaskbar(true)
 		// 居中显示窗口
 		await appWindow.center()
 		// 显示窗口并获取焦点

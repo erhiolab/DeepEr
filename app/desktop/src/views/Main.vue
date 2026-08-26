@@ -6,6 +6,7 @@ import {config} from "../services/config"
 import {useUnsavedGuard} from "../services/store/unsaved"
 import Icon from "../components/common/Icon.vue"
 import {IconName} from "../services/icon"
+import {minimizeWindow, toggleMaximizeWindow} from "../services/window"
 import TitleBar from "../components/common/TitleBar.vue"
 import Live2D from "../components/Live2D.vue"
 import Home from "../components/main/Home.vue"
@@ -131,6 +132,16 @@ const switchNav = async (key: NavKey) => {
 const goToPet = () => {
 	ROUTER.push({name: "Pet"})
 }
+
+// 最小化主界面窗口
+const minimize = () => {
+	void minimizeWindow()
+}
+
+// 切换主界面窗口最大化状态
+const toggleMaximize = () => {
+	void toggleMaximizeWindow()
+}
 </script>
 
 <template>
@@ -138,6 +149,12 @@ const goToPet = () => {
 		<TitleBar>
 			<span class="nav-title" data-tauri-drag-region>{{ I18N[activeNav] }}</span>
 			<div class="titlebar-right">
+				<button class="control-btn minimize-btn" :title="I18N.minimize" @click="minimize">
+					<Icon name="minimize" class="control-icon"/>
+				</button>
+				<button class="control-btn maximize-btn" :title="I18N.maximize" @click="toggleMaximize">
+					<Icon name="maximize" class="control-icon"/>
+				</button>
 				<button class="close-btn" :title="I18N.close" @click="goToPet">
 					<Icon name="close" class="close-icon"/>
 				</button>
@@ -208,7 +225,55 @@ const goToPet = () => {
 	.titlebar-right {
 		display: flex;
 		align-items: center;
-		gap: 0.6rem;
+		gap: 0.4rem;
+
+		.control-btn {
+			width: 2.6rem;
+			height: 2.6rem;
+			border: none;
+			border-radius: var(--radius-sm);
+			background: transparent;
+			color: var(--text-muted);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			transition: all 0.2s ease;
+
+			.control-icon {
+				width: 1.5rem;
+				height: 1.5rem;
+			}
+
+			&:hover {
+				background: rgba(125, 227, 255, 0.12);
+				color: var(--deep-teal-bright);
+			}
+		}
+
+		.close-btn {
+			width: 2.6rem;
+			height: 2.6rem;
+			border: none;
+			border-radius: var(--radius-sm);
+			background: transparent;
+			color: var(--text-muted);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			transition: all 0.2s ease;
+
+			.close-icon {
+				width: 1.5rem;
+				height: 1.5rem;
+			}
+
+			&:hover {
+				background: rgba(255, 87, 87, 0.18);
+				color: #ff6b6b;
+			}
+		}
 	}
 }
 

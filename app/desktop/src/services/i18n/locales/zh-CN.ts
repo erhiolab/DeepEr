@@ -2,7 +2,9 @@ export default {
 	common: {
 		action: {
 			closeApp: "退出",
-			closeWin: "关闭"
+			closeWin: "关闭",
+			minimize: "最小化",
+			maximize: "最大化"
 		},
 		label: {
 			petGroup: "伙伴",
@@ -130,6 +132,10 @@ export default {
 					autoFailed: "自动更新失败",
 					checkFailed: "检查更新失败",
 					restartFailed: "重启应用失败, 请手动重启",
+					currentVersion: "当前版本",
+					latestVer: "最新版本",
+					checkingText: "正在检查是否有新版本...",
+					updatingText: "正在下载并安装更新...",
 				},
 			},
 			agreement: {

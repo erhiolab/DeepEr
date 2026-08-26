@@ -94,6 +94,10 @@ export default () => {
 						autoFailed: t("components.firstRun.about.update.autoFailed"),
 						checkFailed: t("components.firstRun.about.update.checkFailed"),
 						restartFailed: t("components.firstRun.about.update.restartFailed"),
+						currentVersion: t("components.firstRun.about.update.currentVersion"),
+						latestVer: t("components.firstRun.about.update.latestVer"),
+						checkingText: t("components.firstRun.about.update.checkingText"),
+						updatingText: t("components.firstRun.about.update.updatingText"),
 					},
 				},
 				agreement: {
@@ -350,6 +354,8 @@ export default () => {
 			},
 			main: {
 				close: t("common.action.closeWin"),
+				minimize: t("common.action.minimize"),
+				maximize: t("common.action.maximize"),
 				petGroup: t("common.label.petGroup"),
 				live2dGroup: t("common.label.live2dGroup"),
 				agentGroup: t("common.label.agentGroup"),

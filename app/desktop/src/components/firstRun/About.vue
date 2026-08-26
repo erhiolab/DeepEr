@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import {computed, ref} from "vue"
-import {check} from "@tauri-apps/plugin-updater"
-import {relaunch} from "@tauri-apps/plugin-process"
+import {computed, onMounted} from "vue"
 import {openUrl} from "@tauri-apps/plugin-opener"
-import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
+import {useUpdaterStore} from "../../services/store/updater.ts"
+import {logger} from "../../services/logger"
 import Icon from "../common/Icon.vue"
 import logo from "../../assets/images/logo.png"
 import erhiolab from "../../assets/images/erhio.webp"
@@ -12,6 +11,14 @@ import QiCaiJie114514 from "../../assets/images/QiCaiJie114514.webp"
 import inori from "../../assets/images/inori.png"
 
 const I18N = computed(() => useLanguages().components.firstRun.about)
+
+// 更新模块 (独立 store, 状态与方法见 services/store/updater.ts)
+const updater = useUpdaterStore()
+
+// 初始化: 拉取当前应用版本号
+onMounted(() => {
+	void updater.init()
+})
 
 // 致谢名单
 interface Contributor {
@@ -26,120 +33,24 @@ interface Contributor {
 const CONTRIBUTORS: Contributor[] = [
 	{
 		name: "洱海 (erhiolab)",
-		role: "开发 · 维护",
+		role: "开发 ` 维护",
 		url: "https://github.com/erhiolab",
 		handle: "@erhiolab",
 		avatar: erhiolab
 	},
 	{
 		name: "亓才孑 (QiCaiJie114514)",
-		role: "开发 · 维护",
+		role: "开发 ` 维护",
 		url: "https://github.com/QiCaiJie114514",
 		handle: "@QiCaiJie114514",
 		avatar: QiCaiJie114514
 	},
 	{
 		name: "I_NORI 交流群",
-		role: "反馈 · 建议",
+		role: "反馈 ` 建议",
 		avatar: inori
 	}
 ]
-
-
-// 更新状态
-type UpdateStatus =
-	| "idle"        // 未检查
-	| "checking"    // 检查中
-	| "up-to-date"  // 已是最新
-	| "updating"    // 正在下载安装
-	| "updated"     // 更新完成, 等待重启
-	| "failed"      // 更新失败, 可手动更新
-	| "error"       // 检查出错
-const updateStatus = ref<UpdateStatus>("idle")
-
-// 更新版本号
-const updateVersion = ref<string>("")
-
-// 更新错误信息
-const updateError = ref<string>("")
-
-// 更新说明
-const updateNotes = ref<string>("")
-
-// 新版本信息摘要
-const updateSummary = computed(() => {
-	if (updateStatus.value === "up-to-date") return ""
-	return I18N.value.update.latestVersion.replace("{version}", updateVersion.value)
-})
-
-// 手动更新地址 (GitHub Releases)
-const RELEASE_URL = "https://github.com/erhiolab/DeepEr/releases"
-
-// 检查更新
-const checkForUpdates = async () => {
-	// 防止重复点击
-	if (updateStatus.value === "checking" || updateStatus.value === "updating") return
-	updateStatus.value = "checking"
-	updateError.value = ""
-	updateVersion.value = ""
-	updateNotes.value = ""
-	try {
-		const update = await check()
-		if (!update) {
-			// 没有新版本
-			updateStatus.value = "up-to-date"
-			return
-		}
-		// 发现新版本
-		updateVersion.value = update.version
-		updateNotes.value = update.body || ""
-		updateStatus.value = "updating"
-		// 自动下载并安装
-		await update.downloadAndInstall((progressEvent) => {
-			if (progressEvent.event === "Started") {
-				logger.debug("开始下载更新")
-			} else if (progressEvent.event === "Progress") {
-				logger.debug(`更新下载中: 本次块 ${progressEvent.data.chunkLength} bytes`)
-			} else if (progressEvent.event === "Finished") {
-				logger.debug("更新下载完成")
-			}
-		})
-		// 安装完成, 需要重启生效
-		updateStatus.value = "updated"
-	} catch (error) {
-		// 检查或下载失败
-		await logger.error("检查更新失败:", error)
-		updateError.value = error instanceof Error ? error.message : String(error)
-		// 区分: 检查失败 vs 下载安装失败
-		if (updateStatus.value === "checking") {
-			// 检查阶段就失败
-			updateStatus.value = "error"
-		} else {
-			// 下载安装阶段失败 → 手动更新
-			updateStatus.value = "failed"
-		}
-	}
-}
-
-// 重启应用完成更新
-const restartToApply = async () => {
-	try {
-		await relaunch()
-	} catch (error) {
-		await logger.error("重启应用失败:", error)
-		updateError.value = I18N.value.update.restartFailed
-		updateStatus.value = "failed"
-	}
-}
-
-// 跳转到 GitHub Releases 手动下载
-const manualUpdate = async () => {
-	try {
-		await openUrl(RELEASE_URL)
-	} catch (error) {
-		console.error("打开 GitHub Releases 失败:", error)
-	}
-}
 
 // 打开外部链接
 const openLink = async (url: string) => {
@@ -179,94 +90,108 @@ const openLink = async (url: string) => {
 				</button>
 			</div>
 			<h3 class="block-title">{{ I18N.update.title }}</h3>
-			<div class="update-card" :class="`update-${updateStatus}`">
-				<div class="update-info">
-					<!-- 最新版本 -->
-					<span v-if="updateStatus === 'up-to-date'" class="update-version">
+			<div class="update-card" :class="`update-${updater.status}`">
+				<div class="version-grid">
+					<div class="version-cell">
+						<span class="version-label">{{ I18N.update.currentVersion }}</span>
+						<span class="version-value">v{{ updater.currentVersion || "--" }}</span>
+					</div>
+					<div class="version-cell">
+						<span class="version-label">{{ I18N.update.latestVer }}</span>
+						<span
+							class="version-value"
+							:class="updater.hasUpdate ? 'is-new' : ''"
+						>
+							<template v-if="updater.availableVersion">v{{ updater.availableVersion }}</template>
+							<template v-else-if="updater.status === 'up-to-date'">v{{ updater.currentVersion || "--" }}</template>
+							<template v-else>--</template>
+						</span>
+					</div>
+				</div>
+				<!-- 状态提示 -->
+				<div class="update-status" v-if="updater.status !== 'idle'">
+					<!-- 检查中 -->
+					<span v-if="updater.status === 'checking'" class="status-text">
+						<Icon name="loading" :size="14"/>
+						{{ I18N.update.checkingText }}
+					</span>
+					<!-- 已是最新 -->
+					<span v-else-if="updater.status === 'up-to-date'" class="status-text ok">
 						<Icon name="check" :size="14"/>
 						{{ I18N.update.upToDate }}
 					</span>
-					<!-- 发现新版本 -->
-					<span v-else-if="updateVersion" class="update-version">
-						{{ updateSummary }}
+					<!-- 下载安装中 -->
+					<span v-else-if="updater.status === 'updating'" class="status-text">
+						<Icon name="loading" :size="14"/>
+						{{ I18N.update.updatingText }}
+						<span v-if="updater.downloadProgress !== null" class="download-percent">
+							{{ updater.downloadProgress }}%
+						</span>
 					</span>
-					<!-- 更新完成提示 -->
-					<span v-if="updateStatus === 'updated'" class="update-done">
+					<!-- 更新完成 -->
+					<span v-else-if="updater.status === 'updated'" class="status-text ok">
+						<Icon name="check" :size="14"/>
 						{{ I18N.update.done }}
 					</span>
-					<!-- 检查出错提示 -->
-					<span v-if="updateStatus === 'error'" class="update-error">
+					<!-- 检查失败 -->
+					<span v-else-if="updater.status === 'error'" class="status-text bad">
+						<Icon name="error" :size="14"/>
 						{{ I18N.update.checkFailed }}
 					</span>
-					<!-- 自动更新失败提示 -->
-					<span v-if="updateStatus === 'failed'" class="update-error">
+					<!-- 更新失败 -->
+					<span v-else-if="updater.status === 'failed'" class="status-text bad">
+						<Icon name="error" :size="14"/>
 						{{ I18N.update.autoFailed }}
 					</span>
-					<!-- 更新备注 -->
-					<span v-if="updateNotes && (updateStatus === 'updated' || updateStatus === 'failed' || updateStatus === 'error')" class="update-notes">
-						{{ updateNotes }}
-					</span>
-					<!-- 错误详情 -->
-					<span v-if="updateError && (updateStatus === 'failed' || updateStatus === 'error')" class="update-error-detail">
-						{{ updateError }}
-					</span>
-					<!-- 默认提示 -->
-					<span v-else-if="!updateVersion && updateStatus === 'idle'" class="update-hint">
-						{{ I18N.update.hint }}
-					</span>
 				</div>
+				<!-- 更新备注 -->
+				<div v-if="updater.updateNotes && (updater.status === 'updated' || updater.status === 'failed')" class="update-notes">
+					{{ updater.updateNotes }}
+				</div>
+				<!-- 错误详情 -->
+				<div v-if="updater.updateError && (updater.status === 'failed' || updater.status === 'error')" class="update-error">
+					{{ updater.updateError }}
+				</div>
+				<!-- 默认提示 -->
+				<div v-if="updater.status === 'idle'" class="update-hint">
+					{{ I18N.update.hint }}
+				</div>
+				<!-- 操作按钮 -->
 				<div class="update-actions">
-					<!-- 检查更新 (默认 / 已是最新) -->
+					<!-- 检查更新 / 检查出错后重新检查 -->
 					<button
-						v-if="updateStatus === 'idle' || updateStatus === 'up-to-date'"
+						v-if="updater.status === 'idle' || updater.status === 'up-to-date' || updater.status === 'error'"
 						class="update-btn"
-						@click="checkForUpdates"
+						@click="updater.checkForUpdates"
 					>
-						{{ I18N.update.check }}
+						<Icon name="refresh" :size="13"/>
+						{{ updater.status === 'error' ? I18N.update.retry : I18N.update.check }}
 					</button>
-					<!-- 检查中 -->
+					<!-- 检查中 / 下载中 (禁用) -->
 					<button
-						v-if="updateStatus === 'checking'"
+						v-if="updater.status === 'checking' || updater.status === 'updating'"
 						class="update-btn"
 						disabled
 					>
-						<Icon name="loading" :size="14"/>
-						{{ I18N.update.checking }}
-					</button>
-					<!-- 检查出错 → 重新检查 -->
-					<button
-						v-if="updateStatus === 'error'"
-						class="update-btn"
-						@click="checkForUpdates"
-					>
-						<Icon name="refresh" :size="14"/>
-						{{ I18N.update.retry }}
+						<Icon name="loading" :size="13"/>
+						{{ updater.status === 'updating' ? I18N.update.updating : I18N.update.checking }}
 					</button>
 					<!-- 更新完成 → 重启 -->
 					<button
-						v-if="updateStatus === 'updated'"
+						v-if="updater.status === 'updated'"
 						class="update-btn primary"
-						@click="restartToApply"
+						@click="updater.restartToApply"
 					>
 						{{ I18N.update.restart }}
 					</button>
 					<!-- 自动更新失败 → 手动更新 -->
 					<button
-						v-if="updateStatus === 'failed'"
+						v-if="updater.status === 'failed'"
 						class="update-btn primary"
-						@click="manualUpdate"
+						@click="updater.openManualUpdate"
 					>
-						<Icon name="arrow-right" :size="14"/>
+						<Icon name="arrow-right" :size="13"/>
 						{{ I18N.update.manual }}
-					</button>
-					<!-- 正在下载安装 -->
-					<button
-						v-if="updateStatus === 'updating'"
-						class="update-btn"
-						disabled
-					>
-						<Icon name="loading" :size="14"/>
-						{{ I18N.update.updating }}
 					</button>
 				</div>
 			</div>
@@ -516,20 +441,72 @@ const openLink = async (url: string) => {
 	}
 }
 
-.update-info {
-	display: flex;
-	flex-direction: column;
-	gap: 0.3rem;
-	min-height: 1.6rem;
+.version-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.6rem;
 }
 
-.update-version {
+.version-cell {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+	padding: 0.5rem 0.7rem;
+	border-radius: var(--radius-sm);
+	background-color: rgba(125, 227, 255, 0.05);
+	border: 0.1rem solid var(--line-subtle);
+	min-width: 0;
+}
+
+.version-label {
+	font-size: 0.98rem;
+	color: var(--text-faint);
+}
+
+.version-value {
+	font-size: 1.25rem;
+	font-weight: 700;
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+
+	&.is-new {
+		color: #4ade80;
+		text-shadow: 0 0 0.8rem rgba(74, 222, 128, 0.35);
+	}
+}
+
+.update-status {
+	margin: -0.2rem 0 0;
+}
+
+.status-text {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.4rem;
-	font-size: 1.2rem;
+	font-size: 1.05rem;
+	color: var(--text-body);
+
+	&.ok {
+		color: #4ade80;
+	}
+
+	&.bad {
+		color: #f472b6;
+	}
+
+	:deep(svg) {
+		width: 1rem;
+		height: 1rem;
+	}
+}
+
+.download-percent {
+	font-variant-numeric: tabular-nums;
+	color: var(--deep-teal);
 	font-weight: 600;
-	color: var(--text-primary);
 }
 
 .update-notes {
@@ -547,23 +524,6 @@ const openLink = async (url: string) => {
 	font-size: 1.05rem;
 	color: #f472b6;
 	line-height: 1.4;
-}
-
-.update-error-detail {
-	font-size: 1.05rem;
-	color: rgba(244, 114, 182, 0.7);
-	line-height: 1.4;
-	word-break: break-word;
-	display: -webkit-box;
-	-webkit-line-clamp: 3;
-	-webkit-box-orient: vertical;
-	overflow: hidden;
-}
-
-.update-done {
-	font-size: 1.1rem;
-	font-weight: 600;
-	color: #4ade80;
 }
 
 .update-hint {

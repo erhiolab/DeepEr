@@ -34,6 +34,8 @@ const EVT_RESET_DONE: &str = "tray-reset-done";
 const MENU_SHOW_MAIN: &str = "tray.show_main";
 /// 菜单项 ID: 隐藏/显示主窗口
 const MENU_TOGGLE: &str = "tray.toggle";
+/// 菜单项 ID: 打开/关闭开发者工具 (控制台)
+const MENU_DEVTOOLS: &str = "tray.devtools";
 /// 菜单项 ID: 取消点击穿透 (穿透时可用)
 const MENU_CANCEL_PASSTHROUGH: &str = "tray.cancel_passthrough";
 /// 菜单项 ID: 复位 (窗口居中显示, 重置桌宠位置/大小记录)
@@ -57,6 +59,8 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let show_main =
         MenuItem::with_id(app_handle, MENU_SHOW_MAIN, "打开主界面", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app_handle, MENU_TOGGLE, "显示", true, None::<&str>)?;
+    let devtools =
+        MenuItem::with_id(app_handle, MENU_DEVTOOLS, "打开控制台", true, None::<&str>)?;
     // "取消穿透"初始禁用, 前端开启穿透后才可用
     let cancel_passthrough = MenuItem::with_id(
         app_handle,
@@ -70,12 +74,20 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // 创建菜单
     let menu = Menu::with_items(
         app_handle,
-        &[&show_main, &toggle, &cancel_passthrough, &reset, &quit],
+        &[
+            &show_main,
+            &toggle,
+            &devtools,
+            &cancel_passthrough,
+            &reset,
+            &quit,
+        ],
     )?;
 
     // 克隆一份供闭包内动态更新文字
     let show_main_menu = show_main.clone();
     let toggle_menu = toggle.clone();
+    let devtools_menu = devtools.clone();
     let in_main_menu = in_main.clone();
     // 取消穿透项克隆供菜单事件/前端穿透事件使用
     let cancel_pt_menu = cancel_passthrough.clone();
@@ -131,6 +143,7 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 &event.id.0,
                 &show_main_menu,
                 &toggle_menu,
+                &devtools_menu,
                 &cancel_pt_menu,
                 &reset_menu,
                 &in_main_menu,
@@ -166,6 +179,7 @@ fn handle_menu_event(
     menu_id: &str,
     show_main: &MenuItem<Wry>,
     toggle: &MenuItem<Wry>,
+    devtools: &MenuItem<Wry>,
     cancel_passthrough: &MenuItem<Wry>,
     reset: &MenuItem<Wry>,
     in_main: &AtomicBool,
@@ -183,6 +197,23 @@ fn handle_menu_event(
                 "托盘菜单：切换主窗口显示/隐藏",
             );
             toggle_action(app, show_main, toggle, in_main)?;
+        }
+        MENU_DEVTOOLS => {
+            let _ = log::write(app, &log::LogSource::Backend, "info", "托盘菜单：切换开发者工具");
+            // 复用前端"打开控制台"的同一命令: 切换 DevTools 开/关并返回切换后状态
+            match crate::commands::devtools::toggle_devtools(app.clone()) {
+                Ok(open) => {
+                    devtools.set_text(if open { "关闭控制台" } else { "打开控制台" })?;
+                }
+                Err(error) => {
+                    let _ = log::write(
+                        app,
+                        &log::LogSource::Backend,
+                        "error",
+                        &format!("切换开发者工具失败: {error}"),
+                    );
+                }
+            }
         }
         MENU_CANCEL_PASSTHROUGH => {
             let _ = log::write(app, &log::LogSource::Backend, "info", "托盘菜单：取消点击穿透");

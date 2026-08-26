@@ -18,6 +18,10 @@
 		"core:window:allow-set-position",
 		"core:window:allow-set-decorations",
 		"core:window:allow-set-skip-taskbar",
+		"core:window:allow-minimize",
+		"core:window:allow-maximize",
+		"core:window:allow-unmaximize",
+		"core:window:allow-is-maximized",
 		"opener:default",
 		"core:window:allow-close",
 		"core:event:allow-listen",
@@ -26,6 +30,7 @@
 		"core:window:allow-outer-size",
 		"core:window:default",
 		"core:window:allow-center",
+		"core:app:allow-version",
 		"updater:default",
 		"process:default"
 	]

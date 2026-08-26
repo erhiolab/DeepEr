@@ -100,6 +100,21 @@ export const icon = {
 			"m6 6 12 12"
 		]
 	},
+	// 最大化
+	maximize: {
+		stroke: [
+			"M8 3H5a2 2 0 0 0-2 2v3",
+			"M21 8V5a2 2 0 0 0-2-2h-3",
+			"M3 16v3a2 2 0 0 0 2 2h3",
+			"M16 21h3a2 2 0 0 0 2-2v-3"
+		]
+	},
+	// 最小化 (一条横线, 表示收起到任务栏)
+	minimize: {
+		stroke: [
+			"M5 12h14"
+		]
+	},
 	// 发送
 	send: {
 		stroke: [

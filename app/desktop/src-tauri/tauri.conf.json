@@ -31,7 +31,8 @@
 			}
 		],
 		"security": {
-			"csp": "default-src 'self'; img-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+			"csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; img-src 'self' data: deeper-asset: http://deeper-asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost deeper-asset: http://deeper-asset.localhost; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+			"dangerousDisableAssetCspModification": ["script-src"]
 		}
 	},
 	"bundle": {
