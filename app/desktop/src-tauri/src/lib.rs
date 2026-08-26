@@ -27,8 +27,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_handle = app.handle();
-            // 初始化托盘
-            tray::init(app_handle).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             // 初始化日志
             log::init(app_handle)?;
             log::write(
@@ -37,7 +35,7 @@ pub fn run() {
                 "info",
                 "日志系统初始化完成",
             )?;
-            // 初始化数据库
+            // 初始化数据库 (先于托盘: 托盘初始化时需要读取首次运行状态)
             let db_handle = db::init(app_handle)?;
             // 初始化资源目录 (资源和下载临时目录)
             resource::init(app_handle).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
@@ -56,6 +54,20 @@ pub fn run() {
                     }
                 }
             }
+            // 判断是否首次启动: 首次启动 (引导阶段) 托盘仅开放"控制台/退出"
+            let first_run = app
+                .try_state::<db::Db>()
+                .map(|state| {
+                    state
+                        .0
+                        .lock()
+                        .map(|conn| config::is_first_run(&conn).unwrap_or(false))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            // 初始化托盘
+            tray::init(app_handle, first_run)
+                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             log::write(
                 app_handle,
                 &log::LogSource::Backend,

@@ -12,7 +12,7 @@ const router = createRouter({
 	routes: [
 		{
 			path: "/",
-			redirect: "/pet"
+			redirect: "/first-run"
 		},
 		{
 			path: "/first-run",

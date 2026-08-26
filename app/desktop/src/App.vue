@@ -11,7 +11,6 @@ const updater = useUpdaterStore()
 
 onMounted(async () => {
 	await logger.info("应用启动")
-	// 拉取当前应用版本号 (供 About 等界面展示)
 	void updater.init()
 	if (await invoke("is_first_run")) {
 		await logger.info("首次运行应用")

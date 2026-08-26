@@ -19,13 +19,9 @@
 				"minWidth": 150,
 				"minHeight": 300,
 				"visible": false,
-				"resizable": true,
-				"fullscreen": false,
 				"decorations": false,
 				"transparent": true,
 				"shadow": false,
-				"alwaysOnTop": false,
-				"skipTaskbar": false,
 				"center": true,
 				"devtools": false
 			}

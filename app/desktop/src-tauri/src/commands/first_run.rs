@@ -2,7 +2,7 @@
 
 use crate::db::Db;
 use crate::log;
-use tauri::State;
+use tauri::{Emitter, State};
 
 /// 检查是否是首次启动应用
 #[tauri::command]
@@ -42,5 +42,7 @@ pub fn complete_first_run(app: tauri::AppHandle, state: State<'_, Db>) -> Result
         e.to_string()
     })?;
     let _ = log::write(&app, &log::LogSource::Backend, "info", "首次初始化完成");
+    // 通知托盘恢复首次运行时被禁用的菜单项 (打开主界面/显示隐藏/复位等)
+    let _ = app.emit(crate::tray::EVT_FIRST_RUN_DONE, ());
     Ok(())
 }

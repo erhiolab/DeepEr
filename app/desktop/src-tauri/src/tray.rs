@@ -29,6 +29,8 @@ const EVT_CANCEL_PASSTHROUGH: &str = "tray-cancel-passthrough";
 const EVT_RESET: &str = "tray-reset";
 /// 事件名: 前端回传复位已完成 (重新启用"复位"菜单项)
 const EVT_RESET_DONE: &str = "tray-reset-done";
+/// 事件名: 首次初始化已完成 (重新启用首次运行时被禁用的菜单项)
+pub const EVT_FIRST_RUN_DONE: &str = "tray-first-run-done";
 
 /// 菜单项 ID: 显示主界面 / 回到桌宠
 const MENU_SHOW_MAIN: &str = "tray.show_main";
@@ -44,7 +46,14 @@ const MENU_RESET: &str = "tray.reset";
 const MENU_QUIT: &str = "tray.quit";
 
 /// 初始化系统托盘
-pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// `first_run` 为 true 时 (首次启动引导阶段), 仅开放"打开控制台/退出"两个菜单项,
+/// 其余菜单项 ("打开主界面/显示隐藏/取消穿透/复位") 全部禁用, 左键点击托盘也只显示窗口不导航,
+/// 直到前端调用 `complete_first_run` 后由 [`EVT_FIRST_RUN_DONE`] 事件恢复。
+pub fn init(
+    app_handle: &AppHandle,
+    first_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let _ = log::write(
         app_handle,
         &log::LogSource::Backend,
@@ -55,10 +64,15 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // 记录当前是否处于"主界面"视图 (由前端路由变化回传)
     let in_main = std::sync::Arc::new(AtomicBool::new(false));
 
-    // 创建菜单项
-    let show_main =
-        MenuItem::with_id(app_handle, MENU_SHOW_MAIN, "打开主界面", true, None::<&str>)?;
-    let toggle = MenuItem::with_id(app_handle, MENU_TOGGLE, "显示", true, None::<&str>)?;
+    // 首次运行时禁用除"控制台/退出"外的菜单项
+    let show_main = MenuItem::with_id(
+        app_handle,
+        MENU_SHOW_MAIN,
+        "打开主界面",
+        !first_run,
+        None::<&str>,
+    )?;
+    let toggle = MenuItem::with_id(app_handle, MENU_TOGGLE, "显示", !first_run, None::<&str>)?;
     let devtools =
         MenuItem::with_id(app_handle, MENU_DEVTOOLS, "打开控制台", true, None::<&str>)?;
     // "取消穿透"初始禁用, 前端开启穿透后才可用
@@ -69,7 +83,7 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         false,
         None::<&str>,
     )?;
-    let reset = MenuItem::with_id(app_handle, MENU_RESET, "复位", true, None::<&str>)?;
+    let reset = MenuItem::with_id(app_handle, MENU_RESET, "复位", !first_run, None::<&str>)?;
     let quit = MenuItem::with_id(app_handle, MENU_QUIT, "退出", true, None::<&str>)?;
     // 创建菜单
     let menu = Menu::with_items(
@@ -104,6 +118,25 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let _ = app_handle.listen(EVT_RESET_DONE, move |_event| {
         let _ = reset_evt.set_enabled(true);
     });
+
+    // 首次初始化完成后回传, 恢复首次运行时被禁用的菜单项
+    if first_run {
+        let show_main_restore = show_main.clone();
+        let toggle_restore = toggle.clone();
+        let reset_restore = reset.clone();
+        let app_handle_restore = app_handle.clone();
+        let _ = app_handle.listen(EVT_FIRST_RUN_DONE, move |_event| {
+            let _ = show_main_restore.set_enabled(true);
+            let _ = toggle_restore.set_enabled(true);
+            let _ = reset_restore.set_enabled(true);
+            let _ = log::write(
+                &app_handle_restore,
+                &log::LogSource::Backend,
+                "info",
+                "首次初始化完成, 恢复托盘菜单",
+            );
+        });
+    }
 
     // 克隆一份供前端视图回传事件监听使用
     let show_main_evt = show_main.clone();
@@ -157,8 +190,16 @@ pub fn init(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             } = event
             {
                 let app = tray.app_handle();
-                // 左键点击托盘图标: 显示主界面 (回到桌宠时则切回主界面)
-                let _ = show_main_action(app, &show_main, &toggle, &in_main);
+                if first_run {
+                    // 首次运行: 仅显示窗口 (引导页), 不导航到主界面/桌宠
+                    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                } else {
+                    // 左键点击托盘图标: 显示主界面 (回到桌宠时则切回主界面)
+                    let _ = show_main_action(app, &show_main, &toggle, &in_main);
+                }
             }
         })
         .tooltip("DeepEr - 显示主界面")
