@@ -119,7 +119,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	const buildTalkMessages = async (): Promise<LLMMsg[]> => {
 		const RECORDS = await contextList(200, 0)
 		const TALK = RECORDS
-			.filter(record => record.type === "talk" && record.role && record.content.trim())
+			.filter(record => (record.type === "talk" || record.type === "touch") && record.role && record.content.trim())
 			.reverse() // 旧 -> 新
 		const MESSAGES: LLMMsg[] = []
 		let used = 0
@@ -291,7 +291,13 @@ export const useConversationStore = defineStore("conversation", () => {
 	 * @param onDone LLM 回复流程结束后回调 (成功/失败都会触发), 用于解除触摸锁定
 	 */
 	const sendTouch = async (prompt: string, onDone?: () => void): Promise<void> => {
-		const MESSAGES = [...(await buildTalkMessages()), {role: "user" as const, content: prompt}]
+		await contextInsert({
+			type: "touch",
+			role: "user",
+			content: prompt,
+			tokenCount: estimateTokens(prompt),
+		})
+		const MESSAGES = await buildTalkMessages()
 		requestLLM(MESSAGES, onDone)
 	}
 
@@ -312,11 +318,11 @@ export const useConversationStore = defineStore("conversation", () => {
 		historyLoaded = true
 		const RECORDS = await contextList(limit, 0)
 		const TALK = RECORDS
-			.filter(record => record.type === "talk" && record.role && record.content.trim())
+			.filter(record => (record.type === "talk" || record.type === "touch") && record.role && record.content.trim())
 			.reverse()
 		HISTORY.value = TALK.map(record => ({
 			id: nextId++,
-			side: record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
+			side: record.type === "touch" ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
 			text: record.content,
 			createdAt: record.createdAt * 1000,
 		}))

@@ -133,7 +133,7 @@ const getSavedPetState = async () => {
  * 将当前窗口位置/大小防抖写入数据库
  */
 // 实际写入窗口状态到数据库
-const writeWindowState =  async (width: number, height: number, x: number, y: number) => {
+const writeWindowState = async (width: number, height: number, x: number, y: number) => {
 	await config.set("pet_width", width)
 	await config.set("pet_height", height)
 	await config.set("pet_window_x", x)
@@ -244,15 +244,20 @@ export const setMainWindow = async () => {
 
 /**
  * 设置窗口属性为桌宠窗口
+ *
+ * @returns 是否恢复到了库中已有的桌宠位置/大小 (true 表示已按保存状态定位,
+ *          false 表示首次运行或复位后, 窗口保持默认/居中的当前状态)
  */
-export const setPetWindow = async () => {
+export const setPetWindow = async (): Promise<boolean> => {
 	// 定位期间标记, 抑制 onMoved/onResized 与后续写库, 防止中间状态污染配置
 	positioning = true
 	try {
 		const SAVED = await getSavedPetState()
+		const HAS_POS = SAVED.x != null && SAVED.y != null
 		// 恢复上次保存的窗口大小, 无记录时用默认 300x300
 		const WIDTH = SAVED.width ?? 300
 		const HEIGHT = SAVED.height ?? 300
+		// 先设大小, 再设位置: 确保定位在尺寸稳定之后执行, 避免中间坐标被读走
 		await appWindow.setSize(new LogicalSize(WIDTH, HEIGHT))
 		// 恢复上次保存的窗口位置, 无记录时不移动(保持当前)
 		if (SAVED.x != null && SAVED.y != null) {
@@ -268,6 +273,7 @@ export const setPetWindow = async () => {
 		await appWindow.show()
 		// 获取焦点
 		await appWindow.setFocus()
+		return HAS_POS
 	} finally {
 		positioning = false
 	}
