@@ -40,13 +40,13 @@ export const SWIPE_MIN_DISTANCE = 60
  * 点击狂点阈值
  * 窗口期内最少点击次数
  */
-export const FRENZY_MIN_CLICKS = 3
+export const FRENZY_MIN_CLICKS = 5
 
 /**
  * 点击狂点阈值
  * 窗口期时间窗口 (毫秒)
  */
-export const FRENZY_WINDOW_MS = 1200
+export const FRENZY_WINDOW_MS = 1000
 
 /**
  * 触摸行为 store
@@ -84,7 +84,6 @@ export const useTouchStore = defineStore("touch", () => {
 
 	/**
 	 * 手动解锁触摸, 同时取消自动解锁兜底
-	 * TODO: 接入AI后一定要记得解锁啊
 	 */
 	const unlock = () => {
 		clearLockTimer()
@@ -120,12 +119,7 @@ export const useTouchStore = defineStore("touch", () => {
 		// 先锁定 (含 2 分钟自动解锁兜底), 防止触发期间被重复回调
 		lock()
 		// 按触摸类型取本地化描述
-		const TYPED_PROMPT =
-			touch.type === "swipe"
-				? I18N.value.touchedSwipe(touch.name)
-				: touch.type === "frenzy"
-					? I18N.value.touchedFrenzy(touch.name)
-					: I18N.value.touchedName(touch.name)
+		const TYPED_PROMPT = touch.type === "swipe" ? I18N.value.touchedSwipe(touch.name) : touch.type === "frenzy" ? I18N.value.touchedFrenzy(touch.name) : I18N.value.touchedName(touch.name)
 		// 当前模型名由 live2d store 统一持有
 		const L2D = useLive2DStore()
 		const PAYLOAD = {

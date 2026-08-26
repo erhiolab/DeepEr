@@ -27,10 +27,10 @@ const officialModels = ref<Live2dModel[]>([])
 // 官方模型列表是否正在从后端拉取中
 const officialLoading = ref(false)
 
-// 已安装的官方模型 (is_official = true, 来自本地索引)
+// 已安装的官方模型 (is_official = true, 来自本地索引, 封面用官方 coverUrl)
 const officialInstalled = ref<Live2dModel[]>([])
 
-// 官方区展示: 线上官方模型, 已安装官方模型 (按 id 去重)
+// 官方区展示: 线上官方模型 + 已安装官方模型 (按 id 去重), 无论是否已安装都显示
 const displayOfficialModels = computed<Live2dModel[]>(() => {
 	const MAP = new Map<string, Live2dModel>()
 	for (const m of officialModels.value) MAP.set(m.id, m)
@@ -40,23 +40,32 @@ const displayOfficialModels = computed<Live2dModel[]>(() => {
 	return Array.from(MAP.values())
 })
 
-// 自定义模型 (已安装但不在官方列表)
-interface CustomModel {
+// 上方"已安装模型"区: 全部已安装 (官方 + 自定义)
+interface InstalledModel {
 	id: string
 	image?: string
+	coverUrl?: string
+	official?: boolean
 	name: string
 }
 
-// 全部已安装的非官方来源模型 (含被误导入的官方模型, 渲染时再按官方 id 剔除)
-const customAll = ref<CustomModel[]>([])
+// 已安装区统一列表: 自定义 + 已装官方
+const allInstalledModels = computed<InstalledModel[]>(() => {
+	const OFFICIAL_COVER = new Map(displayOfficialModels.value.map(m => [m.id, m.coverUrl]))
+	const CARDS: InstalledModel[] = installedModels.value.map(m => ({...m, official: false}))
+	for (const o of officialInstalled.value) {
+		CARDS.push({
+			id: o.id,
+			name: o.name,
+			coverUrl: OFFICIAL_COVER.get(o.id),
+			official: true,
+		})
+	}
+	return CARDS
+})
 
-// 官方模型 id 集合 (线上官方 + 已装官方)
-const officialIds = computed<Set<string>>(() => new Set(displayOfficialModels.value.map(m => m.id)))
-
-// 自定义区展示: 非官方已装模型中, 剔除已被官方区覆盖的 (避免官方模型重复出现在自定义区)
-const customModels = computed<CustomModel[]>(() =>
-	customAll.value.filter(m => !officialIds.value.has(m.id))
-)
+// 自定义模型 (仅非官方来源)
+const installedModels = ref<InstalledModel[]>([])
 
 // 已安装的模型 id 集合
 const installedIds = ref<Set<string>>(new Set())
@@ -161,17 +170,18 @@ const loadInstalled = async (): Promise<void> => {
 		for (const ITEM of LIST) SIZES[ITEM.name] = ITEM.size
 		installedIds.value = new Set(NAMES)
 		modelSizes.value = SIZES
-		customAll.value = LIST
+		// 自定义模型 = 非官方来源 (封面用 image + asset 协议)
+		installedModels.value = LIST
 			.filter(item => !item.isOfficial)
 			.map(item => ({
 				id: item.name,
 				name: item.modelName || item.name,
 				image: item.image || undefined,
 			}))
-		// 已安装官方模型 = is_official = true
+		// 已安装官方模型 (封面沿用官方 coverUrl)
 		officialInstalled.value = LIST
 			.filter(item => item.isOfficial)
-			.map(item => ({id: item.name, name: item.name}))
+			.map(item => ({id: item.name, name: item.modelName || item.name}))
 		// 同步刷新 store 的入口文件映射 (用于加载)
 		await L2D.refreshInstalled()
 	} catch (error) {
@@ -225,7 +235,7 @@ const pendingDeleteId = ref<string | null>(null)
 const pendingDeleteDisplayName = computed(() => {
 	const id = pendingDeleteId.value
 	if (!id) return ""
-	return customModels.value.find(m => m.id === id)?.name || id
+	return allInstalledModels.value.find(m => m.id === id)?.name || id
 })
 
 // 删除二次确认弹窗
@@ -425,6 +435,66 @@ onBeforeUnmount(() => {
 <template>
 	<section key="model-select" class="page-model" @click="selected = null">
 		<div class="group">
+			<div class="group-title">
+				{{ I18N.installedTitle }}
+				<button
+					class="import-btn"
+					:disabled="IMPORT.state.step === 'importing'"
+					@click.stop="handleImport"
+				>
+					<icon name="import" :size="15"/>
+					<span>{{ I18N.importModel }}</span>
+				</button>
+			</div>
+			<div class="cards">
+				<template v-if="allInstalledModels.length">
+					<button
+						v-for="model in allInstalledModels"
+						:key="model.id"
+						class="model-card"
+						:class="{selected: selected === model.id}"
+						@click.stop="selected = model.id"
+						@dblclick="handleDblClick"
+					>
+						<span class="model-thumb-wrap">
+							<img
+								v-if="model.coverUrl && !isCoverBroken(model.id)"
+								:src="model.coverUrl"
+								class="model-thumb"
+								alt=""
+								loading="lazy"
+								@error="markCoverBroken(model.id)"
+							/>
+							<img
+								v-else-if="model.image && !isIconBroken(model.id) && iconUrl(model.id, model.image)"
+								:src="iconUrl(model.id, model.image)!"
+								class="model-thumb"
+								alt=""
+								loading="lazy"
+								@error="markIconBroken(model.id)"
+							/>
+							<span v-else class="model-thumb model-placeholder">
+								<icon name="cube" :size="42"/>
+							</span>
+							<span class="check-badge" :class="{on: applied === model.id}">
+								<icon name="check"/>
+							</span>
+						</span>
+						<span class="model-name">{{ model.name }}</span>
+						<span class="model-meta">
+							<span v-if="model.official" class="status-badge installed">
+								{{ I18N.officialTag }}
+							</span>
+							<span v-if="sizeOf(model.id) != null" class="model-size">
+								{{ formatBytes(sizeOf(model.id)!) }}
+							</span>
+						</span>
+					</button>
+				</template>
+				<div v-else class="empty-state">{{ I18N.installedEmpty }}</div>
+			</div>
+		</div>
+		<div class="group">
 			<div class="group-title">{{ I18N.officialTitle }}</div>
 			<div class="cards">
 				<template v-if="displayOfficialModels.length">
@@ -472,55 +542,6 @@ onBeforeUnmount(() => {
 					</template>
 					<span v-else>{{ I18N.officialEmpty }}</span>
 				</div>
-			</div>
-		</div>
-		<div class="group">
-			<div class="group-title">
-				{{ I18N.customTitle }}
-				<button
-					class="import-btn"
-					:disabled="IMPORT.state.step === 'importing'"
-					@click.stop="handleImport"
-				>
-					<icon name="import" :size="15"/>
-					<span>{{ I18N.importModel }}</span>
-				</button>
-			</div>
-			<div class="cards">
-				<template v-if="customModels.length">
-					<button
-						v-for="model in customModels"
-						:key="model.id"
-						class="model-card"
-						:class="{selected: selected === model.id}"
-						@click.stop="selected = model.id"
-						@dblclick="handleDblClick"
-					>
-						<span class="model-thumb-wrap">
-							<img
-								v-if="model.image && !isIconBroken(model.id) && iconUrl(model.id, model.image)"
-								:src="iconUrl(model.id, model.image)!"
-								class="model-thumb"
-								alt=""
-								loading="lazy"
-								@error="markIconBroken(model.id)"
-							/>
-							<span v-else class="model-thumb model-placeholder">
-								<icon name="cube" :size="42"/>
-							</span>
-							<span class="check-badge" :class="{on: applied === model.id}">
-								<icon name="check"/>
-							</span>
-						</span>
-						<span class="model-name">{{ model.name }}</span>
-						<span class="model-meta">
-							<span v-if="sizeOf(model.id) != null" class="model-size">
-								{{ formatBytes(sizeOf(model.id)!) }}
-							</span>
-						</span>
-					</button>
-				</template>
-				<div v-else class="empty-state">{{ I18N.customEmpty }}</div>
 			</div>
 		</div>
 		<footer

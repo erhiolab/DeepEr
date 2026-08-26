@@ -13,6 +13,12 @@ const L2D = useLive2DStore()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 
+// 窗口/容器尺寸变化触发重渲染的计数器
+// 选区位置是"绝对定位 + 基于容器尺寸算出的百分比", 依赖 DOM 尺寸(非响应式)。
+// 用 ResizeObserver 监听容器尺寸, 变化时自增该值, 让选区随窗口宽高动态重算, 避免变形/对不上。
+const sizeTick = ref(0)
+let resizeObserver: ResizeObserver | null = null
+
 /**
  * 编辑状态
  *
@@ -121,6 +127,8 @@ const style = (t: { x: number, y: number, w: number, h: number }) => {
 	const EL = canvas.value
 	const SRC = L2D.canvas
 	if (!EL || !SRC?.width || !SRC?.height) return {}
+	// 读取尺寸版本号, 建立响应式依赖, 窗口/容器尺寸变化时此处随 sizeTick 重算
+	void sizeTick.value
 	const R = EL.getBoundingClientRect()
 	const C = contain(SRC.width, SRC.height, R.width, R.height)
 	if (!C) return {}
@@ -137,6 +145,8 @@ const layout = () => {
 	const EL = canvas.value
 	const SRC = L2D.canvas
 	if (!EL || !SRC?.width || !SRC?.height) return null
+	// 建立尺寸响应式依赖, 随窗口/容器变化重算
+	void sizeTick.value
 	const R = EL.getBoundingClientRect()
 	const C = contain(SRC.width, SRC.height, R.width, R.height)
 	if (!C) return null
@@ -576,10 +586,23 @@ const render = () => {
 
 onMounted(() => {
 	raf = requestAnimationFrame(render)
+	// 监听画布容器尺寸变化: 窗口宽高变换会让选区(百分比+绝对定位)与模型错位,
+	// 这里在尺寸变化时自增 sizeTick, 触发选区的 style/handle 重新按新尺寸计算
+	const EL = canvas.value
+	if (EL && typeof ResizeObserver !== "undefined") {
+		resizeObserver = new ResizeObserver(() => {
+			sizeTick.value++
+		})
+		resizeObserver.observe(EL)
+	}
 })
 
 onBeforeUnmount(() => {
 	cancelAnimationFrame(raf)
+	if (resizeObserver) {
+		resizeObserver.disconnect()
+		resizeObserver = null
+	}
 })
 
 watch(() => L2D.currentModel, async m => {

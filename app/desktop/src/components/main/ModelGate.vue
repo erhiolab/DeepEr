@@ -10,9 +10,6 @@ const GATE_ANSWER = "水母是水里的月亮"
 // 打开状态 (受控)
 const props = defineProps<{
 	open: boolean
-	/**
-	 * 待授权的模型 id
-	 */
 	modelId: string | null
 }>()
 
