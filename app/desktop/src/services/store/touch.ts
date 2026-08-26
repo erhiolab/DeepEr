@@ -60,6 +60,14 @@ export const useTouchStore = defineStore("touch", () => {
 	// 触发回调后锁定整个触摸, 防止同一对手势无限触发, 由外部执行 unlock() 解锁 (如 AI 返回后), 并有 2 分钟自动解锁兜底
 	const locked = ref(false)
 
+	// 移动状态锁定
+	const moving = ref(false)
+
+	// 设置移动状态: 移动/调整窗口大小期间置 true, 结束置 false
+	const setMoving = (value: boolean) => {
+		moving.value = value
+	}
+
 	// 锁定后的自动解锁定时器
 	let lockTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -100,6 +108,10 @@ export const useTouchStore = defineStore("touch", () => {
 	 * 触发后立即锁定 (防止同一手势无限触发), 需外部 `unlock` 解锁或等待 2 分钟自动解锁
 	 */
 	const trigger = async (touch: TouchArea) => {
+		if (moving.value) {
+			await logger.info(`[touch] 触发被移动状态锁定忽略: ${touch.name} (桌宠正在移动/调整大小)`)
+			return
+		}
 		// 已锁住时不重复触发
 		if (locked.value) {
 			await logger.info(`[touch] 触发被锁定忽略: ${touch.name} (等待解锁或自动解锁)`)
@@ -134,6 +146,8 @@ export const useTouchStore = defineStore("touch", () => {
 		lock,
 		unlock,
 		locked,
+		moving,
+		setMoving,
 		trigger,
 	}
 })

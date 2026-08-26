@@ -17,13 +17,15 @@ import {
 } from "../services/window"
 import useLanguages from "../services/i18n/useLanguages.ts"
 import {useConversationStore} from "../services/store/conversation.ts"
+import {useTouchStore} from "../services/store/touch.ts"
 
 const I18N = computed(() => useLanguages().views.pet)
 
 const ROUTER = useRouter()
 
-// AI 对话状态
 const CONV = useConversationStore()
+
+const TOUCH = useTouchStore()
 
 // 气泡自动消失等待时长(毫秒)
 const BUBBLE_TTL = 6000
@@ -155,6 +157,8 @@ const enablePassthrough = () => {
 	if (resizing.value) {
 		resizing.value = false
 		setUnresizableWindow()
+		// 退出移动状态: 恢复触摸回调
+		TOUCH.setMoving(false)
 	}
 	setPassthrough()
 	// 通知后端更新托盘菜单 (提供"取消穿透"入口)
@@ -167,8 +171,12 @@ const toggleResize = async () => {
 	if (resizing.value) {
 		// 允许窗口可调整 (原生对角缩放, 自由比例)
 		await setResizableWindow()
+		// 进入移动状态: 期间不触发任何触摸回调
+		TOUCH.setMoving(true)
 	} else {
 		await setUnresizableWindow()
+		// 退出移动状态: 恢复触摸回调
+		TOUCH.setMoving(false)
 		// 退出调整模式时保存一次当前窗口状态
 		void persistWindowState(0)
 	}
@@ -182,13 +190,15 @@ const onKeydown = (event: KeyboardEvent) => {
 }
 
 // 四角开始调整大小 (Tauri 原生对角缩放, 系统接管拖拽, 自由比例)
-const onCornerMouseDown = (event: MouseEvent, direction: ResizeDirection) => {
+const onCornerMouseDown = async (event: MouseEvent, direction: ResizeDirection) => {
 	event.preventDefault()
 	event.stopPropagation()
 	// 若尚未开启调整模式, 先行开启 (原生缩放需要窗口可调整)
 	if (!resizing.value) {
 		resizing.value = true
-		void setResizableWindow()
+		await setResizableWindow()
+		// 进入移动状态: 期间不触发任何触摸回调
+		TOUCH.setMoving(true)
 	}
 	// 原生对角缩放
 	void startResizeWindow(direction)
@@ -236,6 +246,8 @@ onMounted(async () => {
 onUnmounted(() => {
 	// 注销窗口监听
 	if (stopWatchFn) stopWatchFn()
+	// 恢复触摸回调 (若卸载时仍处于移动状态)
+	TOUCH.setMoving(false)
 	// 移除 ESC 按键监听
 	window.removeEventListener("keydown", onKeydown)
 	// 移除窗口大小监听

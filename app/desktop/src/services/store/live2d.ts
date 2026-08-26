@@ -72,6 +72,7 @@ const defaultConfig = (): ModelTouchConfig => ({
 	actions: {motions: [], expressions: []},
 })
 
+// 生成唯一 ID (用于模型实例)
 const uid = () => `t-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
 /**
@@ -974,9 +975,6 @@ export const useLive2DStore = defineStore("live2d", () => {
 	}
 
 	/**
-	 * 销毁 Live2D 实例
-	 */
-	/**
 	 * 刷新(重新加载)当前 Live2D 模型
 	 * 保留 canvas 与实例, 仅强制重新加载当前已应用的模型
 	 */
@@ -991,6 +989,9 @@ export const useLive2DStore = defineStore("live2d", () => {
 		return loadModel(NAME)
 	}
 
+	/**
+	 * 销毁 Live2D 实例
+	 */
 	const destroyApp = async () => {
 		if (!l2dInstance.value) return
 		await logger.info("销毁 Live2D 实例")
