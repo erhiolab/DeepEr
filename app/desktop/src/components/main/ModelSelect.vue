@@ -2,7 +2,6 @@
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
 import {invoke} from "@tauri-apps/api/core"
 import {open} from "@tauri-apps/plugin-dialog"
-import {toast} from "vue3-toastify"
 import {logger} from "../../services/logger"
 import {config} from "../../services/config"
 import {assetUrl} from "../../services/asset.ts"
@@ -138,7 +137,6 @@ const loadOfficial = async (): Promise<void> => {
 		sessionStorage.setItem("officialModels", JSON.stringify(LIST))
 	} catch (error) {
 		await logger.error("拉取 Live2D 模型列表失败", error)
-		toast.error(I18N.value.loadModelsFailed)
 	} finally {
 		officialLoading.value = false
 	}
@@ -178,7 +176,6 @@ const loadInstalled = async (): Promise<void> => {
 		await L2D.refreshInstalled()
 	} catch (error) {
 		await logger.error("读取已安装资源失败:", error)
-		toast.error(I18N.value.loadModelsFailed)
 	}
 }
 
@@ -208,7 +205,6 @@ const handleApply = async (): Promise<void> => {
 	const SUCCESS = await L2D.loadModel(ID)
 	if (!SUCCESS) {
 		await logger.error(`应用模型失败: ${ID}`)
-		toast.error(I18N.value.applyModelFailed)
 		return
 	}
 	await config.set("live2d_model", ID)
@@ -253,7 +249,6 @@ const doDelete = async (): Promise<void> => {
 		await loadInstalled()
 	} catch (error) {
 		await logger.error("删除模型失败:", error)
-		toast.error(I18N.value.deleteModelFailed)
 	}
 }
 
@@ -367,7 +362,6 @@ const runImport = async (sourcePath: string, sourceType: "dir" | "zip" | "model"
 		await IMPORT.importModel(sourcePath, sourceType)
 	} catch (error) {
 		await logger.error("导入操作失败:", error)
-		toast.error(I18N.value.importFailed)
 	}
 }
 

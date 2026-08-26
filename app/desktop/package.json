@@ -25,8 +25,7 @@
 		"pinia": "^4.0.3",
 		"vue": "^3.5.13",
 		"vue-i18n": "^11.4.8",
-		"vue-router": "^4.6.4",
-		"vue3-toastify": "^0.2.9"
+		"vue-router": "^4.6.4"
 	},
 	"devDependencies": {
 		"@tauri-apps/cli": "^2",

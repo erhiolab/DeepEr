@@ -3,7 +3,6 @@ import {computed, ref, onMounted} from "vue"
 import useLanguage from "../../services/i18n"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import type {LanguageType} from "../../services/i18n"
-import {toast} from "vue3-toastify"
 import zhCn from "../../assets/images/flags/cn.png"
 import enGb from "../../assets/images/flags/gb.png"
 import enUs from "../../assets/images/flags/us.png"
@@ -49,7 +48,6 @@ onMounted(async () => {
 		current.value = await language.getLanguage()
 	} catch (error) {
 		await logger.error("加载语言列表失败:", error)
-		toast.error(I18N.value.loadLanguagesFailed)
 	}
 })
 
@@ -60,8 +58,7 @@ const select = async (code: string) => {
 	try {
 		await language.setLanguage(code)
 	} catch (error) {
-		logger.error("切换语言失败:", error)
-		toast.error(I18N.value.switchLanguageFailed)
+		await logger.error("切换语言失败:", error)
 	}
 }
 </script>

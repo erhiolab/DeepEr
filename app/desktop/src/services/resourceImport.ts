@@ -1,11 +1,7 @@
-import {computed, reactive, readonly} from "vue"
+import {reactive, readonly} from "vue"
 import {invoke} from "@tauri-apps/api/core"
 import {listen, type UnlistenFn} from "@tauri-apps/api/event"
-import {toast} from "vue3-toastify"
-import useLanguages from "./i18n/useLanguages.ts"
 import {logger} from "./logger"
-
-const I18N = computed(() => useLanguages().common.download)
 
 /**
  * 资源导入 Service.
@@ -83,7 +79,6 @@ export const createResourceImport = () => {
 				STATE.step = "error"
 				STATE.message = message ?? null
 				STATE.percent = 100
-				toast.error(message || I18N.value.downloadFailed)
 				await logger.error(`导入失败: ${message ?? "未知错误"}`)
 				break
 			default:
@@ -112,7 +107,6 @@ export const createResourceImport = () => {
 		try {
 			await invoke("import_live2d", {sourcePath, sourceType})
 		} catch (error) {
-			toast.error(I18N.value.downloadFailed)
 			await logger.error(`导入模型失败: ${sourcePath}`, error)
 			STATE.step = "error"
 			STATE.message = String(error)

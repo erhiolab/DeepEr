@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed, ref} from "vue"
-import {toast} from "vue3-toastify"
 import {invoke} from "@tauri-apps/api/core"
+import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import Icon from "../common/Icon.vue"
@@ -19,13 +19,9 @@ const handleRefreshLive2d = async () => {
 	if (refreshing.value) return
 	refreshing.value = true
 	try {
-		const OK = await L2D.reloadModel()
-		if (!OK) {
-			toast.error(I18N.value.noModel)
-		}
+		await L2D.reloadModel()
 	} catch (error) {
-		console.error("刷新 Live2D 模型失败:", error)
-		toast.error(I18N.value.refreshFailed)
+		await logger.error("刷新 Live2D 模型失败:", error)
 	} finally {
 		refreshing.value = false
 	}
@@ -56,8 +52,7 @@ const handleToggleDevtools = async () => {
 	try {
 		devtoolsOpen.value = await invoke<boolean>("toggle_devtools")
 	} catch (error) {
-		console.error("切换开发者工具失败:", error)
-		toast.error(I18N.value.toggleDevtoolsFailed)
+		await logger.error("切换开发者工具失败:", error)
 	}
 }
 
@@ -66,8 +61,7 @@ const handleOpenTaskManager = async () => {
 	try {
 		await invoke("open_task_manager")
 	} catch (error) {
-		console.error("打开浏览器任务管理器失败:", error)
-		toast.error(I18N.value.openTaskManagerFailed)
+		await logger.error("打开浏览器任务管理器失败:", error)
 	}
 }
 

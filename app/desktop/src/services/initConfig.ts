@@ -1,4 +1,5 @@
 import {invoke} from "@tauri-apps/api/core"
+import {logger} from "./logger"
 
 /**
  * 首次初始化配置快照 (对应后端 config::InitConfig)
@@ -20,7 +21,7 @@ export async function getInitConfig(): Promise<InitConfig | null> {
 	try {
 		return await invoke<InitConfig>("get_init_config")
 	} catch (error) {
-		console.error("获取初始化配置失败:", error)
+		await logger.error("获取初始化配置失败:", error)
 		return null
 	}
 }

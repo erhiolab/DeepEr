@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import {computed} from "vue"
 import {openUrl} from "@tauri-apps/plugin-opener"
-import {writeText} from "@tauri-apps/plugin-clipboard-manager"
-import {toast} from "vue3-toastify"
 import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import Icon from "../common/Icon.vue"
@@ -46,23 +44,14 @@ const links = computed<Link[]>(() => [
 	}
 ])
 
-// 点击链接卡片: 有 qq 属性则复制群号, 否则打开网页
+// 点击链接卡片
 const handleLink = async (link: Link) => {
-	if (link.qq) {
-		try {
-			await writeText(link.qq)
-			await logger.info(`复制 QQ 群号 ${link.qq} 成功`)
-		} catch (error) {
-			await logger.error(`复制 QQ 群号 ${link.qq} 失败`, error)
-			toast.error(I18N.value.copyFailed)
-		}
-	} else if (link.url) {
+	if (link.url) {
 		try {
 			await openUrl(link.url)
 			await logger.info(`打开网页 ${link.url} 成功`)
 		} catch (error) {
 			await logger.error(`打开网页 ${link.url} 失败`, error)
-			toast.error(I18N.value.openLinkFailed)
 		}
 	}
 }

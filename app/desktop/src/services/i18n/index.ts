@@ -20,7 +20,7 @@ const getSystemLanguage = async (): Promise<string> => {
 		lang = await invoke<string>("get_system_language")
 	} catch (error) {
 		lang = navigator.language
-		console.error("获取系统语言失败:", error)
+		await logger.error("获取系统语言失败:", error)
 	}
 	const KEY = `./locales/${lang}.ts`
 	if (MESSAGES[KEY]) return lang

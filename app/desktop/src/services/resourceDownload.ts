@@ -1,11 +1,7 @@
-import {computed, reactive, readonly} from "vue"
+import {reactive, readonly} from "vue"
 import {invoke} from "@tauri-apps/api/core"
 import {listen, type UnlistenFn} from "@tauri-apps/api/event"
-import {toast} from "vue3-toastify"
-import useLanguages from "./i18n/useLanguages.ts"
 import {logger} from "./logger"
-
-const I18N = computed(() => useLanguages().common.download)
 
 /**
  * 资源下载 / 检查的通用 Service.
@@ -154,7 +150,6 @@ export const createResourceDownload = () => {
 		try {
 			await invoke("ensure_resource", {resourceType, name})
 		} catch (error) {
-			toast.error(I18N.value.downloadFailed)
 			await logger.error(`确保资源失败: ${resourceType}/${name}`, error)
 			STATE.step = "error"
 			STATE.message = String(error)
@@ -173,7 +168,6 @@ export const createResourceDownload = () => {
 			}
 			return installed
 		} catch (error) {
-			toast.error(I18N.value.downloadFailed)
 			await logger.error(`检查资源失败: ${resourceType}/${name}`, error)
 			STATE.step = "error"
 			STATE.message = String(error)

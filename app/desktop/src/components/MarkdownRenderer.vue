@@ -3,6 +3,7 @@ import {computed} from "vue"
 import MarkdownIt from "markdown-it"
 import hljs from "highlight.js"
 import {openUrl} from "@tauri-apps/plugin-opener"
+import {logger} from "../services/logger"
 import "highlight.js/styles/github-dark.css"
 
 const PROPS = defineProps<{
@@ -73,7 +74,7 @@ const openMarkdownLink = async (href: string) => {
 	try {
 		await openUrl(href)
 	} catch (error) {
-		console.error("打开链接失败:", error)
+		logger.error("打开链接失败:", error)
 	}
 }
 
