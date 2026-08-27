@@ -102,10 +102,7 @@ export const restoreCursor = async () => {
 	await appWindow.setIgnoreCursorEvents(false)
 }
 
-// 防抖定时器
-let persistTimer: ReturnType<typeof setTimeout> | null = null
-
-// 复位进行中禁止持久化 (复位会移动/缩放窗口, 触发 onMoved/onResized 会误写回数据库)
+// 复位进行中禁止持久化
 let resetting = false
 
 // 定位进行中禁止持久化
@@ -129,10 +126,7 @@ const getSavedPetState = async () => {
 	}
 }
 
-/**
- * 将当前窗口位置/大小防抖写入数据库
- */
-// 实际写入窗口状态到数据库
+// 将当前窗口位置/大小写入数据库
 const writeWindowState = async (width: number, height: number, x: number, y: number) => {
 	await config.set("pet_width", width)
 	await config.set("pet_height", height)
@@ -141,17 +135,14 @@ const writeWindowState = async (width: number, height: number, x: number, y: num
 }
 
 /**
- * 将当前窗口位置/大小写入数据库 (可选用防抖延迟)
- * @param delay 防抖毫秒数, 传 0 或负数则立即写入
+ * 将当前窗口位置/大小立即写入数据库
+ *
+ * 仅在明确的时机调用: 进入桌宠页时无记录写基线、关闭调整模式、退出穿透、卸载兜底.
+ * 不做移动/缩放过程中的实时防抖落盘, 从根源避免启动定位的中间坐标被写库.
  */
-export const persistWindowState = async (delay = 500) => {
+export const persistWindowState = async () => {
 	// 定位/复位期间禁止写库, 避免中间状态污染配置
 	if (positioning || resetting) {
-		// 清理可能已挂起的防抖写库
-		if (persistTimer) {
-			clearTimeout(persistTimer)
-			persistTimer = null
-		}
 		return
 	}
 	const SIZE = await appWindow.outerSize()
@@ -162,40 +153,7 @@ export const persistWindowState = async (delay = 500) => {
 	const LOGICAL_HEIGHT = Math.round(SIZE.height / SCALE_FACTOR)
 	const LOGICAL_X = Math.round(POSITION.x / SCALE_FACTOR)
 	const LOGICAL_Y = Math.round(POSITION.y / SCALE_FACTOR)
-	if (persistTimer) {
-		clearTimeout(persistTimer)
-		persistTimer = null
-	}
-	// 立即写入场景 (移动/缩放结束, 卸载, 进入桌宠)
-	if (delay <= 0) {
-		await writeWindowState(LOGICAL_WIDTH, LOGICAL_HEIGHT, LOGICAL_X, LOGICAL_Y)
-		return
-	}
-	// 防抖写入 (移动/缩放进行中, 停止后上次值落库)
-	persistTimer = setTimeout(() => {
-		persistTimer = null
-		writeWindowState(LOGICAL_WIDTH, LOGICAL_HEIGHT, LOGICAL_X, LOGICAL_Y)
-	}, delay)
-}
-
-/**
- * 注册窗口移动/缩放监听, 结束操作后防抖保存窗口状态 (大小 + 位置)
- * 需要返回注销函数
- */
-export const watchWindowState = async (): Promise<() => void> => {
-	const STOPS: (() => void)[] = []
-	STOPS.push(await appWindow.onMoved(() => {
-		if (resetting || positioning) return
-		void persistWindowState()
-	}))
-	STOPS.push(await appWindow.onResized(() => {
-		if (resetting || positioning) return
-		void persistWindowState()
-	}))
-	return () => {
-		for (const stop of STOPS) stop()
-		if (persistTimer) clearTimeout(persistTimer)
-	}
+	await writeWindowState(LOGICAL_WIDTH, LOGICAL_HEIGHT, LOGICAL_X, LOGICAL_Y)
 }
 
 /**
@@ -286,14 +244,9 @@ export const setPetWindow = async (): Promise<boolean> => {
  * 且删除 pet_window_x/y/pet_width/pet_height, 使下次进入桌宠恢复默认大小与居中.
  */
 export const resetPetWindow = async (): Promise<void> => {
-	// 复位期间标记, 抑制 onMoved/onResized 的自动持久化
+	// 复位期间标记, 抑制定位/移动期间的持久化
 	resetting = true
 	try {
-		// 清除可能挂起的防抖写库
-		if (persistTimer) {
-			clearTimeout(persistTimer)
-			persistTimer = null
-		}
 		// 恢复鼠标交互
 		await restoreCursor()
 		// 恢复默认桌宠大小 300x300

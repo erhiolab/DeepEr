@@ -12,7 +12,6 @@ import {
 	setUnresizableWindow,
 	startDragWindow,
 	startResizeWindow,
-	watchWindowState,
 	type ResizeDirection
 } from "../services/window"
 import useLanguages from "../services/i18n/useLanguages.ts"
@@ -60,6 +59,8 @@ const enablePassthrough = () => {
 		setUnresizableWindow()
 		// 退出移动状态: 恢复触摸回调
 		TOUCH.setMoving(false)
+		// 退出调整模式时保存一次当前窗口状态
+		void persistWindowState()
 	}
 	setPassthrough()
 	// 通知后端更新托盘菜单 (提供"取消穿透"入口)
@@ -79,15 +80,20 @@ const toggleResize = async () => {
 		// 退出移动状态: 恢复触摸回调
 		TOUCH.setMoving(false)
 		// 退出调整模式时保存一次当前窗口状态
-		void persistWindowState(0)
+		await persistWindowState()
 	}
 }
 
 // 按下 ESC 退出调整/移动模式
-const onKeydown = (event: KeyboardEvent) => {
+const onKeydown = async (event: KeyboardEvent) => {
 	if (event.key !== "Escape") return
 	if (!resizing.value) return
-	void toggleResize()
+	resizing.value = false
+	await setUnresizableWindow()
+	// 退出移动状态: 恢复触摸回调
+	TOUCH.setMoving(false)
+	// 退出调整模式时保存一次当前窗口状态
+	await persistWindowState()
 }
 
 // 四角开始调整大小 (Tauri 原生对角缩放, 系统接管拖拽, 自由比例)
@@ -117,29 +123,26 @@ const onStageMouseDown = (event: MouseEvent) => {
 onMounted(async () => {
 	// 应用保存的桌宠大小/位置; 返回是否存在已保存的位置记录
 	const hasSavedPosition = await setPetWindow()
-	// 注册窗口移动/缩放监听, 结束操作后防抖保存窗口大小与位置
-	stopWatchFn = await watchWindowState()
 	// 按 ESC 退出调整/移动模式
 	window.addEventListener("keydown", onKeydown)
 	// 仅当库中原本没有桌宠位置/大小记录 (首次运行或复位后) 时, 才把当前默认/居中
 	// 状态写库建立基线. 若已有保存记录, 不在此处立即落盘, 避免读到窗口定位完成前
 	// 的中间坐标而覆盖正确的保存位置 (这正是"重进桌宠跑到屏幕中间"的根因).
 	if (!hasSavedPosition) {
-		await persistWindowState(0)
+		await persistWindowState()
 	}
 })
 
 onUnmounted(() => {
-	// 注销窗口监听
-	if (stopWatchFn) stopWatchFn()
 	// 恢复触摸回调 (若卸载时仍处于移动状态)
 	TOUCH.setMoving(false)
+	// 若卸载时仍处于调整模式, 兜底保存一次当前窗口状态, 避免丢弃本次位置
+	if (resizing.value) {
+		void persistWindowState()
+	}
 	// 移除 ESC 按键监听
 	window.removeEventListener("keydown", onKeydown)
 })
-
-// 窗口监听注销函数 (在 onMounted 中赋值)
-let stopWatchFn: (() => void) | null = null
 </script>
 
 <template>
