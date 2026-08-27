@@ -1,0 +1,197 @@
+// 全局表单基础样式 (theme.less 之后加载)
+// 从各页面重复的 scoped 样式中收敛而来: 字段 / 输入框 / 下拉 / 通用按钮 / 旋转动画
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+
+	&.full {
+		grid-column: 1 / -1;
+	}
+}
+
+.field-label {
+	font-size: 1.05rem;
+	color: var(--text-muted);
+}
+
+.field-hint {
+	font-size: 0.95rem;
+
+	&.error {
+		color: var(--danger);
+	}
+}
+
+.input {
+	padding: 0.65rem 0.9rem;
+	width: 100%;
+	box-sizing: border-box;
+	border: 0.1rem solid var(--line-subtle);
+	border-radius: var(--radius-sm);
+	background-color: rgba(255, 255, 255, 0.04);
+	color: var(--text-primary);
+	font-size: 1.15rem;
+	font-family: inherit;
+	outline: none;
+	transition: all 0.2s ease;
+
+	&:focus {
+		border-color: var(--deep-teal-soft);
+		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
+	}
+
+	&.invalid {
+		border-color: var(--danger);
+		box-shadow: 0 0 0.6rem rgba(251, 44, 54, 0.3);
+	}
+
+	&::placeholder {
+		color: var(--text-muted);
+		opacity: 0.6;
+	}
+}
+
+.textarea {
+	min-height: 5.2rem;
+	resize: vertical;
+	line-height: 1.6;
+}
+
+.select {
+	cursor: pointer;
+
+	option {
+		color: var(--text-primary);
+		background-color: var(--bg-deep);
+	}
+}
+
+// 主按钮 (默认青绿渐变 / ghost 描边 / primary 实心)
+.btn {
+	padding: 0.7rem 1.2rem;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	border: none;
+	border-radius: var(--radius-sm);
+	background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
+	color: #05121a;
+	font-size: 1.15rem;
+	font-weight: 600;
+	font-family: inherit;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	flex-shrink: 0;
+
+	&:hover:not(:disabled) {
+		box-shadow: 0 0 1.4rem var(--glow-teal-soft);
+	}
+
+	&:disabled {
+		opacity: 0.55;
+		cursor: default;
+	}
+
+	&.ghost {
+		border: 0.1rem solid var(--line-strong);
+		background-image: none;
+		background-color: rgba(125, 227, 255, 0.06);
+		color: var(--deep-teal-bright);
+
+		&:hover:not(:disabled) {
+			box-shadow: 0 0 0.8rem var(--glow-teal-soft);
+		}
+	}
+
+	&.primary {
+		background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
+		color: #05121a;
+	}
+}
+
+// 通用弹性占位 (布局里需要撑满剩余宽度的元素; 全局类, 可安全用于子组件根元素)
+.grow {
+	flex: 1;
+	min-width: 0;
+}
+
+// 通用旋转动画 (加载图标)
+.spin {
+	animation: forms-spin 1s linear infinite;
+}
+
+@keyframes forms-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+// 通用弹窗按钮 (BaseDialog 的操作区, 插槽内容不受 scoped 限制)
+.dialog-warn-icon {
+	color: var(--warning);
+	flex-shrink: 0;
+}
+
+.confirm-btn {
+	padding: 0.7rem 1.5rem;
+	border-radius: var(--radius-sm);
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-family: inherit;
+	font-size: 1.2rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s ease;
+
+	&.ghost {
+		border: 0.1rem solid var(--line-strong);
+		background-color: transparent;
+		color: var(--text-muted);
+
+		&:not(:disabled):hover {
+			color: var(--text-body);
+			background-color: rgba(255, 255, 255, 0.04);
+		}
+	}
+
+	&.danger-ghost {
+		border: 0.1rem solid var(--line-strong);
+		background-color: transparent;
+		color: var(--text-muted);
+
+		&:not(:disabled):hover {
+			color: var(--danger);
+			border-color: var(--danger);
+		}
+	}
+
+	&.danger {
+		border: none;
+		color: #fff;
+		background-image: linear-gradient(90deg, #fb2c36, #d91f28);
+
+		&:not(:disabled):hover {
+			box-shadow: 0 0 1.2rem rgba(251, 44, 54, 0.45);
+		}
+	}
+
+	&.primary {
+		border: none;
+		color: #05121a;
+		background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
+
+		&:not(:disabled):hover {
+			box-shadow: 0 0 1.4rem var(--glow-teal-soft);
+		}
+	}
+
+	&:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+}

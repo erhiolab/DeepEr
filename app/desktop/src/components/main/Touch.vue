@@ -6,6 +6,8 @@ import {useLive2DStore} from "../../services/store/live2d.ts"
 import type {TouchArea, TouchType} from "../../services/store/touch.ts"
 import Icon from "../common/Icon.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
+import PageHeader from "../common/PageHeader.vue"
+import FormField from "../common/FormField.vue"
 
 const I18N = computed(() => useLanguages().components.main.touch)
 
@@ -612,15 +614,12 @@ watch(() => L2D.currentModel, async m => {
 
 <template>
 	<section class="page-touch">
-		<header class="touch-head">
-			<div>
-				<h2 class="touch-title">
-					{{ I18N.title }}
-					<span v-if="L2D.currentModel" class="touch-model">{{ L2D.currentModel }}</span>
-				</h2>
-				<p class="touch-sub">{{ I18N.subtitle }}</p>
-			</div>
-		</header>
+		<PageHeader :subtitle="I18N.subtitle">
+			<template #title>
+				{{ I18N.title }}
+				<span v-if="L2D.currentModel" class="touch-model">{{ L2D.currentModel }}</span>
+			</template>
+		</PageHeader>
 		<div class="touch-body">
 			<div class="touch-left">
 				<div
@@ -704,23 +703,26 @@ watch(() => L2D.currentModel, async m => {
 					v-if="mode === 'new' || mode === 'editing' || mode === 'moving' || mode === 'resizing'"
 					class="touch-editor"
 				>
-					<div class="editor-label">{{ I18N.name }}</div>
-					<input v-model="editName" class="editor-input" :placeholder="I18N.namePlaceholder">
-					<div class="editor-label">{{ I18N.type }}</div>
-					<div class="editor-types">
-						<button
-							v-for="type in ['tap', 'swipe', 'frenzy'] as TouchType[]"
-							:key="type"
-							type="button"
-							class="type-pill"
-							:class="{active: editType === type}"
-							@click="editType = type"
-						>
-							{{ type === "tap" ? I18N.typeTap : type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy }}
-						</button>
-					</div>
-					<div class="editor-label">{{ I18N.prompt }}</div>
-					<input v-model="editPrompt" class="editor-input" :placeholder="I18N.promptPlaceholder">
+					<FormField :label="I18N.name">
+						<input v-model="editName" class="input" :placeholder="I18N.namePlaceholder">
+					</FormField>
+					<FormField :label="I18N.type">
+						<div class="editor-types">
+							<button
+								v-for="type in ['tap', 'swipe', 'frenzy'] as TouchType[]"
+								:key="type"
+								type="button"
+								class="type-pill"
+								:class="{active: editType === type}"
+								@click="editType = type"
+							>
+								{{ type === "tap" ? I18N.typeTap : type === "swipe" ? I18N.typeSwipe : I18N.typeFrenzy }}
+							</button>
+						</div>
+					</FormField>
+					<FormField :label="I18N.prompt">
+						<input v-model="editPrompt" class="input" :placeholder="I18N.promptPlaceholder">
+					</FormField>
 					<div class="editor-actions">
 						<button class="exc-btn" @click="cancelEdit">
 							<Icon name="close" :size="14"/>
@@ -756,7 +758,6 @@ watch(() => L2D.currentModel, async m => {
 	display: flex;
 	flex-direction: column;
 	gap: 1rem;
-	overflow: hidden;
 }
 
 .touch-body {
@@ -791,34 +792,14 @@ watch(() => L2D.currentModel, async m => {
 	background-color: rgba(255, 255, 255, 0.03);
 }
 
-.touch-head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	flex-shrink: 0;
-
-	.touch-title {
-		font-size: 1.8rem;
-		font-weight: 600;
-		color: var(--text-primary);
-		text-shadow: 0 0 1.8rem var(--glow-teal), 0 0 6rem var(--glow-teal-soft);
-	}
-
-	.touch-model {
-		padding: 0.15rem 0.7rem;
-		display: inline-block;
-		font-size: 1.2rem;
-		color: var(--deep-teal-bright);
-		background-color: rgba(125, 227, 255, 0.1);
-		border: 0.1rem solid color-mix(in srgb, var(--deep-teal) 45%, transparent);
-		border-radius: 0.5rem;
-	}
-
-	.touch-sub {
-		margin-top: 0.4rem;
-		font-size: 1.2rem;
-		color: var(--text-muted);
-	}
+.touch-model {
+	padding: 0.15rem 0.7rem;
+	display: inline-block;
+	font-size: 1.2rem;
+	color: var(--deep-teal-bright);
+	background-color: rgba(125, 227, 255, 0.1);
+	border: 0.1rem solid color-mix(in srgb, var(--deep-teal) 45%, transparent);
+	border-radius: 0.5rem;
 }
 
 .touch-canvas {
@@ -950,34 +931,6 @@ watch(() => L2D.currentModel, async m => {
 	border: 0.1rem solid var(--line-subtle);
 	border-radius: var(--radius-sm);
 	background-color: rgba(255, 255, 255, 0.04);
-}
-
-.editor-label {
-	font-size: 1.05rem;
-	color: var(--text-muted);
-}
-
-.editor-input {
-	padding: 0.5rem 0.7rem;
-	width: 100%;
-	box-sizing: border-box;
-	border-radius: var(--radius-sm);
-	border: 0.1rem solid var(--line-strong);
-	background-color: rgba(255, 255, 255, 0.04);
-	color: var(--text-primary);
-	font: inherit;
-	font-size: 1.15rem;
-	outline: none;
-	transition: border-color 0.2s ease, box-shadow 0.2s ease;
-
-	&::placeholder {
-		color: var(--text-faint);
-	}
-
-	&:focus {
-		border-color: var(--deep-teal-soft);
-		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
-	}
 }
 
 .editor-types {

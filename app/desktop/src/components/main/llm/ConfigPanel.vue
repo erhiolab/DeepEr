@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
-import useLanguages from "../../../services/i18n/useLanguages.ts"
+import {useLangGroups} from "../../../services/i18n/useLanguages.ts"
 import {logger} from "../../../services/logger"
 import {useUnsavedGuard} from "../../../services/store/unsaved.ts"
 import {useLLMStore} from "../../../services/store/llm.ts"
 import Icon from "../../common/Icon.vue"
+import SectionCard from "../../common/SectionCard.vue"
+import FormField from "../../common/FormField.vue"
 import {OPENAI_REASONING_EFFORTS} from "../../../services/llm/openairesponses"
 import type {LLMAdapter, LLMModelInfo} from "../../../services/llm/types"
 
-const I18N = computed(() => useLanguages().components.main.llm)
-
-const COMMON_I18N = computed(() => useLanguages().common.label)
+const {llm: I18N, label: COMMON_I18N} = useLangGroups({
+	llm: "components.main.llm",
+	label: "common.label",
+})
 
 const props = defineProps<{
 	adapter: LLMAdapter
@@ -265,11 +268,9 @@ const filteredModels = computed(() => {
 
 <template>
 	<div class="llm-panel">
-		<section class="llm-card">
-			<h3 class="llm-title">{{ I18N.serverTitle }}</h3>
+		<SectionCard :title="I18N.serverTitle">
 			<div class="llm-row">
-				<label class="field grow">
-					<span class="field-label">{{ COMMON_I18N.url }}</span>
+				<FormField :label="COMMON_I18N.url" class="grow">
 					<input
 						v-model="config[K.baseUrl]"
 						class="input"
@@ -277,11 +278,10 @@ const filteredModels = computed(() => {
 						spellcheck="false"
 						:placeholder="'https://api.example.com'"
 					>
-				</label>
+				</FormField>
 			</div>
 			<div class="llm-row">
-				<label class="field grow">
-					<span class="field-label">{{ I18N.apiKey }}</span>
+				<FormField :label="I18N.apiKey" class="grow">
 					<span class="key-row">
 						<input
 							v-model="config[K.apiKey]"
@@ -312,11 +312,10 @@ const filteredModels = computed(() => {
 					<span class="field-status" :class="keyConfigured ? 'set' : 'empty'">
 						{{ keyConfigured ? I18N.keySaved : I18N.keyNotSaved }}
 					</span>
-				</label>
+				</FormField>
 			</div>
 			<div class="llm-row">
-				<label class="field grow">
-					<span class="field-label">{{ COMMON_I18N.modelName }}</span>
+				<FormField :label="COMMON_I18N.modelName" class="grow">
 					<div class="model-box" ref="modelBox">
 						<input
 							:value="modelDisplay"
@@ -358,26 +357,25 @@ const filteredModels = computed(() => {
 							</li>
 						</ul>
 					</div>
-				</label>
+				</FormField>
 				<button class="btn test-btn" :disabled="testing" @click="testConnection">
 					<Icon v-if="testing" name="loading" class="spin" :size="14"/>
 					{{ testing ? I18N.testing : COMMON_I18N.test }}
 				</button>
 			</div>
 			<div v-if="isOpenAiResponses" class="llm-row">
-				<label class="field grow">
-					<span class="field-label">{{ I18N.reasoningEffort }}</span>
+				<FormField :label="I18N.reasoningEffort" class="grow">
 					<select v-model="config[K.reasoningEffort]" class="input select">
 						<option v-for="opt in reasoningOptions" :key="opt.value" :value="opt.value">
 							{{ opt.label }}
 						</option>
 					</select>
-				</label>
+				</FormField>
 			</div>
 			<p v-if="testResult" class="test-result" :class="{ok: testResult.ok, fail: !testResult.ok}">
 				{{ testResult.message }}
 			</p>
-		</section>
+		</SectionCard>
 		<div class="llm-savebar">
 			<button class="btn primary save-btn" :disabled="saving" @click="save">
 				<Icon v-if="saving" name="loading" class="spin" :size="14"/>
@@ -391,54 +389,18 @@ const filteredModels = computed(() => {
 
 <style scoped lang="less">
 .llm-panel {
-	flex: 1;
+	flex: none;
 	padding: 0.2rem 0.2rem 1rem;
-	min-height: 0;
-	overflow-y: auto;
 	display: flex;
 	flex-direction: column;
 	gap: 1.2rem;
 	box-sizing: border-box;
 }
 
-.llm-card {
-	padding: 1.1rem 1.2rem;
-	display: flex;
-	flex-direction: column;
-	gap: 0.9rem;
-	border: 0.1rem solid var(--line-subtle);
-	border-radius: var(--radius-sm);
-	background-color: rgba(255, 255, 255, 0.02);
-	box-sizing: border-box;
-}
-
-.llm-title {
-	margin: 0;
-	font-size: 1.3rem;
-	font-weight: 600;
-	color: var(--deep-teal-bright);
-	text-shadow: 0 0 1.2rem var(--glow-teal-soft);
-}
-
 .llm-row {
 	display: flex;
 	align-items: flex-end;
 	gap: 0.9rem;
-
-	.grow {
-		flex: 1;
-	}
-}
-
-.field {
-	display: flex;
-	flex-direction: column;
-	gap: 0.45rem;
-}
-
-.field-label {
-	font-size: 1.05rem;
-	color: var(--text-muted);
 }
 
 .key-row {
@@ -532,93 +494,6 @@ const filteredModels = computed(() => {
 	text-align: center;
 	font-size: 1rem;
 	color: var(--text-muted);
-}
-
-.input {
-	padding: 0.65rem 0.9rem;
-	width: 100%;
-	box-sizing: border-box;
-	border: 0.1rem solid var(--line-subtle);
-	border-radius: var(--radius-sm);
-	background-color: rgba(255, 255, 255, 0.04);
-	color: var(--text-primary);
-	font-size: 1.15rem;
-	font-family: inherit;
-	outline: none;
-	transition: all 0.2s ease;
-
-	&:focus {
-		border-color: var(--deep-teal-soft);
-		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
-	}
-
-	&::placeholder {
-		color: var(--text-muted);
-		opacity: 0.6;
-	}
-}
-
-.select {
-	cursor: pointer;
-
-	option {
-		color: var(--text-primary);
-		background-color: var(--bg-deep);
-	}
-}
-
-.btn {
-	padding: 0.7rem 1.2rem;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-	border: none;
-	border-radius: var(--radius-sm);
-	background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
-	color: #05121a;
-	font-size: 1.15rem;
-	font-weight: 600;
-	font-family: inherit;
-	white-space: nowrap;
-	cursor: pointer;
-	transition: all 0.2s ease;
-	flex-shrink: 0;
-
-	&:hover:not(:disabled) {
-		box-shadow: 0 0 1.4rem var(--glow-teal-soft);
-	}
-
-	&:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	&.ghost {
-		border: 0.1rem solid var(--line-strong);
-		background-image: none;
-		background-color: rgba(125, 227, 255, 0.06);
-		color: var(--deep-teal-bright);
-
-		&:hover:not(:disabled) {
-			box-shadow: 0 0 0.8rem var(--glow-teal-soft);
-		}
-	}
-
-	&.primary {
-		background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
-		color: #05121a;
-	}
-}
-
-.spin {
-	animation: llm-spin 1s linear infinite;
-}
-
-@keyframes llm-spin {
-	to {
-		transform: rotate(360deg);
-	}
 }
 
 .icon-btn {

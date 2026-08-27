@@ -5,6 +5,7 @@ import {logger} from "../../services/logger"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import Icon from "../common/Icon.vue"
+import PageHeader from "../common/PageHeader.vue"
 import type {IconName} from "../../services/icon"
 
 const I18N = computed(() => useLanguages().components.main.exception)
@@ -111,10 +112,7 @@ const ACTIONS: ExceptionAction[] = [
 
 <template>
 	<section key="exception" class="page-exception">
-		<header class="exc-head">
-			<h2 class="exc-title">{{ I18N.title }}</h2>
-			<p class="exc-sub">{{ I18N.subtitle }}</p>
-		</header>
+		<PageHeader :title="I18N.title" :subtitle="I18N.subtitle"/>
 		<ul class="exc-list">
 			<li v-for="item in ACTIONS" :key="item.name" class="exc-item">
 				<span class="exc-icon"><Icon :name="item.icon" :size="20"/></span>
@@ -143,26 +141,6 @@ const ACTIONS: ExceptionAction[] = [
 	flex-direction: column;
 	align-items: stretch;
 	gap: 1.6rem;
-
-	.exc-head {
-		width: 100%;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.4rem;
-	}
-
-	.exc-title {
-		font-size: 1.8rem;
-		font-weight: 600;
-		color: var(--text-primary);
-		text-shadow: 0 0 1.8rem var(--glow-teal), 0 0 6rem var(--glow-teal-soft);
-	}
-
-	.exc-sub {
-		font-size: 1.2rem;
-		color: var(--text-muted);
-	}
 }
 
 .exc-list {

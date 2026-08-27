@@ -4,7 +4,7 @@
 import {ref} from "vue"
 import {defineStore} from "pinia"
 import {logger} from "../logger"
-import {getActiveAdapter, getActiveAdapterInstance} from "../llm/adapters"
+import {getActiveAdapterInstance} from "../llm/adapters"
 import {backendGenerateStream} from "../llm/http"
 import type {LLMGenerateRequest, LLMGenerateResult, LLMTestResult} from "../llm/types"
 
@@ -64,15 +64,6 @@ export const useLLMStore = defineStore("llm", () => {
 	}
 
 	/**
-	 * 适配器 id → 后端流式命令名 (与各平台命令前缀对应)
-	 */
-	const STREAM_PLATFORM: Record<string, string> = {
-		"openai-responses": "llm_openai_generate",
-		"anthropic-messages": "llm_anthropic_generate",
-		"google-genai": "llm_google_generate",
-	}
-
-	/**
 	 * 流式生成 (对话等需要逐段展示的场景). 未启用适配器时返回失败结果.
 	 *
 	 * @param request 统一生成请求
@@ -81,17 +72,12 @@ export const useLLMStore = defineStore("llm", () => {
 	const generateStream = async (request: LLMGenerateRequest, onDelta?: (delta: string) => void): Promise<LLMGenerateResult> => {
 		generating.value = true
 		try {
-			const ADAPTER_ID = await getActiveAdapter()
-			const PLATFORM = ADAPTER_ID ? STREAM_PLATFORM[ADAPTER_ID] : undefined
-			if (!ADAPTER_ID || !PLATFORM) {
+			const ADAPTER = await getActiveAdapterInstance()
+			if (!ADAPTER) {
 				lastResult.value = {ok: false, error: "LLM 未启用"}
 				return lastResult.value
 			}
-			lastResult.value = await backendGenerateStream(
-				PLATFORM as "llm_openai_generate" | "llm_anthropic_generate" | "llm_google_generate",
-				request,
-				onDelta,
-			)
+			lastResult.value = await backendGenerateStream(ADAPTER.platform, request, onDelta)
 			return lastResult.value
 		} catch (error) {
 			await logger.error("LLM store generateStream 异常", error)

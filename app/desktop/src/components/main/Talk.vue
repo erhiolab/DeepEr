@@ -1,22 +1,31 @@
 <script setup lang="ts">
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue"
 import Icon from "../common/Icon.vue"
-import {assetUrl} from "../../services/asset.ts"
+import {assetUrlSafe} from "../../services/asset.ts"
+import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import {useConversationStore} from "../../services/store/conversation.ts"
+import {getPersona, getSelectedPersonaId, personaAvatarUrl, type Persona} from "../../services/persona"
 import StreamingMessage from "../StreamingMessage.vue"
 import fallbackAvatar from "../../assets/images/logo.png"
+
+const I18N = computed(() => useLanguages().components.main.talk)
 
 const L2D = useLive2DStore()
 const CONV = useConversationStore()
 
+// 当前启用的人设 (有选中人设时, 对话对象显示为人设)
+const persona = ref<Persona | null>(null)
+
+// 加载当前启用的人设
+const loadPersona = async (): Promise<void> => {
+	const ID = await getSelectedPersonaId()
+	persona.value = ID === null ? null : await getPersona(ID)
+}
+
 // 组装模型展示图 URL, 并做路径穿越校验
 const modelImageUrl = (modelName: string, image: string): string | null => {
-	const CLEAN = image.replace(/\\/g, "/").replace(/^\/+/, "")
-	if (!CLEAN || CLEAN.startsWith("/")) return null
-	const SEGMENTS = CLEAN.split("/")
-	if (SEGMENTS.some(seg => seg === ".." || seg === "." || !seg)) return null
-	return `${assetUrl(`live2d/${modelName}`)}/${CLEAN}`
+	return assetUrlSafe(`live2d/${modelName}/${image}`)
 }
 
 // 确保已加载当前模型的配置 (名称/封面图)
@@ -26,15 +35,20 @@ const ensureConfig = async (): Promise<void> => {
 	if (L2D.configModelName !== MODEL) await L2D.loadConfig(MODEL)
 }
 
-// 对方显示名: 取模型配置的显示名, 空串时回落模型目录名/id
+// 对方显示名: 优先取人设名, 否则取模型配置的显示名, 空串时回落模型目录名/id
 const peerName = computed<string>(() => {
+	if (persona.value?.name) return persona.value.name
 	const MODEL = L2D.currentModel
 	if (!MODEL) return "DeepEr"
 	return (L2D.config.name || MODEL)
 })
 
-// 对方头像: 当前模型的封面图, 无图时回落占位头像
+// 对方头像: 优先取人设头像, 否则取当前模型封面图, 无图时回落占位头像
 const peerAvatar = computed<string>(() => {
+	if (persona.value) {
+		const URL = personaAvatarUrl(persona.value)
+		if (URL) return URL
+	}
 	const MODEL = L2D.currentModel
 	if (MODEL && L2D.config.image) {
 		const URL = modelImageUrl(MODEL, L2D.config.image)
@@ -94,6 +108,7 @@ onMounted(async () => {
 	await CONV.loadHistory()
 	scrollToBottom()
 	await ensureConfig()
+	await loadPersona()
 })
 
 onUnmounted(() => {
@@ -117,11 +132,11 @@ watch(() => L2D.currentModel, (model) => {
 				<div class="peer-meta">
 					<h2 class="peer-name">{{ peerName }}</h2>
 					<p class="peer-state" :class="{typing: CONV.isTyping}">
-						{{CONV.isTyping ? "对方正在输入..." : "在线"}}
+						{{ CONV.isTyping ? I18N.typing : I18N.online }}
 					</p>
 				</div>
 			</div>
-			<button class="more-btn" title="更多">
+			<button class="more-btn" :title="I18N.more">
 				<Icon name="add" :size="18"/>
 			</button>
 		</header>
@@ -143,7 +158,7 @@ watch(() => L2D.currentModel, (model) => {
 		</div>
 		<footer class="talk-footer">
 			<form class="input-bar" @submit.prevent="sendMessage">
-				<input v-model="inputText" type="text" placeholder="输入消息…" maxlength="500"/>
+				<input v-model="inputText" type="text" :placeholder="I18N.inputPlaceholder" maxlength="500"/>
 				<button class="send-btn" type="submit" :disabled="!inputText.trim()">
 					<Icon name="send" :size="16"/>
 				</button>

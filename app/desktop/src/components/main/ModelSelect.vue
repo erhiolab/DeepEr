@@ -4,7 +4,7 @@ import {invoke} from "@tauri-apps/api/core"
 import {open} from "@tauri-apps/plugin-dialog"
 import {logger} from "../../services/logger"
 import {config} from "../../services/config"
-import {assetUrl} from "../../services/asset.ts"
+import {assetUrlSafe} from "../../services/asset.ts"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {createResourceDownload, formatBytes} from "../../services/resourceDownload"
 import {createResourceImport} from "../../services/resourceImport"
@@ -13,6 +13,9 @@ import Icon from "../common/Icon.vue"
 import ProgressBar from "../common/ProgressBar.vue"
 import ModelGate from "./ModelGate.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
+import PageHeader from "../common/PageHeader.vue"
+import Live2DModelCard from "./Live2DModelCard.vue"
+import EmptyState from "../common/EmptyState.vue"
 
 const I18N = computed(() => useLanguages().components.main.modelSelect)
 
@@ -117,12 +120,7 @@ const markIconBroken = (id: string): void => {
 // 组装自定义模型图标的 asset 协议 URL
 // 校验: 图片必须是模型目录内相对路径, 禁止 `..` 或绝对路径穿越
 const iconUrl = (modelName: string, image: string): string | null => {
-	const CLEAN = image.replace(/^\/+/, "").replace(/\\/g, "/")
-	if (!CLEAN || CLEAN.startsWith("/")) return null
-	const SEGMENTS = CLEAN.split("/")
-	// 禁止 `..` 与空段 (路径穿越 / 多余分隔)
-	if (SEGMENTS.some(seg => seg === ".." || seg === "." || !seg)) return null
-	return `${assetUrl(`live2d/${modelName}`)}/${CLEAN}`
+	return assetUrlSafe(`live2d/${modelName}/${image}`)
 }
 
 // 拉取官方模型列表
@@ -433,114 +431,69 @@ onBeforeUnmount(() => {
 </script>
 <template>
 	<section key="model-select" class="page-model" @click="selected = null">
+		<PageHeader :title="I18N.title" :subtitle="I18N.subtitle">
+			<button
+				class="import-btn"
+				:disabled="IMPORT.state.step === 'importing'"
+				@click.stop="handleImport"
+			>
+				<icon name="import" :size="15"/>
+				<span>{{ I18N.importModel }}</span>
+			</button>
+		</PageHeader>
 		<div class="group">
 			<div class="group-title">
 				{{ I18N.installedTitle }}
-				<button
-					class="import-btn"
-					:disabled="IMPORT.state.step === 'importing'"
-					@click.stop="handleImport"
-				>
-					<icon name="import" :size="15"/>
-					<span>{{ I18N.importModel }}</span>
-				</button>
 			</div>
 			<div class="cards">
 				<template v-if="allInstalledModels.length">
-					<button
+					<Live2DModelCard
 						v-for="model in allInstalledModels"
 						:key="model.id"
-						class="model-card"
-						:class="{selected: selected === model.id}"
-						@click.stop="selected = model.id"
-						@dblclick="handleDblClick"
-					>
-						<span class="model-thumb-wrap">
-							<img
-								v-if="model.coverUrl && !isCoverBroken(model.id)"
-								:src="model.coverUrl"
-								class="model-thumb"
-								alt=""
-								loading="lazy"
-								@error="markCoverBroken(model.id)"
-							/>
-							<img
-								v-else-if="model.image && !isIconBroken(model.id) && iconUrl(model.id, model.image)"
-								:src="iconUrl(model.id, model.image)!"
-								class="model-thumb"
-								alt=""
-								loading="lazy"
-								@error="markIconBroken(model.id)"
-							/>
-							<span v-else class="model-thumb model-placeholder">
-								<icon name="cube" :size="42"/>
-							</span>
-							<span class="check-badge" :class="{on: applied === model.id}">
-								<icon name="check"/>
-							</span>
-						</span>
-						<span class="model-name">{{ model.name }}</span>
-						<span class="model-meta">
-							<span v-if="model.official" class="status-badge installed">
-								{{ I18N.officialTag }}
-							</span>
-							<span v-if="sizeOf(model.id) != null" class="model-size">
-								{{ formatBytes(sizeOf(model.id)!) }}
-							</span>
-						</span>
-					</button>
+						:model="model"
+						:selected="selected === model.id"
+						:applied="applied === model.id"
+						:cover-url="model.coverUrl"
+						:icon-url="model.image ? iconUrl(model.id, model.image) : null"
+						:cover-broken="isCoverBroken(model.id)"
+						:icon-broken="isIconBroken(model.id)"
+						:status-text="model.official ? I18N.officialTag : null"
+						status-tone="installed"
+						:size-text="sizeOf(model.id) != null ? formatBytes(sizeOf(model.id)!) : null"
+						@select="selected = model.id"
+						@open="handleDblClick"
+						@cover-error="markCoverBroken(model.id)"
+						@icon-error="markIconBroken(model.id)"
+					/>
 				</template>
-				<div v-else class="empty-state">{{ I18N.installedEmpty }}</div>
+				<EmptyState v-else icon="cube" :title="I18N.installedEmpty"/>
 			</div>
 		</div>
 		<div class="group">
 			<div class="group-title">{{ I18N.officialTitle }}</div>
 			<div class="cards">
 				<template v-if="displayOfficialModels.length">
-					<button
+					<Live2DModelCard
 						v-for="model in displayOfficialModels"
 						:key="model.id"
-						class="model-card"
-						:class="{selected: selected === model.id}"
-						@click.stop="selected = model.id"
-						@dblclick="handleDblClick"
-					>
-						<span class="model-thumb-wrap">
-							<img
-								v-if="model.coverUrl && !isCoverBroken(model.id)"
-								:src="model.coverUrl"
-								class="model-thumb"
-								alt=""
-								loading="lazy"
-								@error="markCoverBroken(model.id)"
-							/>
-							<span v-else class="model-thumb model-placeholder">
-								<icon name="cube" :size="42"/>
-							</span>
-							<span class="check-badge" :class="{on: applied === model.id}">
-								<icon name="check"/>
-							</span>
-						</span>
-						<span class="model-name">{{ model.name }}</span>
-						<span class="model-meta">
-							<span class="status-badge" :class="isInstalled(model.id) ? 'installed' : 'missing'">
-								{{ isInstalled(model.id) ? I18N.installed : I18N.notInstalled }}
-							</span>
-							<span v-if="sizeOf(model.id) != null" class="model-size">
-								{{ formatBytes(sizeOf(model.id)!) }}
-							</span>
-						</span>
-					</button>
+						:model="model"
+						:selected="selected === model.id"
+						:applied="applied === model.id"
+						:cover-url="model.coverUrl"
+						:cover-broken="isCoverBroken(model.id)"
+						:status-text="isInstalled(model.id) ? I18N.installed : I18N.notInstalled"
+						:status-tone="isInstalled(model.id) ? 'installed' : 'missing'"
+						:size-text="sizeOf(model.id) != null ? formatBytes(sizeOf(model.id)!) : null"
+						@select="selected = model.id"
+						@open="handleDblClick"
+						@cover-error="markCoverBroken(model.id)"
+					/>
 				</template>
-				<div v-else class="empty-state">
-					<template v-if="officialLoading">
-						<div class="card-loading">
-							<icon name="loading" :size="22" class="spin"/>
-							<span>{{ I18N.officialLoading }}</span>
-						</div>
-					</template>
-					<span v-else>{{ I18N.officialEmpty }}</span>
-				</div>
+				<EmptyState
+					v-else
+					:icon="officialLoading ? 'loading' : 'cube'"
+					:title="officialLoading ? I18N.officialLoading : I18N.officialEmpty"
+				/>
 			</div>
 		</div>
 		<footer
@@ -637,6 +590,7 @@ onBeforeUnmount(() => {
 	flex-direction: column;
 	gap: 1rem;
 	overflow-y: auto;
+	padding-top: 1.8rem;
 }
 
 .group {
@@ -653,182 +607,39 @@ onBeforeUnmount(() => {
 		font-size: 1.3rem;
 		font-weight: 600;
 		letter-spacing: 0.03rem;
-
-		.import-btn {
-			padding: 0.35rem 0.9rem;
-			display: inline-flex;
-			align-items: center;
-			gap: 0.4rem;
-			border: 0.1rem solid var(--line-strong);
-			border-radius: var(--radius-sm);
-			background-color: transparent;
-			color: var(--text-body);
-			font-family: inherit;
-			font-size: 1.15rem;
-			cursor: pointer;
-			transition: all 0.2s ease;
-
-			&:hover:not(:disabled) {
-				background-color: rgba(125, 227, 255, 0.1);
-				color: var(--deep-teal-bright);
-			}
-
-			&:disabled {
-				cursor: default;
-				opacity: 0.5;
-			}
-		}
 	}
 
 	.cards {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
 		gap: 1.4rem;
+	}
+}
 
-		.model-card {
-			padding: 0.8rem 0.8rem 1.0rem;
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-			gap: 0.7rem;
-			border: 0.2rem solid var(--line-subtle);
-			border-radius: var(--radius-md);
-			background-color: rgba(255, 255, 255, 0.04);
-			cursor: pointer;
-			font-family: inherit;
-			transition: all 0.2s ease;
+.import-btn {
+	padding: 0.6rem 1.2rem;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	border: 0.1rem solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	background-color: rgba(125, 227, 255, 0.06);
+	color: var(--deep-teal-bright);
+	font-family: inherit;
+	font-size: 1.2rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s ease;
 
-			&:hover {
-				background-color: rgba(125, 227, 255, 0.08);
-				border-color: var(--deep-teal-soft);
-				transform: translateY(-0.2rem);
-			}
+	&:hover:not(:disabled) {
+		background-color: rgba(125, 227, 255, 0.12);
+		color: var(--deep-teal-bright);
+		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
+	}
 
-			&.selected {
-				border-color: var(--deep-teal);
-				background-color: rgba(125, 227, 255, 0.1);
-				box-shadow: 0 0 1.6rem var(--glow-teal-soft);
-			}
-
-			.model-thumb-wrap {
-				width: 16rem;
-				height: 16rem;
-				display: grid;
-				grid-template-areas: "thumb";
-				place-items: center;
-				overflow: hidden;
-				border-radius: var(--radius-sm);
-				background-color: rgba(255, 255, 255, 0.03);
-
-				.model-thumb {
-					grid-area: thumb;
-					width: 100%;
-					height: 100%;
-					object-fit: cover;
-				}
-
-				.model-placeholder {
-					display: flex;
-					align-items: center;
-					justify-content: center;
-					color: var(--text-faint);
-				}
-
-				.check-badge {
-					margin: 0.5rem;
-					width: 1.8rem;
-					height: 1.8rem;
-					grid-area: thumb;
-					align-self: start;
-					justify-self: end;
-					border-radius: 50%;
-					background-color: var(--bg-deep);
-					border: 0.15rem solid var(--line-strong);
-					color: var(--text-muted);
-					display: flex;
-					align-items: center;
-					justify-content: center;
-					opacity: 0.35;
-					transition: all 0.2s ease;
-
-					:deep(svg) {
-						width: 1.1rem;
-						height: 1.1rem;
-					}
-
-					&.on {
-						opacity: 1;
-						background-color: var(--deep-teal);
-						border-color: var(--deep-teal);
-						color: #05121a;
-						transform: scale(1);
-					}
-				}
-			}
-
-			.model-name {
-				font-size: 1.3rem;
-				font-weight: 500;
-				color: var(--text-primary);
-			}
-
-			.model-meta {
-				display: flex;
-				align-items: center;
-				gap: 0.6rem;
-
-				.status-badge {
-					padding: 0.15rem 0.6rem;
-					font-size: 1rem;
-					border-radius: 99.9rem;
-					border: 0.1rem solid currentColor;
-
-					&.installed {
-						color: var(--deep-teal-soft);
-					}
-
-					&.missing {
-						color: var(--text-faint);
-					}
-				}
-
-				.model-size {
-					font-size: 1.1rem;
-					color: var(--text-faint);
-					font-variant-numeric: tabular-nums;
-				}
-			}
-		}
-
-		.empty-state {
-			flex: 1;
-			min-height: 14rem;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			border: 0.1rem dashed var(--line-subtle);
-			border-radius: var(--radius-md);
-			color: var(--text-faint);
-			font-size: 1.25rem;
-		}
-
-		.card-loading {
-			display: inline-flex;
-			align-items: center;
-			gap: 0.7rem;
-			color: var(--text-faint);
-			font-size: 1.15rem;
-		}
-
-		.spin {
-			animation: card-spin 1s linear infinite;
-		}
-
-		@keyframes card-spin {
-			to {
-				transform: rotate(360deg);
-			}
-		}
+	&:disabled {
+		cursor: default;
+		opacity: 0.5;
 	}
 }
 

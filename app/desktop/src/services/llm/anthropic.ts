@@ -1,11 +1,15 @@
 /**
  * Anthropic Messages API 适配器
  */
-import {config} from "../config"
-import {logger} from "../logger"
-import {decryptSecret, encryptSecret} from "../secret"
 import type {LLMAdapter, LLMModelInfo, LLMGenerateRequest, LLMGenerateResult, LLMTestResult} from "./types"
 import {backendGenerate, backendTestConnection} from "./http"
+import {
+	clearPlatformApiKey,
+	hasPlatformApiKey,
+	loadPlatformBase,
+	savePlatformBase,
+	validatePlatformConfig,
+} from "./platform"
 
 /**
  * 配置键前缀
@@ -44,66 +48,36 @@ export const ANTHROPIC_MODELS: LLMModelInfo[] = [
 ]
 
 /**
- * 归一化服务地址
- */
-export const normalizeBaseUrl = (raw: string): string => {
-	const TRIMMED = raw.trim()
-	if (!TRIMMED) return defaultConfig().baseUrl
-	if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(TRIMMED)) return TRIMMED
-	return `https://${TRIMMED}`
-}
-
-/**
  * 读取整份配置
  */
 export const loadConfig = async (): Promise<AnthropicMessagesConfig> => {
-	const DEFAULTS = defaultConfig()
-	const [baseUrl, apiKey, model] = await Promise.all([
-		config.getRaw(`${PREFIX}_base_url`),
-		config.getRaw(`${PREFIX}_api_key`),
-		config.getRaw(`${PREFIX}_model`),
-	])
-	return {
-		baseUrl: baseUrl ?? DEFAULTS.baseUrl,
-		apiKey: await decryptSecret(apiKey ?? ""),
-		model: model || DEFAULTS.model,
-	}
+	const BASE = await loadPlatformBase(PREFIX, defaultConfig())
+	return {baseUrl: BASE.baseUrl, apiKey: BASE.apiKey, model: BASE.model}
 }
 
 /**
  * 保存整份配置
  */
 export const saveConfig = async (cfg: AnthropicMessagesConfig): Promise<void> => {
-	const API_KEY_TO_STORE = cfg.apiKey ? await encryptSecret(cfg.apiKey) : (await config.getRaw(`${PREFIX}_api_key`)) ?? ""
-	await Promise.all([
-		config.setRaw(`${PREFIX}_base_url`, normalizeBaseUrl(cfg.baseUrl)),
-		config.setRaw(`${PREFIX}_api_key`, API_KEY_TO_STORE),
-		config.setRaw(`${PREFIX}_model`, cfg.model),
-	])
-	await logger.info("保存 Anthropic Messages 配置")
+	await savePlatformBase(PREFIX, cfg, defaultConfig())
 }
 
 /**
  * 是否已保存过 API Key
  */
-export const hasApiKey = async (): Promise<boolean> => {
-	const SAVED = await config.getRaw(`${PREFIX}_api_key`)
-	return !!SAVED && SAVED !== ""
-}
+export const hasApiKey = (): Promise<boolean> => hasPlatformApiKey(PREFIX)
 
 /**
  * 清除已保存的 API Key
  */
-export const clearApiKey = async (): Promise<void> => {
-	await config.setRaw(`${PREFIX}_api_key`, "")
-	await logger.info("清除 Anthropic Messages 的 API Key")
-}
+export const clearApiKey = (): Promise<void> => clearPlatformApiKey(PREFIX)
 
 /**
  * Anthropic Messages 适配器实现
  */
 export const anthropicMessagesAdapter: LLMAdapter<AnthropicMessagesConfig> = {
 	id: "anthropic-messages",
+	platform: "anthropic",
 	label: "Anthropic Messages",
 	description: "Anthropic 官方 Messages API (Claude 系列 / 兼容网关)",
 	async loadConfig() {
@@ -114,9 +88,9 @@ export const anthropicMessagesAdapter: LLMAdapter<AnthropicMessagesConfig> = {
 	},
 	async testConnection(): Promise<LLMTestResult> {
 		const CFG = await this.loadConfig()
-		if (!CFG.apiKey.trim()) return {ok: false, error: "未填写 API Key"}
-		if (!CFG.model.trim()) return {ok: false, error: "未填写模型名"}
-		return await backendTestConnection("llm_anthropic_test_connection")
+		const ERROR = validatePlatformConfig(CFG)
+		if (ERROR) return {ok: false, error: ERROR}
+		return await backendTestConnection(this.platform)
 	},
 	async listModels(): Promise<LLMModelInfo[]> {
 		return ANTHROPIC_MODELS.map(m => ({...m}))
@@ -129,8 +103,8 @@ export const anthropicMessagesAdapter: LLMAdapter<AnthropicMessagesConfig> = {
 	},
 	async generate(request: LLMGenerateRequest): Promise<LLMGenerateResult> {
 		const CFG = await this.loadConfig()
-		if (!CFG.apiKey.trim()) return {ok: false, error: "未填写 API Key"}
-		if (!CFG.model.trim()) return {ok: false, error: "未填写模型名"}
-		return await backendGenerate("llm_anthropic_generate", request)
+		const ERROR = validatePlatformConfig(CFG)
+		if (ERROR) return {ok: false, error: ERROR}
+		return await backendGenerate(this.platform, request)
 	},
 }
