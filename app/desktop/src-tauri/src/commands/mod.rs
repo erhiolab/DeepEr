@@ -8,6 +8,7 @@
 //! - [`language`] 系统语言
 //! - [`llm`] LLM 模型(适配器模式, 协议逻辑在后端)
 //! - [`live2d`] Live2D 在线列表
+//! - [`persona`] 人设 (角色卡) 管理
 //! - [`resource`] 资源 (下载 / 检查 / 列表 / 删除 / 导入)
 //! - [`tts`] 文本转语音(适配器模式, 协议逻辑在后端)
 //! - [`devtools`] 开发者工具 (DevTools) 运行开关命令
@@ -20,6 +21,7 @@ pub mod language;
 pub mod live2d;
 pub mod llm;
 pub mod log;
+pub mod persona;
 pub mod resource;
 pub mod task_manager;
 pub mod tts;

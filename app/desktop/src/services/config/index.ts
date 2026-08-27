@@ -6,6 +6,7 @@ export type ConfigKey =
 	"llm_api_base" | "llm_api_key" | "llm_model" |
 	"llm_adapter" |
 	"tts_adapter" |
+	"selected_persona_id" |
 	"live2d_model" |
 	"pet_window_x" | "pet_window_y" | "pet_width" | "pet_height"
 
