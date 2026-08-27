@@ -19,6 +19,7 @@ import LanguageSelect from "../components/main/LanguageSelect.vue"
 import Exception from "../components/main/Exception.vue"
 import LLMAdapter from "../components/main/LLMAdapter.vue"
 import TTSAdapter from "../components/main/TTSAdapter.vue"
+import CharacterDesign from "../components/main/CharacterDesign.vue"
 import ToolList from "../components/main/ToolList.vue"
 
 const I18N = computed(() => useLanguages().views.main)
@@ -31,7 +32,7 @@ const ROUTER = useRouter()
 type NavKey =
 	"home" | "talk" |
 	"model" | "touch" |
-	"llm" | "tts" | "tool" |
+	"llm" | "tts" | "characterDesign" | "tool" |
 	"language" | "exception" | "about"
 
 // 侧边导航项
@@ -67,6 +68,7 @@ const NAV_GROUPS: NavGroup[] = [
 		items: [
 			{key: "llm", icon: "robot"},
 			{key: "tts", icon: "volume"},
+			{key: "characterDesign", icon: "book-user"},
 			{key: "tool", icon: "volume"},
 		],
 	},
@@ -191,6 +193,7 @@ const toggleMaximize = () => {
 
 					<LLMAdapter v-else-if="activeNav === 'llm'"/>
 					<TTSAdapter v-else-if="activeNav === 'tts'"/>
+					<CharacterDesign v-else-if="activeNav === 'characterDesign'"/>
 					<ToolList v-else-if="activeNav === 'tool'"/>
 
 					<LanguageSelect v-else-if="activeNav === 'language'"/>

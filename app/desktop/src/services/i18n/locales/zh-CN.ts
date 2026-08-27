@@ -19,6 +19,7 @@ export default {
 			touch: "触摸",
 			action: "动作",
 			tts: "TTS",
+			characterDesign: "人设",
 			tool: "工具",
 			exception: "异常",
 			about: "关于",

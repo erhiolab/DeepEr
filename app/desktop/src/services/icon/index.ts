@@ -280,6 +280,14 @@ export const icon = {
 			"M17 12h3",
 			"M17 18h3"
 		]
+	},
+	// 书籍用户(Book User)
+	"book-user": {
+		stroke: [
+			"M15 13a3 3 0 1 0-6 0",
+			"M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20",
+			"M12 8m-2 0a2 2 0 1 0 4 0 2 2 0 1 0-4 0"
+		]
 	}
 } satisfies Record<string, IconData>
 

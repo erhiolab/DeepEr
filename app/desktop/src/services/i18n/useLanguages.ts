@@ -370,6 +370,7 @@ export default () => {
 				touch: t("common.label.touch"),
 				action: t("common.label.action"),
 				tts: t("common.label.tts"),
+				characterDesign: t("common.label.characterDesign"),
 				tool: t("common.label.tool"),
 				exception: t("common.label.exception"),
 				about: t("common.label.about"),
