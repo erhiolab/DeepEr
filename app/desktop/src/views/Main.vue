@@ -292,6 +292,7 @@ const toggleMaximize = () => {
 	display: flex;
 	flex-direction: column;
 	gap: 0.4rem;
+	overflow: hidden auto;
 
 	.nav-group-divider {
 		display: flex;

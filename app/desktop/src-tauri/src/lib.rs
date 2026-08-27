@@ -83,6 +83,13 @@ pub fn run() {
             commands::live2d::fetch_live2d_list,
             commands::context::context_insert,
             commands::context::context_list,
+            commands::persona::persona_list,
+            commands::persona::persona_get,
+            commands::persona::persona_create,
+            commands::persona::persona_update,
+            commands::persona::persona_delete,
+            commands::persona::persona_select,
+            commands::persona::persona_import_file,
 
             commands::llm::openai_responses::llm_openai_generate,
             commands::llm::openai_responses::llm_openai_test_connection,
