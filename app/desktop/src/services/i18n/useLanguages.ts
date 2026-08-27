@@ -1,24 +1,48 @@
+import {computed, shallowRef, type ComputedRef} from "vue"
 import {i18n} from "./index"
 
-export default () => {
+/**
+ * 语言快照 (由 useLanguages 返回, 按 locale 记忆化)
+ * 每个 locale 只构建一次, 组件重复调用不重建对象
+ */
+export type LanguageSnapshot = ReturnType<typeof buildSnapshot>
+
+const buildSnapshot = () => {
 	const t = i18n.global.t
 	return {
-		common: {
-			label: {
-				add: t("common.label.add"),
-				save: t("common.label.save"),
-				cancel: t("common.label.cancel"),
-				delete: t("common.label.delete"),
-				download: t("common.label.download"),
-				refresh: t("common.label.refresh"),
-				apply: t("common.label.apply"),
-				redraw: t("common.label.redraw"),
-				browse: t("common.label.browse"),
-				url: t("common.label.url"),
-				test: t("common.label.test"),
-				modelName: t("common.label.modelName"),
-				topK: t("common.label.topK"),
-				topP: t("common.label.topP"),
+			common: {
+				label: {
+					add: t("common.label.add"),
+					save: t("common.label.save"),
+					cancel: t("common.label.cancel"),
+					delete: t("common.label.delete"),
+					download: t("common.label.download"),
+					refresh: t("common.label.refresh"),
+					apply: t("common.label.apply"),
+					redraw: t("common.label.redraw"),
+					browse: t("common.label.browse"),
+					url: t("common.label.url"),
+					test: t("common.label.test"),
+					back: t("common.label.back"),
+					open: t("common.label.open"),
+					close: t("common.label.close"),
+					show: t("common.label.show"),
+					hide: t("common.label.hide"),
+					loading: t("common.label.loading"),
+					testing: t("common.label.testing"),
+					testOk: t("common.label.testOk"),
+					testFail: t("common.label.testFail"),
+					saving: t("common.label.saving"),
+					saved: t("common.label.saved"),
+					saveFailed: t("common.label.saveFailed"),
+					importing: t("common.label.importing"),
+					importDone: t("common.label.importDone"),
+					importFailed: t("common.label.importFailed"),
+					saveAndLeave: t("common.label.saveAndLeave"),
+					discardLeave: t("common.label.discardLeave"),
+					modelName: t("common.label.modelName"),
+					topK: t("common.label.topK"),
+					topP: t("common.label.topP"),
 				temperature: t("common.label.temperature"),
 				batchSize: t("common.label.batchSize"),
 				textSplitMethod: t("common.label.textSplitMethod"),
@@ -136,9 +160,9 @@ export default () => {
 					clearKey: t("components.main.llm.clearKey"),
 					showKey: t("components.main.llm.showKey"),
 					hideKey: t("components.main.llm.hideKey"),
-					testing: t("components.main.llm.testing"),
-					testOk: t("components.main.llm.testOk"),
-					testFail: t("components.main.llm.testFail"),
+					testing: t("common.label.testing"),
+					testOk: t("common.label.testOk"),
+					testFail: t("common.label.testFail"),
 					refreshModels: t("components.main.llm.refreshModels"),
 					modelsLoading: t("components.main.llm.modelsLoading"),
 					modelsEmpty: t("components.main.llm.modelsEmpty"),
@@ -152,18 +176,20 @@ export default () => {
 					unenabledHint: t("components.main.llm.unenabledHint"),
 					unsavedTitle: t("common.unsaved.title"),
 					unsavedMessage: t("components.main.llm.unsavedMessage"),
-					saveAndLeave: t("components.main.llm.saveAndLeave"),
-					discardLeave: t("components.main.llm.discardLeave"),
+					saveAndLeave: t("common.label.saveAndLeave"),
+					discardLeave: t("common.label.discardLeave"),
 				},
 				modelSelect: {
+					title: t("components.main.modelSelect.title"),
+					subtitle: t("components.main.modelSelect.subtitle"),
 					officialTitle: t("components.main.modelSelect.officialTitle"),
 					installedTitle: t("components.main.modelSelect.installedTitle"),
 					officialTag: t("components.main.modelSelect.officialTag"),
 					importModel: t("components.main.modelSelect.importModel"),
 					selectFolder: t("components.main.modelSelect.selectFolder"),
-					importing: t("components.main.modelSelect.importing"),
-					importReady: t("components.main.modelSelect.importReady"),
-					importFailed: t("components.main.modelSelect.importFailed"),
+					importing: t("common.label.importing"),
+					importReady: t("common.label.importDone"),
+					importFailed: t("common.label.importFailed"),
 					importDialogTitle: t("components.main.modelSelect.importDialogTitle"),
 					importTypeFolder: t("components.main.modelSelect.importTypeFolder"),
 					importTypeFolderDesc: t("components.main.modelSelect.importTypeFolderDesc"),
@@ -196,7 +222,7 @@ export default () => {
 				modelConfig: {
 					title: t("components.main.modelConfig.title"),
 					subtitle: t("components.main.modelConfig.subtitle"),
-					back: t("components.main.modelConfig.back"),
+					back: t("common.label.back"),
 					name: t("components.main.modelConfig.name"),
 					namePlaceholder: t("components.main.modelConfig.namePlaceholder"),
 					nameHint: t("components.main.modelConfig.nameHint"),
@@ -234,9 +260,9 @@ export default () => {
 					newPersona: t("components.main.characterDesign.newPersona"),
 					importCard: t("components.main.characterDesign.importCard"),
 					importCardFilter: t("components.main.characterDesign.importCardFilter"),
-					importing: t("components.main.characterDesign.importing"),
-					importDone: t("components.main.characterDesign.importDone"),
-					importFailed: t("components.main.characterDesign.importFailed"),
+					importing: t("common.label.importing"),
+					importDone: t("common.label.importDone"),
+					importFailed: t("common.label.importFailed"),
 					empty: t("components.main.characterDesign.empty"),
 					emptyHint: t("components.main.characterDesign.emptyHint"),
 					selectHint: t("components.main.characterDesign.selectHint"),
@@ -264,16 +290,16 @@ export default () => {
 					save: t("common.label.save"),
 					delete: t("common.label.delete"),
 					cancel: t("common.label.cancel"),
-					saving: t("components.main.characterDesign.saving"),
-					saveDone: t("components.main.characterDesign.saveDone"),
-					saveFailed: t("components.main.characterDesign.saveFailed"),
+					saving: t("common.label.saving"),
+					saveDone: t("common.label.saved"),
+					saveFailed: t("common.label.saveFailed"),
 					nameEmpty: t("components.main.characterDesign.nameEmpty"),
 					deleteConfirmTitle: t("components.main.characterDesign.deleteConfirmTitle"),
 					deleteConfirmMessage: (name: string) => t("components.main.characterDesign.deleteConfirmMessage", {name}),
 					unsavedTitle: t("common.unsaved.title"),
 					unsavedMessage: t("components.main.characterDesign.unsavedMessage"),
-					saveAndLeave: t("components.main.characterDesign.saveAndLeave"),
-					discardLeave: t("components.main.characterDesign.discardLeave"),
+					saveAndLeave: t("common.label.saveAndLeave"),
+					discardLeave: t("common.label.discardLeave"),
 				},
 				modelGate: {
 					title: t("components.main.modelGate.title"),
@@ -300,8 +326,8 @@ export default () => {
 					refreshLive2dDesc: t("components.main.exception.refreshLive2dDesc"),
 					showHitAreas: t("components.main.exception.showHitAreas"),
 					showHitAreasDesc: t("components.main.exception.showHitAreasDesc"),
-					show: t("components.main.exception.show"),
-					hide: t("components.main.exception.hide"),
+					show: t("common.label.show"),
+					hide: t("common.label.hide"),
 					refresh: t("common.label.refresh"),
 					refreshFailed: t("common.toast.refreshFailed"),
 					noModel: t("components.main.exception.noModel"),
@@ -310,8 +336,8 @@ export default () => {
 					openTaskManager: t("components.main.exception.openTaskManager"),
 					openTaskManagerDesc: t("components.main.exception.openTaskManagerDesc"),
 					openTaskManagerFailed: t("components.main.exception.openTaskManagerFailed"),
-					open: t("components.main.exception.open"),
-					close: t("components.main.exception.close"),
+					open: t("common.label.open"),
+					close: t("common.label.close"),
 					toggleDevtoolsFailed: t("components.main.exception.toggleDevtoolsFailed"),
 				},
 				touch: {
@@ -345,9 +371,9 @@ export default () => {
 					disabledDesc: t("components.main.tts.disabledDesc"),
 					disabledHint: t("components.main.tts.disabledHint"),
 					serverTitle: t("components.main.tts.serverTitle"),
-					testing: t("components.main.tts.testing"),
-					testOk: t("components.main.tts.testOk"),
-					testFail: t("components.main.tts.testFail"),
+					testing: t("common.label.testing"),
+					testOk: t("common.label.testOk"),
+					testFail: t("common.label.testFail"),
 					statusServerError: t("components.main.tts.statusServerError"),
 					statusClientError: t("components.main.tts.statusClientError"),
 					endpointReachable: t("components.main.tts.endpointReachable"),
@@ -366,8 +392,8 @@ export default () => {
 					playing: t("components.main.tts.playing"),
 					unsavedTitle: t("common.unsaved.title"),
 					unsavedMessage: t("components.main.tts.unsavedMessage"),
-					saveAndLeave: t("components.main.tts.saveAndLeave"),
-					discardLeave: t("components.main.tts.discardLeave"),
+					saveAndLeave: t("common.label.saveAndLeave"),
+					discardLeave: t("common.label.discardLeave"),
 					gptSovits: {
 						emotionsTitle: t("components.main.tts.gptSovits.emotionsTitle"),
 						scanDir: t("components.main.tts.gptSovits.scanDir"),
@@ -390,6 +416,12 @@ export default () => {
 						playRefAudio: t("components.main.tts.gptSovits.playRefAudio"),
 						refPlayFileMissing: t("components.main.tts.gptSovits.refPlayFileMissing"),
 					},
+				},
+				talk: {
+					online: t("components.main.talk.online"),
+					typing: t("components.main.talk.typing"),
+					inputPlaceholder: t("components.main.talk.inputPlaceholder"),
+					more: t("components.main.talk.more"),
 				},
 			}
 		},
@@ -439,4 +471,93 @@ export default () => {
 			emptyAudio: t("errors.emptyAudio"),
 		},
 	}
+}
+
+/**
+ * 当前 locale 的语言快照 (记忆化, 切换语言时重建一次)
+ */
+const snapshots = shallowRef<Record<string, LanguageSnapshot>>({})
+
+const snapshot = computed<LanguageSnapshot>(() => {
+	const LANG = i18n.global.locale.value
+	const CACHED = snapshots.value[LANG]
+	if (CACHED) return CACHED
+	const NEXT = buildSnapshot()
+	snapshots.value = {...snapshots.value, [LANG]: NEXT}
+	return NEXT
+})
+
+/**
+ * 读取完整语言快照 (按 locale 记忆化, 可安全在多个 computed 中重复调用)
+ */
+export default (): LanguageSnapshot => snapshot.value
+
+/**
+ * 语言组路径: useLangGroups 支持的取值路径
+ */
+export type LangGroupPath =
+	| "common.label"
+	| "common.confirm"
+	| "common.unsaved"
+	| "common.live2d"
+	| "common.download"
+	| "components.live2d"
+	| "components.firstRun.welcome"
+	| "components.firstRun.about"
+	| "components.firstRun.agreement"
+	| "components.firstRun.llmConnect"
+	| "components.main.llm"
+	| "components.main.modelSelect"
+	| "components.main.modelConfig"
+	| "components.main.characterDesign"
+	| "components.main.modelGate"
+	| "components.main.languageSelect"
+	| "components.main.exception"
+	| "components.main.touch"
+	| "components.main.tts"
+	| "components.main.tts.gptSovits"
+	| "components.main.talk"
+	| "views.firstRun"
+	| "views.main"
+	| "views.pet"
+	| "errors"
+
+// 按点分路径从快照中取子对象
+const pick = (obj: unknown, path: string): unknown =>
+	path.split(".").reduce<unknown>((acc, key) => {
+		if (acc && typeof acc === "object") return (acc as Record<string, unknown>)[key]
+		return undefined
+	}, obj)
+
+// 深层取类型: 从快照类型中取 Path 指向的子树类型
+type DeepPick<T, Path extends string> = Path extends `${infer Head}.${infer Tail}`
+	? Head extends keyof T
+		? DeepPick<T[Head], Tail>
+		: never
+	: Path extends keyof T
+		? T[Path]
+		: never
+
+/**
+ * 引用多个语言组 (别名 → 路径), 返回每个组一个 computed ref.
+ * 模板中可直接 `llm.title` (顶层 ref 自动解包), 脚本中用 `llm.value.title`.
+ *
+ * 例:
+ *   const {llm, label: common, errors} = useLangGroups({
+ *     llm: "components.main.llm",
+ *     label: "common.label",
+ *     errors: "errors",
+ *   })
+ *
+ * 一个组件/页面可同时引用多个语言组, 减少重复声明与多份 computed.
+ */
+export const useLangGroups = <M extends Record<string, LangGroupPath>>(
+	map: M,
+): {[K in keyof M]: ComputedRef<DeepPick<LanguageSnapshot, M[K]>>} => {
+	const RESULT = {} as Record<keyof M, ComputedRef<unknown>>
+	for (const ALIAS of Object.keys(map) as (keyof M)[]) {
+		const PATH = map[ALIAS]
+		RESULT[ALIAS] = computed(() => pick(snapshot.value, PATH))
+	}
+	return RESULT as {[K in keyof M]: ComputedRef<DeepPick<LanguageSnapshot, M[K]>>}
 }

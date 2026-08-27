@@ -5,6 +5,10 @@ import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useUnsavedGuard} from "../../services/store/unsaved"
 import Icon from "../common/Icon.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
+import PageHeader from "../common/PageHeader.vue"
+import EmptyState from "../common/EmptyState.vue"
+import SectionCard from "../common/SectionCard.vue"
+import FormField from "../common/FormField.vue"
 import {
 	createPersona,
 	deletePersona,
@@ -259,23 +263,17 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 
 <template>
 	<section class="page-character">
-		<header class="character-head">
-			<div>
-				<h2 class="character-title">{{ I18N.title }}</h2>
-				<p class="character-sub">{{ I18N.subtitle }}</p>
-			</div>
-			<div class="character-actions">
-				<button class="btn-primary action-btn" @click="newPersona">
-					<Icon name="add" :size="15"/>
-					{{ I18N.newPersona }}
-				</button>
-				<button class="import-btn" :disabled="importing" @click="importCard">
-					<Icon v-if="importing" name="loading" :size="14" class="spin"/>
-					<Icon v-else name="import" :size="15"/>
-					{{ importing ? I18N.importing : I18N.importCard }}
-				</button>
-			</div>
-		</header>
+		<PageHeader :title="I18N.title" :subtitle="I18N.subtitle">
+			<button class="btn-primary action-btn" @click="newPersona">
+				<Icon name="add" :size="15"/>
+				{{ I18N.newPersona }}
+			</button>
+			<button class="import-btn" :disabled="importing" @click="importCard">
+				<Icon v-if="importing" name="loading" :size="14" class="spin"/>
+				<Icon v-else name="import" :size="15"/>
+				{{ importing ? I18N.importing : I18N.importCard }}
+			</button>
+		</PageHeader>
 
 		<div v-if="loaded" class="character-body">
 			<aside class="persona-list">
@@ -318,27 +316,23 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 						</div>
 					</div>
 				</template>
-				<div v-else class="persona-empty">
-					<Icon name="book-user" :size="34" class="persona-empty-icon"/>
-					<span class="persona-empty-title">{{ I18N.empty }}</span>
-					<span class="persona-empty-hint">{{ I18N.emptyHint }}</span>
-				</div>
+				<EmptyState v-else icon="book-user" :title="I18N.empty" :hint="I18N.emptyHint"/>
 			</aside>
 
 			<div class="persona-editor">
 				<template v-if="draftOpen">
-					<header class="editor-head">
-						<div class="editor-head-left">
-							<span class="editor-title">{{ editingId === null ? I18N.newPersona : (draft.name || I18N.title) }}</span>
+					<SectionCard
+						scroll
+						:title="editingId === null ? I18N.newPersona : (draft.name || I18N.title)"
+					>
+						<template #actions>
 							<span v-if="editingId !== null && editingId === activeId" class="used-tag">
 								<Icon name="check" :size="11"/>
 								{{ I18N.used }}
 							</span>
-						</div>
-					</header>
+						</template>
 					<div class="editor-form">
-						<div class="field">
-							<label class="field-label">{{ I18N.name }}</label>
+						<FormField :label="I18N.name" :error="nameError ? I18N.nameEmpty : undefined">
 							<input
 								v-model="draft.name"
 								class="input"
@@ -346,82 +340,73 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 								:placeholder="I18N.namePlaceholder"
 								@input="nameError = false"
 							/>
-						</div>
-						<div class="field">
-							<label class="field-label">{{ I18N.description }}</label>
+						</FormField>
+						<FormField :label="I18N.description">
 							<textarea
 								v-model="draft.description"
 								class="input textarea"
 								rows="2"
 								:placeholder="I18N.descriptionPlaceholder"
 							/>
-						</div>
-						<div class="field full">
-							<label class="field-label">{{ I18N.personality }}</label>
+						</FormField>
+						<FormField :label="I18N.personality" class="full">
 							<textarea
 								v-model="draft.personality"
 								class="input textarea"
 								rows="4"
 								:placeholder="I18N.personalityPlaceholder"
 							/>
-						</div>
-						<div class="field">
-							<label class="field-label">{{ I18N.scenario }}</label>
+						</FormField>
+						<FormField :label="I18N.scenario">
 							<textarea
 								v-model="draft.scenario"
 								class="input textarea"
 								rows="3"
 								:placeholder="I18N.scenarioPlaceholder"
 							/>
-						</div>
-						<div class="field">
-							<label class="field-label">{{ I18N.firstMes }}</label>
+						</FormField>
+						<FormField :label="I18N.firstMes">
 							<textarea
 								v-model="draft.firstMes"
 								class="input textarea"
 								rows="3"
 								:placeholder="I18N.firstMesPlaceholder"
 							/>
-						</div>
-						<div class="field full">
-							<label class="field-label">{{ I18N.mesExample }}</label>
+						</FormField>
+						<FormField :label="I18N.mesExample" class="full">
 							<textarea
 								v-model="draft.mesExample"
 								class="input textarea"
 								rows="5"
 								:placeholder="I18N.mesExamplePlaceholder"
 							/>
-						</div>
-						<div class="field">
-							<label class="field-label">{{ I18N.systemPrompt }}</label>
+						</FormField>
+						<FormField :label="I18N.systemPrompt">
 							<textarea
 								v-model="draft.systemPrompt"
 								class="input textarea"
 								rows="3"
 								:placeholder="I18N.systemPromptPlaceholder"
 							/>
-						</div>
-						<div class="field">
-							<label class="field-label">{{ I18N.postHistory }}</label>
+						</FormField>
+						<FormField :label="I18N.postHistory">
 							<textarea
 								v-model="draft.postHistoryInstructions"
 								class="input textarea"
 								rows="3"
 								:placeholder="I18N.postHistoryPlaceholder"
 							/>
-						</div>
+						</FormField>
 					</div>
-					<footer class="editor-actions">
+					<template #footer>
 						<button class="btn-primary action-btn" :disabled="saving" @click="saveCurrent">
 							<Icon v-if="saving" name="loading" :size="14" class="spin"/>
 							{{ saving ? I18N.saving : I18N.save }}
 						</button>
-					</footer>
+					</template>
+					</SectionCard>
 				</template>
-				<div v-else class="editor-placeholder">
-					<Icon name="book-user" :size="34" class="editor-placeholder-icon"/>
-					<span>{{ I18N.selectHint }}</span>
-				</div>
+				<EmptyState v-else icon="book-user" :hint="I18N.selectHint"/>
 			</div>
 		</div>
 
@@ -449,36 +434,6 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 	display: flex;
 	flex-direction: column;
 	gap: 1rem;
-	overflow: hidden;
-}
-
-.character-head {
-	flex-shrink: 0;
-	display: flex;
-	align-items: flex-end;
-	justify-content: space-between;
-	gap: 1rem;
-
-	.character-title {
-		margin: 0;
-		font-size: 1.8rem;
-		font-weight: 600;
-		color: var(--text-primary);
-		text-shadow: 0 0 1.8rem var(--glow-teal), 0 0 6rem var(--glow-teal-soft);
-	}
-
-	.character-sub {
-		margin: 0.4rem 0 0;
-		font-size: 1.2rem;
-		color: var(--text-muted);
-	}
-
-	.character-actions {
-		display: flex;
-		align-items: center;
-		gap: 0.8rem;
-		flex-shrink: 0;
-	}
 }
 
 .action-btn {
@@ -683,89 +638,19 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 	}
 }
 
-.persona-empty {
-	flex: 1;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-	border: 0.1rem dashed var(--line-subtle);
-	border-radius: var(--radius-md);
-	color: var(--text-muted);
-	text-align: center;
-	padding: 1.5rem;
-
-	.persona-empty-icon {
-		color: var(--deep-teal-soft);
-		opacity: 0.7;
-	}
-
-	.persona-empty-title {
-		font-size: 1.3rem;
-		font-weight: 600;
-		color: var(--text-body);
-	}
-
-	.persona-empty-hint {
-		font-size: 1rem;
-		color: var(--text-muted);
-	}
-}
-
 .persona-editor {
 	flex: 1;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	gap: 1rem;
-	padding: 1.3rem 1.5rem 1rem;
-	border: 0.1rem solid var(--line-subtle);
-	border-radius: var(--radius-md);
-	background-color: rgba(255, 255, 255, 0.02);
-	overflow: hidden;
 }
 
-.editor-head {
-	flex-shrink: 0;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-
-	.editor-head-left {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.6rem;
-		min-width: 0;
-	}
-
-	.editor-title {
-		font-size: 1.4rem;
-		font-weight: 600;
-		color: var(--text-primary);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.used-tag {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		padding: 0.15rem 0.7rem;
-		font-size: 1rem;
-		font-weight: 600;
-		border-radius: 99.9rem;
-		background-color: rgba(125, 227, 255, 0.12);
-		color: var(--deep-teal-bright);
-		flex-shrink: 0;
-	}
+.persona-editor :deep(.section-card) {
+	flex: 1;
+	min-height: 0;
 }
 
 .editor-form {
-	flex: 1;
-	min-height: 0;
-	overflow-y: auto;
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 1rem 1.2rem;
@@ -773,79 +658,17 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 	padding-right: 0.4rem;
 }
 
-.field {
+.used-tag {
 	display: flex;
-	flex-direction: column;
-	gap: 0.45rem;
-
-	&.full {
-		grid-column: 1 / -1;
-	}
-}
-
-.field-label {
-	font-size: 1.05rem;
-	color: var(--text-muted);
-}
-
-.input {
-	padding: 0.65rem 0.9rem;
-	width: 100%;
-	box-sizing: border-box;
-	border: 0.1rem solid var(--line-subtle);
-	border-radius: var(--radius-sm);
-	background-color: rgba(255, 255, 255, 0.04);
-	color: var(--text-primary);
-	font-size: 1.15rem;
-	font-family: inherit;
-	outline: none;
-	transition: all 0.2s ease;
-
-	&:focus {
-		border-color: var(--deep-teal-soft);
-		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
-	}
-
-	&.invalid {
-		border-color: var(--danger);
-		box-shadow: 0 0 0.6rem rgba(251, 44, 54, 0.3);
-	}
-
-	&::placeholder {
-		color: var(--text-muted);
-		opacity: 0.6;
-	}
-}
-
-.textarea {
-	min-height: 5.2rem;
-	resize: vertical;
-	line-height: 1.6;
-}
-
-.editor-actions {
+	align-items: center;
+	gap: 0.3rem;
+	padding: 0.15rem 0.7rem;
+	font-size: 1rem;
+	font-weight: 600;
+	border-radius: 99.9rem;
+	background-color: rgba(125, 227, 255, 0.12);
+	color: var(--deep-teal-bright);
 	flex-shrink: 0;
-	display: flex;
-	align-items: center;
-	justify-content: flex-end;
-	padding-top: 0.9rem;
-	border-top: 0.1rem solid var(--line-subtle);
-}
-
-.editor-placeholder {
-	flex: 1;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 0.6rem;
-	color: var(--text-muted);
-	font-size: 1.2rem;
-
-	.editor-placeholder-icon {
-		color: var(--deep-teal-soft);
-		opacity: 0.7;
-	}
 }
 
 .character-feedback {
@@ -868,13 +691,4 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 	}
 }
 
-.spin {
-	animation: character-spin 1s linear infinite;
-}
-
-@keyframes character-spin {
-	to {
-		transform: rotate(360deg);
-	}
-}
 </style>

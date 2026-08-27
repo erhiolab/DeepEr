@@ -8,6 +8,7 @@ import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import {useUnsavedGuard} from "../../services/store/unsaved.ts"
 import Icon from "../common/Icon.vue"
+import SectionCard from "../common/SectionCard.vue"
 
 const props = defineProps<{modelId: string}>()
 
@@ -360,12 +361,7 @@ onMounted(async () => {
 		</div>
 		<div class="cfg-sheet">
 			<!-- 外观 -->
-			<section class="card">
-				<header class="card-head">
-					<span class="card-icon"><Icon name="cube" :size="16"/></span>
-					<span class="card-title">{{ I18N.appearanceTitle }}</span>
-				</header>
-				<div class="card-body">
+			<SectionCard icon="cube" :title="I18N.appearanceTitle">
 					<div class="field">
 						<label class="field-label">{{ I18N.name }}</label>
 						<input v-model="draftName" class="field-input" :placeholder="I18N.namePlaceholder"/>
@@ -391,16 +387,9 @@ onMounted(async () => {
 						</div>
 						<p class="field-hint">{{ I18N.coverHint }}</p>
 					</div>
-				</div>
-			</section>
+			</SectionCard>
 			<!-- 渲染 -->
-			<section class="card">
-				<header class="card-head">
-					<span class="card-icon"><Icon name="resize" :size="16"/></span>
-					<span class="card-title">{{ I18N.renderTitle }}</span>
-					<span class="card-sub">{{ I18N.renderHint }}</span>
-				</header>
-				<div class="card-body">
+			<SectionCard icon="resize" :title="I18N.renderTitle" :subtitle="I18N.renderHint">
 					<div class="slider-field">
 						<div class="slider-meta">
 							<span class="slider-name">{{ I18N.scale }}</span>
@@ -461,15 +450,9 @@ onMounted(async () => {
 							</span>
 						</div>
 					</div>
-				</div>
-			</section>
+			</SectionCard>
 			<!-- 显示质量 -->
-			<section class="card">
-				<header class="card-head">
-					<span class="card-icon"><Icon name="settings" :size="16"/></span>
-					<span class="card-title">{{ I18N.qualityTitle }}</span>
-				</header>
-				<div class="card-body">
+			<SectionCard icon="settings" :title="I18N.qualityTitle">
 					<div class="slider-field">
 						<div class="slider-meta">
 							<span class="slider-name">{{ I18N.quality }}</span>
@@ -483,8 +466,7 @@ onMounted(async () => {
 						/>
 					</div>
 					<p class="field-hint">{{ I18N.qualityHint }}</p>
-				</div>
-			</section>
+			</SectionCard>
 		</div>
 	</section>
 </template>
@@ -496,7 +478,6 @@ onMounted(async () => {
 	display: flex;
 	flex-direction: column;
 	gap: 1.2rem;
-	overflow: hidden;
 }
 
 .cfg-top {
@@ -539,7 +520,7 @@ onMounted(async () => {
 		font-size: 1.8rem;
 		font-weight: 600;
 		color: var(--text-primary);
-		text-shadow: 0 0 1.8rem var(--glow-teal), 0 0 6rem var(--glow-teal-soft);
+		text-shadow: var(--glow-text);
 		white-space: nowrap;
 	}
 
@@ -628,58 +609,6 @@ onMounted(async () => {
 	align-items: start;
 	align-content: start;
 	overflow-y: auto;
-}
-
-.card {
-	border: 0.1rem solid var(--line-subtle);
-	border-radius: var(--radius-md);
-	background-image: linear-gradient(165deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
-	box-shadow: var(--shadow-soft);
-	overflow: hidden;
-	transition: border-color 0.2s ease;
-
-	&:hover {
-		border-color: var(--deep-teal-soft);
-	}
-
-	.card-head {
-		padding: 0.9rem 1.2rem;
-		display: flex;
-		align-items: center;
-		gap: 0.7rem;
-		border-bottom: 0.1rem solid var(--line-subtle);
-		background-color: rgba(125, 227, 255, 0.04);
-
-		.card-icon {
-			width: 2.2rem;
-			height: 2.2rem;
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			border-radius: var(--radius-sm);
-			color: var(--deep-teal-bright);
-			background-color: rgba(125, 227, 255, 0.1);
-		}
-
-		.card-title {
-			font-size: 1.3rem;
-			font-weight: 600;
-			color: var(--text-primary);
-		}
-
-		.card-sub {
-			margin-left: auto;
-			font-size: 1rem;
-			color: var(--text-faint);
-		}
-	}
-
-	.card-body {
-		padding: 1.1rem 1.2rem 1.3rem;
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
 }
 
 .field {

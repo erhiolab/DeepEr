@@ -4,6 +4,7 @@ import {assetUrl} from "../asset"
 import {contextInsert, contextList, estimateTokens} from "../context"
 import {createStreamingMarkdownSplitter, isFencedCodeBlock} from "../text/markdownSplitter"
 import {logger} from "../logger"
+import {buildPersonaSystemMessage, getPersona, getSelectedPersonaId} from "../persona"
 
 /**
  * 对话消息方向
@@ -134,7 +135,16 @@ export const useConversationStore = defineStore("conversation", () => {
 			})
 		}
 		// MESSAGES 是倒序累积 (最新在前), 翻转得到旧->新
-		return MESSAGES.reverse()
+		const HISTORY = MESSAGES.reverse()
+		// 注入当前启用的人设 (每次请求实时读取, 人设管理器修改后立即生效)
+		const SELECTED_ID = await getSelectedPersonaId()
+		if (SELECTED_ID !== null) {
+			const PERSONA = await getPersona(SELECTED_ID)
+			if (PERSONA) {
+				HISTORY.unshift({role: "system", content: buildPersonaSystemMessage(PERSONA)})
+			}
+		}
+		return HISTORY
 	}
 
 	// 合成一段文本的语音, 返回可播放 URL (null = 未合成/失败)

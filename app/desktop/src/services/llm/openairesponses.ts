@@ -2,10 +2,15 @@
  * OpenAI Responses API 适配器
  */
 import {config} from "../config"
-import {logger} from "../logger"
-import {decryptSecret, encryptSecret} from "../secret"
 import type {LLMAdapter, LLMModelInfo, LLMGenerateRequest, LLMGenerateResult, LLMTestResult} from "./types"
-import {backendGenerate, backendTestConnection, backendListModels} from "./http"
+import {backendGenerate, backendListModels, backendTestConnection} from "./http"
+import {
+	clearPlatformApiKey,
+	hasPlatformApiKey,
+	loadPlatformBase,
+	savePlatformBase,
+	validatePlatformConfig,
+} from "./platform"
 
 /**
  * 配置键前缀
@@ -57,30 +62,16 @@ const toReasoningEffort = (raw: string | null, fallback: OpenAiReasoningEffort):
 }
 
 /**
- * 归一化服务地址: 去掉首尾空白, 自动补全 https:// 前缀
- */
-export const normalizeBaseUrl = (raw: string): string => {
-	const TRIMMED = raw.trim()
-	if (!TRIMMED) return defaultConfig().baseUrl
-	if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(TRIMMED)) return TRIMMED
-	return `https://${TRIMMED}`
-}
-
-/**
  * 读取整份配置
  */
 export const loadConfig = async (): Promise<OpenAiResponsesConfig> => {
 	const DEFAULTS = defaultConfig()
-	const [baseUrl, apiKey, model, reasoningEffort] = await Promise.all([
-		config.getRaw(`${PREFIX}_base_url`),
-		config.getRaw(`${PREFIX}_api_key`),
-		config.getRaw(`${PREFIX}_model`),
-		config.getRaw(`${PREFIX}_reasoning_effort`),
-	])
+	const BASE = await loadPlatformBase(PREFIX, DEFAULTS)
+	const reasoningEffort = await config.getRaw(`${PREFIX}_reasoning_effort`)
 	return {
-		baseUrl: baseUrl ?? DEFAULTS.baseUrl,
-		apiKey: await decryptSecret(apiKey ?? ""),
-		model: model || DEFAULTS.model,
+		baseUrl: BASE.baseUrl,
+		apiKey: BASE.apiKey,
+		model: BASE.model,
 		reasoningEffort: toReasoningEffort(reasoningEffort, DEFAULTS.reasoningEffort),
 	}
 }
@@ -89,37 +80,26 @@ export const loadConfig = async (): Promise<OpenAiResponsesConfig> => {
  * 保存整份配置
  */
 export const saveConfig = async (cfg: OpenAiResponsesConfig): Promise<void> => {
-	const API_KEY_TO_STORE = cfg.apiKey ? await encryptSecret(cfg.apiKey) : (await config.getRaw(`${PREFIX}_api_key`)) ?? ""
-	await Promise.all([
-		config.setRaw(`${PREFIX}_base_url`, normalizeBaseUrl(cfg.baseUrl)),
-		config.setRaw(`${PREFIX}_api_key`, API_KEY_TO_STORE),
-		config.setRaw(`${PREFIX}_model`, cfg.model),
-		config.setRaw(`${PREFIX}_reasoning_effort`, cfg.reasoningEffort),
-	])
-	await logger.info("保存 OpenAI Responses 配置")
+	await savePlatformBase(PREFIX, cfg, defaultConfig())
+	await config.setRaw(`${PREFIX}_reasoning_effort`, cfg.reasoningEffort)
 }
 
 /**
  * 是否已保存过 API Key (只判断是否有密文, 不解密)
  */
-export const hasApiKey = async (): Promise<boolean> => {
-	const SAVED = await config.getRaw(`${PREFIX}_api_key`)
-	return !!SAVED && SAVED !== ""
-}
+export const hasApiKey = (): Promise<boolean> => hasPlatformApiKey(PREFIX)
 
 /**
  * 清除已保存的 API Key
  */
-export const clearApiKey = async (): Promise<void> => {
-	await config.setRaw(`${PREFIX}_api_key`, "")
-	await logger.info("清除 OpenAI Responses 的 API Key")
-}
+export const clearApiKey = (): Promise<void> => clearPlatformApiKey(PREFIX)
 
 /**
  * OpenAI Responses 适配器实现
  */
 export const openAiResponsesAdapter: LLMAdapter<OpenAiResponsesConfig> = {
 	id: "openai-responses",
+	platform: "openai",
 	label: "OpenAI Responses",
 	description: "OpenAI 最新 Responses API (含 gpt-5 系列 / 兼容网关)",
 	async loadConfig() {
@@ -130,15 +110,15 @@ export const openAiResponsesAdapter: LLMAdapter<OpenAiResponsesConfig> = {
 	},
 	async testConnection(): Promise<LLMTestResult> {
 		const CFG = await this.loadConfig()
-		if (!CFG.apiKey.trim()) return {ok: false, error: "未填写 API Key"}
-		if (!CFG.model.trim()) return {ok: false, error: "未填写模型名"}
-		return await backendTestConnection("llm_openai_test_connection")
+		const ERROR = validatePlatformConfig(CFG)
+		if (ERROR) return {ok: false, error: ERROR}
+		return await backendTestConnection(this.platform)
 	},
 	async listModels(): Promise<LLMModelInfo[]> {
 		const CFG = await this.loadConfig()
 		if (!CFG.apiKey.trim()) return []
-		const IDS = await backendListModels("llm_openai_list_models")
-		return IDS.map(id => ({id}))
+		const IDS = await backendListModels(this.platform)
+		return (IDS ?? []).map(id => ({id}))
 	},
 	async hasApiKey() {
 		return await hasApiKey()
@@ -148,8 +128,8 @@ export const openAiResponsesAdapter: LLMAdapter<OpenAiResponsesConfig> = {
 	},
 	async generate(request: LLMGenerateRequest): Promise<LLMGenerateResult> {
 		const CFG = await this.loadConfig()
-		if (!CFG.apiKey.trim()) return {ok: false, error: "未填写 API Key"}
-		if (!CFG.model.trim()) return {ok: false, error: "未填写模型名"}
-		return await backendGenerate("llm_openai_generate", request)
+		const ERROR = validatePlatformConfig(CFG)
+		if (ERROR) return {ok: false, error: ERROR}
+		return await backendGenerate(this.platform, request)
 	},
 }

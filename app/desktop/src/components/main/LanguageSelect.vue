@@ -7,6 +7,7 @@ import zhCn from "../../assets/images/flags/cn.png"
 import enGb from "../../assets/images/flags/gb.png"
 import enUs from "../../assets/images/flags/us.png"
 import Icon from "../common/Icon.vue"
+import PageHeader from "../common/PageHeader.vue"
 import {logger} from "../../services/logger"
 
 const language = useLanguage
@@ -65,10 +66,7 @@ const select = async (code: string) => {
 
 <template>
 	<section key="language-select" class="page-lang">
-		<div class="lang-head">
-			<h2 class="lang-title">{{ I18N.title }}</h2>
-			<p class="lang-sub">{{ I18N.subtitle }}</p>
-		</div>
+		<PageHeader center :title="I18N.title" :subtitle="I18N.subtitle"/>
 
 		<div class="lang-current">
 			<span class="lang-current-label">{{ I18N.current }}</span>
@@ -108,26 +106,6 @@ const select = async (code: string) => {
 	flex-direction: column;
 	justify-content: center;
 	gap: 1.6rem;
-}
-
-.lang-head {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.4rem;
-	text-align: center;
-
-	.lang-title {
-		font-size: 2rem;
-		font-weight: 600;
-		color: var(--text-primary);
-		text-shadow: 0 0 1.8rem var(--glow-teal), 0 0 6rem var(--glow-teal-soft);
-	}
-
-	.lang-sub {
-		font-size: 1.2rem;
-		color: var(--text-muted);
-	}
 }
 
 .lang-current {

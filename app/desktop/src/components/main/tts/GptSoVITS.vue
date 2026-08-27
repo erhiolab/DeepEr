@@ -2,20 +2,22 @@
 import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
 import {invoke} from "@tauri-apps/api/core"
 import {open} from "@tauri-apps/plugin-dialog"
-import useLanguages from "../../../services/i18n/useLanguages.ts"
+import {useLangGroups} from "../../../services/i18n/useLanguages.ts"
 import {logger} from "../../../services/logger"
 import {defaultConfig, GPT_SOVITS_LANGUAGES, GPT_SOVITS_SPLIT_METHODS, loadConfig, saveConfig, type GptSoVitsConfig,} from "../../../services/tts/gptsovits"
 import {assetUrl} from "../../../services/asset.ts"
 import {useUnsavedGuard} from "../../../services/store/unsaved.ts"
 import {useTTSStore} from "../../../services/store/tts.ts"
 import Icon from "../../common/Icon.vue"
+import SectionCard from "../../common/SectionCard.vue"
+import FormField from "../../common/FormField.vue"
 import type {TTSVoiceEntry} from "../../../services/tts/types"
 
-const I18N = computed(() => useLanguages().components.main.tts.gptSovits)
-
-const TTS_I18N = computed(() => useLanguages().components.main.tts)
-
-const COMMON_I18N = computed(() => useLanguages().common.label)
+const {gptSovits: I18N, tts: TTS_I18N, label: COMMON_I18N} = useLangGroups({
+	gptSovits: "components.main.tts.gptSovits",
+	tts: "components.main.tts",
+	label: "common.label",
+})
 
 const GUARD = useUnsavedGuard()
 
@@ -432,13 +434,11 @@ const normalizeInt = (value: number, fallback: number): number => {
 
 <template>
 	<div class="gsp">
-		<section class="gsp-card">
-			<h3 class="gsp-title">{{ TTS_I18N.serverTitle }}</h3>
+		<SectionCard :title="TTS_I18N.serverTitle">
 			<div class="gsp-row">
-				<label class="field grow">
-					<span class="field-label">{{ COMMON_I18N.url }}</span>
+				<FormField :label="COMMON_I18N.url" class="grow">
 					<input v-model="config.baseUrl" class="input" type="text" placeholder="http://127.0.0.1:9880" spellcheck="false">
-				</label>
+				</FormField>
 				<button class="btn test-btn" :disabled="testing" @click="testConnection">
 					<Icon v-if="testing" name="loading" class="spin" :size="14"/>
 					{{ testing ? TTS_I18N.testing : COMMON_I18N.test }}
@@ -447,63 +447,51 @@ const normalizeInt = (value: number, fallback: number): number => {
 			<p v-if="testResult" class="test-result" :class="{ok: testResult.ok, fail: !testResult.ok}">
 				{{ testResult.message }}
 			</p>
-		</section>
-		<section class="gsp-card">
-			<h3 class="gsp-title">{{ TTS_I18N.paramsTitle }}</h3>
+		</SectionCard>
+		<SectionCard :title="TTS_I18N.paramsTitle">
 			<div class="gsp-grid">
-				<label class="field">
-					<span class="field-label">{{ COMMON_I18N.topK }}</span>
+				<FormField :label="COMMON_I18N.topK">
 					<input v-model.number="config.topK" class="input" type="number" min="0" step="1">
-				</label>
-				<label class="field">
-					<span class="field-label">{{ COMMON_I18N.topP }}</span>
+				</FormField>
+				<FormField :label="COMMON_I18N.topP">
 					<input v-model.number="config.topP" class="input" type="number" min="0" max="1" step="0.05">
-				</label>
-				<label class="field">
-					<span class="field-label">{{ COMMON_I18N.temperature }}</span>
+				</FormField>
+				<FormField :label="COMMON_I18N.temperature">
 					<input v-model.number="config.temperature" class="input" type="number" min="0" step="0.05">
-				</label>
-				<label class="field">
-					<span class="field-label">{{ COMMON_I18N.batchSize }}</span>
+				</FormField>
+				<FormField :label="COMMON_I18N.batchSize">
 					<input v-model.number="config.batchSize" class="input" type="number" min="1" step="1">
-				</label>
-				<label class="field">
-					<span class="field-label">{{ COMMON_I18N.textSplitMethod }}</span>
+				</FormField>
+				<FormField :label="COMMON_I18N.textSplitMethod">
 					<select v-model="config.textSplitMethod" class="input select">
 						<option v-for="m in GPT_SOVITS_SPLIT_METHODS" :key="m" :value="m">{{ m }}</option>
 					</select>
-				</label>
+				</FormField>
 			</div>
-		</section>
-		<section class="gsp-card">
-			<div class="gsp-card-head">
-				<h3 class="gsp-title">{{ I18N.emotionsTitle }}</h3>
-				<div class="head-actions">
-					<button class="btn ghost" :disabled="scanningDir" @click="scanFolder">
-						<Icon v-if="scanningDir" name="loading" class="spin" :size="14"/>
-						<Icon v-else name="import" :size="14"/>
-						{{ I18N.scanDir }}
-					</button>
-					<button class="btn" @click="startAdd">
-						<Icon name="add" :size="14"/>
-						{{ COMMON_I18N.add }}
-					</button>
-				</div>
-			</div>
+		</SectionCard>
+		<SectionCard :title="I18N.emotionsTitle">
+			<template #actions>
+				<button class="btn ghost" :disabled="scanningDir" @click="scanFolder">
+					<Icon v-if="scanningDir" name="loading" class="spin" :size="14"/>
+					<Icon v-else name="import" :size="14"/>
+					{{ I18N.scanDir }}
+				</button>
+				<button class="btn" @click="startAdd">
+					<Icon name="add" :size="14"/>
+					{{ COMMON_I18N.add }}
+				</button>
+			</template>
 			<p v-if="scanMsg" class="inline-error">{{ scanMsg }}</p>
 			<p class="duration-hint">{{ I18N.refDurationHint }}</p>
 			<p v-if="playError" class="inline-error">{{ playError }}</p>
 			<div class="emotion-body">
 				<div v-if="drawer && drawer.type === 'add'" class="drawer drawer-add">
 					<div class="drawer-form">
-						<label class="field">
-							<span class="field-label">{{ I18N.editName }}</span>
+						<FormField :label="I18N.editName" :error="nameDuplicate ? I18N.errorNameDuplicate : undefined">
 							<input v-model="editName" class="input" :class="{invalid: nameDuplicate}" type="text"
 								   :placeholder="I18N.editNamePlaceholder">
-							<span v-if="nameDuplicate" class="field-hint error">{{ I18N.errorNameDuplicate }}</span>
-						</label>
-						<label class="field">
-							<span class="field-label">{{ I18N.editAudioPath }}</span>
+						</FormField>
+						<FormField :label="I18N.editAudioPath">
 							<span class="path-row">
 								<input v-model="editAudioPath" class="input" type="text" spellcheck="false"
 									   :placeholder="'D:/ref/xxx.wav'">
@@ -512,21 +500,19 @@ const normalizeInt = (value: number, fallback: number): number => {
 									{{ COMMON_I18N.browse }}
 								</button>
 							</span>
-						</label>
-						<label class="field full">
-							<span class="field-label">{{ I18N.editPromptText }}</span>
+						</FormField>
+						<FormField :label="I18N.editPromptText" class="full">
 							<textarea
 								v-model="editPromptText"
 								class="input textarea"
 								:placeholder="I18N.editPromptTextPlaceholder"
 							/>
-						</label>
-						<label class="field">
-							<span class="field-label">{{ COMMON_I18N.promptLang }}</span>
+						</FormField>
+						<FormField :label="COMMON_I18N.promptLang">
 							<select v-model="editPromptLang" class="input select">
 								<option v-for="l in GPT_SOVITS_LANGUAGES" :key="l" :value="l">{{ l }}</option>
 							</select>
-						</label>
+						</FormField>
 					</div>
 					<div class="drawer-actions">
 						<button class="btn ghost" @click="closeDrawer">
@@ -574,8 +560,7 @@ const normalizeInt = (value: number, fallback: number): number => {
 						</div>
 						<div v-if="drawer && drawer.type === 'edit' && drawer.index === index" class="drawer">
 							<div class="drawer-form">
-								<label class="field">
-									<span class="field-label">{{ I18N.editName }}</span>
+								<FormField :label="I18N.editName" :error="nameDuplicate ? I18N.errorNameDuplicate : undefined">
 									<input
 										v-model="editName"
 										class="input"
@@ -583,12 +568,8 @@ const normalizeInt = (value: number, fallback: number): number => {
 										type="text"
 										:placeholder="I18N.editNamePlaceholder"
 									>
-									<span v-if="nameDuplicate" class="field-hint error">
-										{{ I18N.errorNameDuplicate }}
-									</span>
-								</label>
-								<label class="field">
-									<span class="field-label">{{ I18N.editAudioPath }}</span>
+								</FormField>
+								<FormField :label="I18N.editAudioPath">
 									<span class="path-row">
 										<input
 											v-model="editAudioPath"
@@ -602,21 +583,19 @@ const normalizeInt = (value: number, fallback: number): number => {
 											{{ COMMON_I18N.browse }}
 										</button>
 									</span>
-								</label>
-								<label class="field full">
-									<span class="field-label">{{ I18N.editPromptText }}</span>
+								</FormField>
+								<FormField :label="I18N.editPromptText" class="full">
 									<textarea
 										v-model="editPromptText"
 										class="input textarea"
 										:placeholder="I18N.editPromptTextPlaceholder"
 									/>
-								</label>
-									<label class="field">
-										<span class="field-label">{{ COMMON_I18N.promptLang }}</span>
+								</FormField>
+									<FormField :label="COMMON_I18N.promptLang">
 										<select v-model="editPromptLang" class="input select">
 											<option v-for="l in GPT_SOVITS_LANGUAGES" :key="l" :value="l">{{ l }}</option>
 										</select>
-									</label>
+									</FormField>
 							</div>
 							<div class="drawer-actions">
 								<button class="btn ghost" @click="closeDrawer">
@@ -634,29 +613,25 @@ const normalizeInt = (value: number, fallback: number): number => {
 				</ul>
 				<p v-else-if="!drawer" class="emotion-empty">{{ I18N.emotionsEmpty }}</p>
 			</div>
-		</section>
-		<section class="gsp-card">
-			<h3 class="gsp-title">{{ TTS_I18N.synthTitle }}</h3>
+		</SectionCard>
+		<SectionCard :title="TTS_I18N.synthTitle">
 			<div class="synth-block">
-				<label class="field">
-					<span class="field-label">{{ TTS_I18N.synthEmotion }}</span>
+				<FormField :label="TTS_I18N.synthEmotion">
 					<select v-model.number="testEmotionIndex" class="input select">
 						<option value="-1" disabled>{{ TTS_I18N.synthEmotionPlaceholder }}</option>
 						<option v-for="(item, index) in config.emotions" :key="item.name" :value="index">
 							{{item.name }}
 						</option>
 					</select>
-				</label>
-				<label class="field">
-					<span class="field-label">{{ TTS_I18N.synthText }}</span>
+				</FormField>
+				<FormField :label="TTS_I18N.synthText">
 					<textarea v-model="testText" class="input textarea" :placeholder="TTS_I18N.synthTextPlaceholder"/>
-				</label>
-				<label class="field">
-					<span class="field-label">{{ COMMON_I18N.textLang }}</span>
+				</FormField>
+				<FormField :label="COMMON_I18N.textLang">
 					<select v-model="config.textLang" class="input select">
 						<option v-for="l in GPT_SOVITS_LANGUAGES" :key="l" :value="l">{{ l }}</option>
 					</select>
-				</label>
+				</FormField>
 				<div class="synth-actions">
 					<button class="btn primary synth-btn" :disabled="!canSynthesize || synthesizing" @click="synthesize">
 						<Icon v-if="synthesizing" name="loading" class="spin" :size="14"/>
@@ -688,7 +663,7 @@ const normalizeInt = (value: number, fallback: number): number => {
 				</div>
 				<p v-if="synthError" class="inline-error">{{ synthError }}</p>
 			</div>
-		</section>
+		</SectionCard>
 		<div class="gsp-savebar">
 			<button class="btn primary save-btn" :disabled="saving" @click="save">
 				<Icon v-if="saving" name="loading" class="spin" :size="14"/>
@@ -703,181 +678,24 @@ const normalizeInt = (value: number, fallback: number): number => {
 
 <style scoped lang="less">
 .gsp {
-	flex: 1;
+	flex: none;
 	padding: 0.2rem 0.2rem 1rem;
-	min-height: 0;
-	overflow-y: auto;
 	display: flex;
 	flex-direction: column;
 	gap: 1.2rem;
 	box-sizing: border-box;
 }
 
-.gsp-card {
-	padding: 1.1rem 1.2rem;
-	display: flex;
-	flex-direction: column;
-	gap: 0.9rem;
-	border: 0.1rem solid var(--line-subtle);
-	border-radius: var(--radius-sm);
-	background-color: rgba(255, 255, 255, 0.02);
-	box-sizing: border-box;
-}
-
-.gsp-title {
-	margin: 0;
-	font-size: 1.3rem;
-	font-weight: 600;
-	color: var(--deep-teal-bright);
-	text-shadow: 0 0 1.2rem var(--glow-teal-soft);
-}
-
-.gsp-card-head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-
-	.head-actions {
-		display: flex;
-		gap: 0.6rem;
-	}
-}
-
 .gsp-row {
 	display: flex;
 	align-items: flex-end;
 	gap: 0.9rem;
-
-	.grow {
-		flex: 1;
-	}
 }
 
 .gsp-grid {
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
 	gap: 0.9rem 1rem;
-}
-
-.field {
-	display: flex;
-	flex-direction: column;
-	gap: 0.45rem;
-
-	&.full {
-		grid-column: 1 / -1;
-	}
-}
-
-.field-label {
-	font-size: 1.05rem;
-	color: var(--text-muted);
-}
-
-.field-hint {
-	font-size: 0.95rem;
-
-	&.error {
-		color: var(--danger);
-	}
-}
-
-.input {
-	padding: 0.65rem 0.9rem;
-	width: 100%;
-	box-sizing: border-box;
-	border: 0.1rem solid var(--line-subtle);
-	border-radius: var(--radius-sm);
-	background-color: rgba(255, 255, 255, 0.04);
-	color: var(--text-primary);
-	font-size: 1.15rem;
-	font-family: inherit;
-	outline: none;
-	transition: all 0.2s ease;
-
-	&:focus {
-		border-color: var(--deep-teal-soft);
-		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
-	}
-
-	&.invalid {
-		border-color: var(--danger);
-		box-shadow: 0 0 0.6rem rgba(251, 44, 54, 0.3);
-	}
-
-	&::placeholder {
-		color: var(--text-muted);
-		opacity: 0.6;
-	}
-}
-
-.textarea {
-	min-height: 5.4rem;
-	resize: vertical;
-	line-height: 1.6;
-}
-
-.select {
-	cursor: pointer;
-
-	option {
-		color: var(--text-primary);
-		background-color: var(--bg-deep);
-	}
-}
-
-.btn {
-	padding: 0.7rem 1.2rem;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-	border: none;
-	border-radius: var(--radius-sm);
-	background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
-	color: #05121a;
-	font-size: 1.15rem;
-	font-weight: 600;
-	font-family: inherit;
-	white-space: nowrap;
-	cursor: pointer;
-	transition: all 0.2s ease;
-	flex-shrink: 0;
-
-	&:hover:not(:disabled) {
-		box-shadow: 0 0 1.4rem var(--glow-teal-soft);
-	}
-
-	&:disabled {
-		opacity: 0.55;
-		cursor: default;
-	}
-
-	&.ghost {
-		border: 0.1rem solid var(--line-strong);
-		background-image: none;
-		background-color: rgba(125, 227, 255, 0.06);
-		color: var(--deep-teal-bright);
-
-		&:hover:not(:disabled) {
-			box-shadow: 0 0 0.8rem var(--glow-teal-soft);
-		}
-	}
-
-	&.primary {
-		background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
-		color: #05121a;
-	}
-}
-
-.spin {
-	animation: gsp-spin 1s linear infinite;
-}
-
-@keyframes gsp-spin {
-	to {
-		transform: rotate(360deg);
-	}
 }
 
 .test-btn {
@@ -920,6 +738,9 @@ const normalizeInt = (value: number, fallback: number): number => {
 
 .emotion-body {
 	min-height: 4rem;
+	max-height: 26rem;
+	overflow-y: auto;
+	padding-right: 0.3rem;
 }
 
 .emotion-list {

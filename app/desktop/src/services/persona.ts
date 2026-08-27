@@ -6,7 +6,7 @@
  * 选中的人设 id 由后端写入 config 表 `selected_persona_id`
  */
 import {invoke} from "@tauri-apps/api/core"
-import {assetUrl} from "./asset"
+import {assetUrlSafe} from "./asset"
 import {logger} from "./logger"
 
 /** 人设记录 (与后端 PersonaRecord camelCase 对齐) */
@@ -154,8 +154,26 @@ export const importPersonaFile = async (path: string): Promise<ImportPersonaResu
 /** 人设头像 asset URL (非法路径返回 null) */
 export const personaAvatarUrl = (persona: Persona): string | null => {
 	if (!persona.avatarPath) return null
-	const CLEAN = persona.avatarPath.replace(/^\/+/, "").replace(/\\/g, "/")
-	if (!CLEAN) return null
-	if (CLEAN.split("/").some(seg => seg === ".." || seg === "." || !seg)) return null
-	return assetUrl(CLEAN)
+	return assetUrlSafe(persona.avatarPath)
+}
+
+/**
+ * 把人设拼成 system 消息 (只包含非空字段, 供对话系统注入 LLM 上下文)
+ */
+export const buildPersonaSystemMessage = (persona: Persona): string => {
+	const SECTIONS: {title: string; content: string}[] = [
+		{title: "描述", content: persona.description},
+		{title: "性格", content: persona.personality},
+		{title: "场景", content: persona.scenario},
+		{title: "开场白", content: persona.firstMes},
+		{title: "对话示例", content: persona.mesExample},
+		{title: "系统指令", content: persona.systemPrompt},
+		{title: "后续指令", content: persona.postHistoryInstructions},
+	]
+	const LINES: string[] = [`你是「${persona.name}」。`]
+	for (const section of SECTIONS) {
+		const CONTENT = section.content.trim()
+		if (CONTENT) LINES.push(`【${section.title}】\n${CONTENT}`)
+	}
+	return LINES.join("\n\n")
 }

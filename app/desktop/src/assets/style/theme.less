@@ -3,6 +3,8 @@
 	margin: 0;
 	box-sizing: border-box;
 	background: transparent;
+	scrollbar-width: thin;
+	scrollbar-color: rgba(125, 227, 255, 0.22) transparent;
 }
 
 img {
@@ -102,6 +104,8 @@ html, body, #app {
 	--deep-teal-bright: @deep-teal-bright;
 	--deep-teal-soft: @deep-teal-soft;
 
+	--glow-text: 0 0 1.2rem @glow-teal, 0 0 2rem @glow-teal-soft;
+
 	--bg-base: @bg-base;
 	--bg-abyss: @bg-abyss;
 	--bg-deep: @bg-deep;
@@ -156,7 +160,7 @@ html, body, #app {
 }
 
 .glow-teal {
-	text-shadow: 0 0 1.8rem @glow-teal, 0 0 6rem @glow-teal-soft;
+	text-shadow: var(--glow-text);
 }
 
 // 主按钮
@@ -234,9 +238,3 @@ html, body, #app {
 		background: rgba(125, 227, 255, 0.32);
 	}
 }
-
-* {
-	scrollbar-width: thin;
-	scrollbar-color: rgba(125, 227, 255, 0.22) transparent;
-}
-

@@ -18,6 +18,11 @@
 export type LLMAdapterId = "openai-responses" | "anthropic-messages" | "google-genai"
 
 /**
+ * 后端平台标识 (与后端命令前缀 / 桥接层命令表对应)
+ */
+export type LLMPlatform = "openai" | "anthropic" | "google"
+
+/**
  * LLM 对话角色 (软件统一协议)
  */
 export type LLMRole = "system" | "user" | "assistant"
@@ -104,6 +109,10 @@ export interface LLMAdapter<TConfig = unknown> {
 	 * 唯一标识
 	 */
 	readonly id: LLMAdapterId
+	/**
+	 * 后端平台标识 (桥接层按它选择生成 / 测试 / 模型列表命令)
+	 */
+	readonly platform: LLMPlatform
 	/**
 	 * 展示名称 (市场协议名)
 	 */

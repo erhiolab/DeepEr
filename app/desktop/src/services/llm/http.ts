@@ -2,15 +2,16 @@ import {invoke} from "@tauri-apps/api/core"
 import {listen} from "@tauri-apps/api/event"
 import useLanguages from "../i18n/useLanguages"
 import {logger} from "../logger"
-import type {LLMGenerateRequest, LLMGenerateResult, LLMTestResult} from "./types"
+import type {LLMGenerateRequest, LLMGenerateResult, LLMPlatform, LLMTestResult} from "./types"
 
 /**
  * 后端 LLM 命令桥接层
+ *
+ * 适配器只声明 `platform` (openai / anthropic / google),
+ * 具体命令名由这里按平台查表, 消除适配器与 store 里的重复命令映射.
  */
 
-/**
- * 后端统一生成结果 (与后端 LlmGenerateOutcome 的 camelCase 对应)
- */
+// 后端统一生成结果 (与后端 LlmGenerateOutcome 的 camelCase 对应)
 interface BackendGenerateResult {
 	ok: boolean
 	text?: string
@@ -30,9 +31,30 @@ export interface BackendTestResult {
 	errorCode?: string
 }
 
-/**
- * 后端错误码 → useLanguages().errors 取值器, `http_error` 需带 status.
- */
+// 各平台的后端命令表
+const PLATFORM_COMMANDS: Record<LLMPlatform, {
+	generate: string
+	test: string
+	list: string | null
+}> = {
+	openai: {
+		generate: "llm_openai_generate",
+		test: "llm_openai_test_connection",
+		list: "llm_openai_list_models",
+	},
+	anthropic: {
+		generate: "llm_anthropic_generate",
+		test: "llm_anthropic_test_connection",
+		list: null,
+	},
+	google: {
+		generate: "llm_google_generate",
+		test: "llm_google_test_connection",
+		list: "llm_google_list_models",
+	},
+}
+
+// 后端错误码 → useLanguages().errors 取值器, `http_error` 需带 status
 const translateError = (code: string | undefined, fallback: string | undefined, status?: number): string => {
 	if (!code) return fallback ?? "操作失败"
 	const ERRORS = useLanguages().errors
@@ -50,32 +72,36 @@ const translateError = (code: string | undefined, fallback: string | undefined, 
 	}
 }
 
+// 从请求中抽取后端参数 (与后端命令结构体 camelCase 对齐)
+const requestArgs = (request: LLMGenerateRequest, requestId?: string): Record<string, unknown> => ({
+	messages: request.messages,
+	...(requestId ? {requestId} : {}),
+	...(request.model ? {model: request.model} : {}),
+	...(request.temperature !== undefined ? {temperature: request.temperature} : {}),
+	...(request.maxTokens ? {maxTokens: request.maxTokens} : {}),
+})
+
+// 归一化后端生成结果
+const toGenerateResult = (result: BackendGenerateResult): LLMGenerateResult => ({
+	ok: result.ok,
+	...(result.text !== undefined ? {text: result.text} : {}),
+	...(result.inputTokens !== undefined ? {inputTokens: result.inputTokens} : {}),
+	...(result.outputTokens !== undefined ? {outputTokens: result.outputTokens} : {}),
+	...(result.error !== undefined || result.errorCode ? {error: translateError(result.errorCode, result.error)} : {}),
+})
+
 /**
  * 发起一次后端 LLM 生成请求
- *
- * @param platform 平台命令前缀, 如 `llm_openai_generate`
- * @param request  统一生成请求(含覆写参数)
  */
 export const backendGenerate = async (
-	platform: "llm_openai_generate" | "llm_anthropic_generate" | "llm_google_generate",
+	platform: LLMPlatform,
 	request: LLMGenerateRequest,
 ): Promise<LLMGenerateResult> => {
 	try {
-		const RESULT = await invoke<BackendGenerateResult>(platform, {
-			args: {
-				messages: request.messages,
-				...(request.model ? {model: request.model} : {}),
-				...(request.temperature !== undefined ? {temperature: request.temperature} : {}),
-				...(request.maxTokens ? {maxTokens: request.maxTokens} : {}),
-			},
+		const RESULT = await invoke<BackendGenerateResult>(PLATFORM_COMMANDS[platform].generate, {
+			args: requestArgs(request),
 		})
-		return {
-			ok: RESULT.ok,
-			...(RESULT.text !== undefined ? {text: RESULT.text} : {}),
-			...(RESULT.inputTokens !== undefined ? {inputTokens: RESULT.inputTokens} : {}),
-			...(RESULT.outputTokens !== undefined ? {outputTokens: RESULT.outputTokens} : {}),
-			...(RESULT.error !== undefined || RESULT.errorCode ? {error: translateError(RESULT.errorCode, RESULT.error)} : {}),
-		}
+		return toGenerateResult(RESULT)
 	} catch (error) {
 		const REASON = typeof error === "string" && error.trim() ? error.trim() : "LLM 生成失败"
 		await logger.error("后端 LLM 生成失败", error)
@@ -86,14 +112,10 @@ export const backendGenerate = async (
 /**
  * 发起一次后端 LLM 流式生成请求
  *
- * @param platform 平台命令前缀, 如 `llm_openai_generate`
- * @param request  统一生成请求 (覆写参数)
- * @param onDelta  每收到一段增量文本时回调 (用于流式渲染)
- *
- * 后端通过 Tauri 事件 `llm-stream-delta` / `llm-stream-end` 推送增量, 命令返回最终的完整结果.
+ * 后端通过 Tauri 事件 `llm-stream-delta` / `llm-stream-end` 推送增量, 命令返回最终完整结果.
  */
 export const backendGenerateStream = async (
-	platform: "llm_openai_generate" | "llm_anthropic_generate" | "llm_google_generate",
+	platform: LLMPlatform,
 	request: LLMGenerateRequest,
 	onDelta?: (delta: string) => void,
 ): Promise<LLMGenerateResult> => {
@@ -106,24 +128,12 @@ export const backendGenerateStream = async (
 		if (event.payload.requestId === REQUEST_ID) onDelta?.(event.payload.delta)
 	})
 	try {
-		const RESULT = await invoke<BackendGenerateResult>(platform, {
-			args: {
-				messages: request.messages,
-				requestId: REQUEST_ID,
-				...(request.model ? {model: request.model} : {}),
-				...(request.temperature !== undefined ? {temperature: request.temperature} : {}),
-				...(request.maxTokens ? {maxTokens: request.maxTokens} : {}),
-			},
+		const RESULT = await invoke<BackendGenerateResult>(PLATFORM_COMMANDS[platform].generate, {
+			args: requestArgs(request, REQUEST_ID),
 		})
-		return {
-			ok: RESULT.ok,
-			...(RESULT.text !== undefined ? {text: RESULT.text} : {}),
-			...(RESULT.inputTokens !== undefined ? {inputTokens: RESULT.inputTokens} : {}),
-			...(RESULT.outputTokens !== undefined ? {outputTokens: RESULT.outputTokens} : {}),
-			...(RESULT.error !== undefined || RESULT.errorCode ? {error: translateError(RESULT.errorCode, RESULT.error)} : {}),
-		}
+		return toGenerateResult(RESULT)
 	} catch (error) {
-		const REASON = typeof error === "string" && error.trim() ? error.trim() : "LLM 生成失败"
+		const REASON = typeof error === "string" && error.trim() ? error.trim() : "LLM 流式生成失败"
 		await logger.error("后端 LLM 流式生成失败", error)
 		return {ok: false, error: REASON}
 	} finally {
@@ -133,21 +143,16 @@ export const backendGenerateStream = async (
 
 /**
  * 发起一次后端 LLM 连接测试
- *
- * @param platform 平台命令, 如 `llm_openai_test_connection`
  */
-export const backendTestConnection = async (
-	platform:
-		| "llm_openai_test_connection"
-		| "llm_anthropic_test_connection"
-		| "llm_google_test_connection",
-): Promise<LLMTestResult> => {
+export const backendTestConnection = async (platform: LLMPlatform): Promise<LLMTestResult> => {
 	try {
-		const RESULT = await invoke<BackendTestResult>(platform)
+		const RESULT = await invoke<BackendTestResult>(PLATFORM_COMMANDS[platform].test)
 		return {
 			ok: RESULT.ok,
 			...(RESULT.status !== undefined ? {status: RESULT.status} : {}),
-			...(RESULT.error !== undefined || RESULT.errorCode ? {error: translateError(RESULT.errorCode, RESULT.error, RESULT.status)} : {}),
+			...(RESULT.error !== undefined || RESULT.errorCode
+				? {error: translateError(RESULT.errorCode, RESULT.error, RESULT.status)}
+				: {}),
 		}
 	} catch (error) {
 		const REASON = typeof error === "string" && error.trim() ? error.trim() : "LLM 连接测试失败"
@@ -156,15 +161,13 @@ export const backendTestConnection = async (
 }
 
 /**
- * 发起一次后端 LLM 模型列表查询
- *
- * @param platform 平台命令, 如 `llm_openai_list_models`
+ * 发起一次后端 LLM 模型列表查询 (平台无列表 API 时返回 null, 由适配器回落预设)
  */
-export const backendListModels = async (
-	platform: "llm_openai_list_models" | "llm_google_list_models",
-): Promise<string[]> => {
+export const backendListModels = async (platform: LLMPlatform): Promise<string[] | null> => {
+	const COMMAND = PLATFORM_COMMANDS[platform].list
+	if (!COMMAND) return null
 	try {
-		return await invoke<string[]>(platform)
+		return await invoke<string[]>(COMMAND)
 	} catch (error) {
 		await logger.error("后端 LLM 模型列表查询失败", error)
 		return []
