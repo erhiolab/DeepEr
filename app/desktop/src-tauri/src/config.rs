@@ -257,20 +257,6 @@ pub fn is_first_run(conn: &Connection) -> ConfigResult<bool> {
     }
 }
 
-/// 标记首次启动完成
-pub fn mark_first_run_completed(conn: &Connection) -> ConfigResult<()> {
-    set(conn, KEY_FIRST_RUN_COMPLETED, &ConfigValue::Boolean(true))?;
-    Ok(())
-}
-
-/// 记录首次初始化完成时间
-pub fn mark_initialized(conn: &Connection) -> ConfigResult<()> {
-    if !exists(conn, KEY_INITIALIZED_AT)? {
-        set(conn, KEY_INITIALIZED_AT, &ConfigValue::String(now()))?;
-    }
-    Ok(())
-}
-
 /// 首次初始化配置快照
 /// 使用 camelCase 与前端 TypeScript 接口保持一致
 #[derive(Debug, Clone, Serialize)]

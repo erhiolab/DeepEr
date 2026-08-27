@@ -11,10 +11,6 @@ const router = createRouter({
 	history: createWebHashHistory(),
 	routes: [
 		{
-			path: "/",
-			redirect: "/first-run"
-		},
-		{
 			path: "/first-run",
 			name: "FirstRun",
 			component: FirstRunView

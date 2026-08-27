@@ -4,6 +4,7 @@ import {onMounted} from "vue"
 import {useRouter} from "vue-router"
 import {invoke} from "@tauri-apps/api/core"
 import {logger} from "../services/logger"
+import {config} from "../services/config"
 import {closeWindow} from "../services/window"
 import useLanguages from "../services/i18n/useLanguages.ts"
 import {getInitConfig} from "../services/initConfig"
@@ -61,8 +62,9 @@ const prev = () => {
 // 完成初始化
 const finish = async () => {
 	try {
+		await config.set("first_run_completed", 1)
+		await config.set("initialized_at", Date.now())
 		await invoke("complete_first_run")
-		// 记录初始化版本信息 (来自首次初始化配置快照)
 		const VERSION = initConfig.value?.appVersion ?? "unknown"
 		const MODEL = initConfig.value?.selectedModel ?? "unknown"
 		await logger.info(`初始化完成 (v${VERSION}, model=${MODEL})`)

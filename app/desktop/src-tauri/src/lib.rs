@@ -77,7 +77,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::first_run::is_first_run,
             commands::first_run::complete_first_run,
             commands::log::write_log,
             commands::language::get_system_language,

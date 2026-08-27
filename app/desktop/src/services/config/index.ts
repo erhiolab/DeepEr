@@ -2,7 +2,7 @@ import {invoke} from "@tauri-apps/api/core"
 import {logger} from "../logger"
 
 export type ConfigKey =
-	"language" | "main_active_nav" |
+	"first_run_completed" | "initialized_at" | "language" | "main_active_nav" |
 	"llm_api_base" | "llm_api_key" | "llm_model" |
 	"llm_adapter" |
 	"tts_adapter" |

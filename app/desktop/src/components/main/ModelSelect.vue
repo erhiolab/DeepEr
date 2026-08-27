@@ -195,8 +195,7 @@ const loadApplied = async (): Promise<void> => {
 }
 
 onMounted(async () => {
-	await loadOfficial()
-	await Promise.all([loadInstalled(), loadApplied()])
+	await Promise.all([loadOfficial(), loadInstalled(), loadApplied()])
 })
 
 // 判断模型是否已安装
