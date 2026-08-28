@@ -34,13 +34,8 @@ const SOURCE_SILLYTAVERN: &str = "sillytavern";
 pub struct PersonaRecord {
 	pub id: i64,
 	pub name: String,
-	pub description: String,
 	pub personality: String,
-	pub scenario: String,
 	pub first_mes: String,
-	pub mes_example: String,
-	pub system_prompt: String,
-	pub post_history_instructions: String,
 	pub avatar_path: Option<String>,
 	pub source: String,
 	pub created_at: i64,
@@ -53,39 +48,19 @@ pub struct PersonaRecord {
 pub struct PersonaUpsertArgs {
 	/// 人设名称 (必填)
 	pub name: String,
-	/// 描述 / 简介
-	#[serde(default)]
-	pub description: String,
-	/// 性格设定
+	/// 人设 (性格 / 背景等设定)
 	#[serde(default)]
 	pub personality: String,
-	/// 场景设定
-	#[serde(default)]
-	pub scenario: String,
 	/// 开场白
 	#[serde(default)]
 	pub first_mes: String,
-	/// 对话示例
-	#[serde(default)]
-	pub mes_example: String,
-	/// 系统提示词
-	#[serde(default)]
-	pub system_prompt: String,
-	/// 对话后置指令
-	#[serde(default)]
-	pub post_history_instructions: String,
 }
 
 /// 从角色卡 JSON 中解析出的人设字段
 struct PersonaFields {
 	name: String,
-	description: String,
 	personality: String,
-	scenario: String,
 	first_mes: String,
-	mes_example: String,
-	system_prompt: String,
-	post_history_instructions: String,
 }
 
 /// 当前时间戳 (秒)
@@ -101,23 +76,17 @@ fn row_to_persona(row: &Row<'_>) -> rusqlite::Result<PersonaRecord> {
 	Ok(PersonaRecord {
 		id: row.get(0)?,
 		name: row.get(1)?,
-		description: row.get(2)?,
-		personality: row.get(3)?,
-		scenario: row.get(4)?,
-		first_mes: row.get(5)?,
-		mes_example: row.get(6)?,
-		system_prompt: row.get(7)?,
-		post_history_instructions: row.get(8)?,
-		avatar_path: row.get(9)?,
-		source: row.get(10)?,
-		created_at: row.get(11)?,
-		updated_at: row.get(12)?,
+		personality: row.get(2)?,
+		first_mes: row.get(3)?,
+		avatar_path: row.get(4)?,
+		source: row.get(5)?,
+		created_at: row.get(6)?,
+		updated_at: row.get(7)?,
 	})
 }
 
 const PERSONA_COLUMNS: &str = "
-    id, name, description, personality, scenario, first_mes, mes_example,
-    system_prompt, post_history_instructions, avatar_path, source, created_at, updated_at
+    id, name, personality, first_mes, avatar_path, source, created_at, updated_at
 ";
 
 /// 校验人设名称
@@ -173,7 +142,7 @@ pub fn persona_get(state: tauri::State<'_, db::Db>, id: i64) -> Result<PersonaRe
 }
 
 /// 创建人设
-/// invoke("persona_create", { args: { name: "...", description: "...", ... } })
+/// invoke("persona_create", { args: { name: "...", personality: "...", firstMes: "..." } })
 #[tauri::command]
 pub fn persona_create(
 	state: tauri::State<'_, db::Db>,
@@ -187,18 +156,12 @@ pub fn persona_create(
 	let timestamp = now();
 	conn.execute(
 		"INSERT INTO personas (
-			name, description, personality, scenario, first_mes, mes_example,
-			system_prompt, post_history_instructions, source, created_at, updated_at
-		 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+			name, personality, first_mes, source, created_at, updated_at
+		 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
 		params![
 			args.name.trim(),
-			args.description,
 			args.personality,
-			args.scenario,
 			args.first_mes,
-			args.mes_example,
-			args.system_prompt,
-			args.post_history_instructions,
 			SOURCE_MANUAL,
 			timestamp,
 			timestamp
@@ -225,19 +188,12 @@ pub fn persona_update(
 	let affected = conn
 		.execute(
 			"UPDATE personas SET
-				name = ?1, description = ?2, personality = ?3, scenario = ?4,
-				first_mes = ?5, mes_example = ?6, system_prompt = ?7,
-				post_history_instructions = ?8, updated_at = ?9
-			 WHERE id = ?10",
+				name = ?1, personality = ?2, first_mes = ?3, updated_at = ?4
+			 WHERE id = ?5",
 			params![
 				args.name.trim(),
-				args.description,
 				args.personality,
-				args.scenario,
 				args.first_mes,
-				args.mes_example,
-				args.system_prompt,
-				args.post_history_instructions,
 				now(),
 				id
 			],
@@ -348,18 +304,12 @@ pub fn persona_import_file(
 	let source_data = serde_json::to_string(&card_json).unwrap_or_else(|_| "{}".to_string());
 	conn.execute(
 		"INSERT INTO personas (
-			name, description, personality, scenario, first_mes, mes_example,
-			system_prompt, post_history_instructions, source, source_data, created_at, updated_at
-		 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+			name, personality, first_mes, source, source_data, created_at, updated_at
+		 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
 		params![
 			fields.name,
-			fields.description,
 			fields.personality,
-			fields.scenario,
 			fields.first_mes,
-			fields.mes_example,
-			fields.system_prompt,
-			fields.post_history_instructions,
 			SOURCE_SILLYTAVERN,
 			source_data,
 			timestamp,
@@ -441,15 +391,17 @@ fn parse_sillytavern_card(json: &Value, file_stem: &str) -> PersonaFields {
 			card_name
 		}
 	};
+	let mut personality_parts: Vec<String> = Vec::new();
+	for part in [get("description"), get("personality"), get("scenario")] {
+		let trimmed = part.trim().to_string();
+		if !trimmed.is_empty() {
+			personality_parts.push(trimmed);
+		}
+	}
 	PersonaFields {
 		name,
-		description: get("description"),
-		personality: get("personality"),
-		scenario: get("scenario"),
+		personality: personality_parts.join("\n"),
 		first_mes: get("first_mes"),
-		mes_example: get("mes_example"),
-		system_prompt: get("system_prompt"),
-		post_history_instructions: get("post_history_instructions"),
 	}
 }
 
@@ -551,22 +503,15 @@ mod tests {
 				"description": "来自深海的精灵",
 				"personality": "温柔",
 				"scenario": "海边小镇",
-				"first_mes": "你好呀~",
-				"mes_example": "<START>",
-				"system_prompt": "始终使用中文",
-				"post_history_instructions": "结尾保持活泼"
+				"first_mes": "你好呀~"
 			}"#,
 		)
 		.expect("测试 JSON 应合法");
 		let fields = parse_sillytavern_card(&json, "fallback");
 		assert_eq!(fields.name, "莉莉");
-		assert_eq!(fields.description, "来自深海的精灵");
-		assert_eq!(fields.personality, "温柔");
-		assert_eq!(fields.scenario, "海边小镇");
+		// 描述/性格/场景合并进"人设"
+		assert_eq!(fields.personality, "来自深海的精灵\n温柔\n海边小镇");
 		assert_eq!(fields.first_mes, "你好呀~");
-		assert_eq!(fields.mes_example, "<START>");
-		assert_eq!(fields.system_prompt, "始终使用中文");
-		assert_eq!(fields.post_history_instructions, "结尾保持活泼");
 	}
 
 	#[test]
@@ -574,7 +519,7 @@ mod tests {
 		let json: Value = serde_json::from_str(r#"{"description":"无名"}"#).unwrap();
 		let fields = parse_sillytavern_card(&json, "my-card");
 		assert_eq!(fields.name, "my-card");
-		assert_eq!(fields.description, "无名");
-		assert_eq!(fields.personality, "");
+		assert_eq!(fields.personality, "无名");
+		assert_eq!(fields.first_mes, "");
 	}
 }

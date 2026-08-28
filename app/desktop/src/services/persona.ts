@@ -13,13 +13,8 @@ import {logger} from "./logger"
 export interface Persona {
 	id: number
 	name: string
-	description: string
 	personality: string
-	scenario: string
 	firstMes: string
-	mesExample: string
-	systemPrompt: string
-	postHistoryInstructions: string
 	avatarPath: string | null
 	source: string
 	createdAt: number
@@ -29,25 +24,15 @@ export interface Persona {
 /** 人设写入参数 */
 export interface PersonaInput {
 	name: string
-	description: string
 	personality: string
-	scenario: string
 	firstMes: string
-	mesExample: string
-	systemPrompt: string
-	postHistoryInstructions: string
 }
 
 /** 空人设草稿 */
 export const emptyPersonaInput = (): PersonaInput => ({
 	name: "",
-	description: "",
 	personality: "",
-	scenario: "",
 	firstMes: "",
-	mesExample: "",
-	systemPrompt: "",
-	postHistoryInstructions: "",
 })
 
 /** 人设来源: 手动创建 */
@@ -162,13 +147,8 @@ export const personaAvatarUrl = (persona: Persona): string | null => {
  */
 export const buildPersonaSystemMessage = (persona: Persona): string => {
 	const SECTIONS: {title: string; content: string}[] = [
-		{title: "描述", content: persona.description},
-		{title: "性格", content: persona.personality},
-		{title: "场景", content: persona.scenario},
+		{title: "人设", content: persona.personality},
 		{title: "开场白", content: persona.firstMes},
-		{title: "对话示例", content: persona.mesExample},
-		{title: "系统指令", content: persona.systemPrompt},
-		{title: "后续指令", content: persona.postHistoryInstructions},
 	]
 	const LINES: string[] = [`你是「${persona.name}」。`]
 	for (const section of SECTIONS) {

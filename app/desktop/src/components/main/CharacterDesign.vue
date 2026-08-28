@@ -59,7 +59,7 @@ const importing = ref(false)
 const nameError = ref(false)
 
 // 页面反馈
-const feedback = ref<{type: "ok" | "error"; text: string} | null>(null)
+const feedback = ref<{ type: "ok" | "error"; text: string } | null>(null)
 
 // 删除确认目标
 const deleteTarget = ref<Persona | null>(null)
@@ -73,18 +73,13 @@ let syncing = false
 // 草稿变化标记为未保存
 watch(draft, () => {
 	if (loaded.value && !syncing) dirty.value = true
-}, {deep: true})
+}, {deep: true, flush: "sync"})
 
 // 从 Persona 构造草稿
 const draftFromPersona = (persona: Persona): PersonaInput => ({
 	name: persona.name,
-	description: persona.description,
 	personality: persona.personality,
-	scenario: persona.scenario,
 	firstMes: persona.firstMes,
-	mesExample: persona.mesExample,
-	systemPrompt: persona.systemPrompt,
-	postHistoryInstructions: persona.postHistoryInstructions,
 })
 
 // 应用草稿 (程序化赋值, 不触发脏标记)
@@ -167,6 +162,12 @@ const openPersona = async (persona: Persona): Promise<void> => {
 const newPersona = async (): Promise<void> => {
 	if (!(await flushDraft())) return
 	applyDraft(emptyPersonaInput(), null)
+}
+
+// 取消新建草稿 (丢弃未保存内容, 回到空状态/列表)
+const cancelDraft = (): void => {
+	applyDraft(emptyPersonaInput(), null)
+	draftOpen.value = false
 }
 
 // 设置 / 取消当前启用的人设 (再次点击使用中的卡片则取消)
@@ -276,8 +277,14 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 		</PageHeader>
 
 		<div v-if="loaded" class="character-body">
-			<aside class="persona-list">
-				<template v-if="personas.length > 0">
+			<EmptyState
+				v-if="personas.length === 0 && !draftOpen"
+				icon="book-user"
+				:title="I18N.empty"
+				:hint="I18N.emptyHint"
+			/>
+			<template v-else>
+				<aside v-if="personas.length > 0" class="persona-list">
 					<div
 						v-for="persona in personas"
 						:key="persona.id"
@@ -296,7 +303,9 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 						</div>
 						<div class="persona-info">
 							<span class="persona-name">{{ persona.name }}</span>
-							<span class="persona-desc">{{ persona.description || persona.personality || I18N.selectHint }}</span>
+							<span class="persona-desc">
+								{{ persona.personality || I18N.selectHint }}
+							</span>
 							<span class="persona-meta">
 								<span class="source-badge">{{ sourceLabel(persona.source) }}</span>
 							</span>
@@ -315,99 +324,66 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 							</button>
 						</div>
 					</div>
-				</template>
-				<EmptyState v-else icon="book-user" :title="I18N.empty" :hint="I18N.emptyHint"/>
-			</aside>
+				</aside>
 
-			<div class="persona-editor">
-				<template v-if="draftOpen">
-					<SectionCard
-						scroll
-						:title="editingId === null ? I18N.newPersona : (draft.name || I18N.title)"
-					>
-						<template #actions>
+				<div class="persona-editor">
+					<template v-if="draftOpen">
+						<SectionCard
+							scroll
+							:title="editingId === null ? I18N.newPersona : (draft.name || I18N.title)"
+						>
+							<template #actions>
 							<span v-if="editingId !== null && editingId === activeId" class="used-tag">
 								<Icon name="check" :size="11"/>
 								{{ I18N.used }}
 							</span>
-						</template>
-					<div class="editor-form">
-						<FormField :label="I18N.name" :error="nameError ? I18N.nameEmpty : undefined">
-							<input
-								v-model="draft.name"
-								class="input"
-								:class="{invalid: nameError}"
-								:placeholder="I18N.namePlaceholder"
-								@input="nameError = false"
-							/>
-						</FormField>
-						<FormField :label="I18N.description">
-							<textarea
-								v-model="draft.description"
-								class="input textarea"
-								rows="2"
-								:placeholder="I18N.descriptionPlaceholder"
-							/>
-						</FormField>
-						<FormField :label="I18N.personality" class="full">
-							<textarea
-								v-model="draft.personality"
-								class="input textarea"
-								rows="4"
-								:placeholder="I18N.personalityPlaceholder"
-							/>
-						</FormField>
-						<FormField :label="I18N.scenario">
-							<textarea
-								v-model="draft.scenario"
-								class="input textarea"
-								rows="3"
-								:placeholder="I18N.scenarioPlaceholder"
-							/>
-						</FormField>
-						<FormField :label="I18N.firstMes">
-							<textarea
-								v-model="draft.firstMes"
-								class="input textarea"
-								rows="3"
-								:placeholder="I18N.firstMesPlaceholder"
-							/>
-						</FormField>
-						<FormField :label="I18N.mesExample" class="full">
-							<textarea
-								v-model="draft.mesExample"
-								class="input textarea"
-								rows="5"
-								:placeholder="I18N.mesExamplePlaceholder"
-							/>
-						</FormField>
-						<FormField :label="I18N.systemPrompt">
-							<textarea
-								v-model="draft.systemPrompt"
-								class="input textarea"
-								rows="3"
-								:placeholder="I18N.systemPromptPlaceholder"
-							/>
-						</FormField>
-						<FormField :label="I18N.postHistory">
-							<textarea
-								v-model="draft.postHistoryInstructions"
-								class="input textarea"
-								rows="3"
-								:placeholder="I18N.postHistoryPlaceholder"
-							/>
-						</FormField>
-					</div>
-					<template #footer>
-						<button class="btn-primary action-btn" :disabled="saving" @click="saveCurrent">
-							<Icon v-if="saving" name="loading" :size="14" class="spin"/>
-							{{ saving ? I18N.saving : I18N.save }}
-						</button>
+							</template>
+						<div class="editor-form">
+							<FormField :label="I18N.name" :error="nameError ? I18N.nameEmpty : undefined">
+								<input
+									v-model="draft.name"
+									class="input"
+									:class="{invalid: nameError}"
+									:placeholder="I18N.namePlaceholder"
+									@input="nameError = false"
+								/>
+							</FormField>
+							<FormField :label="I18N.personality" class="full">
+								<textarea
+									v-model="draft.personality"
+									class="input textarea"
+									rows="6"
+									:placeholder="I18N.personalityPlaceholder"
+								/>
+							</FormField>
+							<FormField :label="I18N.firstMes" class="full">
+								<textarea
+									v-model="draft.firstMes"
+									class="input textarea"
+									rows="4"
+									:placeholder="I18N.firstMesPlaceholder"
+								/>
+							</FormField>
+						</div>
+							<template #footer>
+								<button
+									v-if="editingId === null"
+									class="btn ghost"
+									:disabled="saving"
+									@click="cancelDraft"
+								>
+									{{ I18N.cancel }}
+								</button>
+								<button class="btn-primary action-btn" :disabled="saving" @click="saveCurrent">
+									<Icon v-if="saving" name="loading" :size="14" class="spin"/>
+									{{ saving ? I18N.saving : I18N.save }}
+								</button>
+							</template>
+						</SectionCard>
 					</template>
-					</SectionCard>
-				</template>
-				<EmptyState v-else icon="book-user" :hint="I18N.selectHint"/>
-			</div>
+					<EmptyState v-else icon="book-user" :hint="I18N.selectHint"/>
+				</div>
+			</template>
 		</div>
 
 		<div v-if="feedback" class="character-feedback" :class="feedback.type">

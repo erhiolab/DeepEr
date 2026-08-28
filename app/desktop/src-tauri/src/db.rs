@@ -41,20 +41,15 @@ CREATE TABLE IF NOT EXISTS contexts (
     created_at  INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS personas (
-    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
-    name                      TEXT NOT NULL,
-    description               TEXT NOT NULL DEFAULT '',
-    personality               TEXT NOT NULL DEFAULT '',
-    scenario                  TEXT NOT NULL DEFAULT '',
-    first_mes                 TEXT NOT NULL DEFAULT '',
-    mes_example               TEXT NOT NULL DEFAULT '',
-    system_prompt             TEXT NOT NULL DEFAULT '',
-    post_history_instructions TEXT NOT NULL DEFAULT '',
-    avatar_path               TEXT,
-    source                    TEXT NOT NULL DEFAULT 'manual',
-    source_data               TEXT NOT NULL DEFAULT '{}',
-    created_at                INTEGER NOT NULL,
-    updated_at                INTEGER NOT NULL
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    personality TEXT NOT NULL DEFAULT '',
+    first_mes   TEXT NOT NULL DEFAULT '',
+    avatar_path TEXT,
+    source      TEXT NOT NULL DEFAULT 'manual',
+    source_data TEXT NOT NULL DEFAULT '{}',
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
 );
 ";
 
