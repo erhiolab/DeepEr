@@ -22,6 +22,7 @@ import LLMAdapter from "../components/main/LLMAdapter.vue"
 import TTSAdapter from "../components/main/TTSAdapter.vue"
 import CharacterDesign from "../components/main/CharacterDesign.vue"
 import ToolList from "../components/main/ToolList.vue"
+import Scheduled from "../components/main/Scheduled.vue"
 
 import LanguageSelect from "../components/main/LanguageSelect.vue"
 import Exception from "../components/main/Exception.vue"
@@ -37,7 +38,7 @@ const ROUTER = useRouter()
 type NavKey =
 	"home" | "talk" |
 	"model" | "touch" |
-	"llm" | "tts" | "characterDesign" | "tool" |
+	"llm" | "tts" | "characterDesign" | "tool" | "scheduled" |
 	"language" | "exception" | "about"
 
 // 侧边导航项
@@ -75,6 +76,7 @@ const NAV_GROUPS: NavGroup[] = [
 			{key: "tts", icon: "volume"},
 			{key: "characterDesign", icon: "book-user"},
 			{key: "tool", icon: "tool-case"},
+			{key: "scheduled", icon: "alarm-clock"},
 		],
 	},
 	{
@@ -200,6 +202,7 @@ const toggleMaximize = () => {
 					<TTSAdapter v-else-if="activeNav === 'tts'"/>
 					<CharacterDesign v-else-if="activeNav === 'characterDesign'"/>
 					<ToolList v-else-if="activeNav === 'tool'"/>
+					<Scheduled v-else-if="activeNav === 'scheduled'"/>
 
 					<LanguageSelect v-else-if="activeNav === 'language'"/>
 					<Exception v-else-if="activeNav === 'exception'"/>

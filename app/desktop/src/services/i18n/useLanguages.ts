@@ -460,6 +460,7 @@ const buildSnapshot = () => {
 				tts: t("common.label.tts"),
 				characterDesign: t("common.label.characterDesign"),
 				tool: t("common.label.tool"),
+				scheduled: t("common.label.scheduled"),
 				exception: t("common.label.exception"),
 				about: t("common.label.about"),
 			},

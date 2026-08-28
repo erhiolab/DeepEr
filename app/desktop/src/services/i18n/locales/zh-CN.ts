@@ -21,6 +21,7 @@ export default {
 			tts: "TTS",
 			characterDesign: "人设",
 			tool: "工具",
+			scheduled: "定时",
 			exception: "异常",
 			about: "关于",
 			installed: "已安装",
