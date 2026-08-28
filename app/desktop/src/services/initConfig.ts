@@ -5,7 +5,6 @@ import {logger} from "./logger"
  * 首次初始化配置快照 (对应后端 config::InitConfig)
  */
 export interface InitConfig {
-	configSchemaVersion: number
 	appVersion: string
 	installedAt: string
 	initializedAt: string | null

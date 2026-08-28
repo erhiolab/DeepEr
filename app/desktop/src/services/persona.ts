@@ -106,6 +106,7 @@ export const selectPersona = async (id: number | null): Promise<boolean> => {
 export const getSelectedPersonaId = async (): Promise<number | null> => {
 	try {
 		const RAW = await invoke<unknown>("get_config", {key: "selected_persona_id"})
+		if (typeof RAW === "boolean") return RAW ? 1 : null
 		if (typeof RAW === "number") return RAW
 		if (typeof RAW === "string") {
 			const PARSED = Number(RAW)
@@ -140,20 +141,4 @@ export const importPersonaFile = async (path: string): Promise<ImportPersonaResu
 export const personaAvatarUrl = (persona: Persona): string | null => {
 	if (!persona.avatarPath) return null
 	return assetUrlSafe(persona.avatarPath)
-}
-
-/**
- * 把人设拼成 system 消息 (只包含非空字段, 供对话系统注入 LLM 上下文)
- */
-export const buildPersonaSystemMessage = (persona: Persona): string => {
-	const SECTIONS: {title: string; content: string}[] = [
-		{title: "人设", content: persona.personality},
-		{title: "开场白", content: persona.firstMes},
-	]
-	const LINES: string[] = [`你是「${persona.name}」。`]
-	for (const section of SECTIONS) {
-		const CONTENT = section.content.trim()
-		if (CONTENT) LINES.push(`【${section.title}】\n${CONTENT}`)
-	}
-	return LINES.join("\n\n")
 }

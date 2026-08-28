@@ -3,6 +3,7 @@ import {computed, onBeforeUnmount, onMounted, ref, watch} from "vue"
 import {open} from "@tauri-apps/plugin-dialog"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useUnsavedGuard} from "../../services/store/unsaved"
+import {useConversationStore} from "../../services/store/conversation"
 import Icon from "../common/Icon.vue"
 import ConfirmDialog from "../common/ConfirmDialog.vue"
 import PageHeader from "../common/PageHeader.vue"
@@ -27,6 +28,8 @@ import {
 const I18N = computed(() => useLanguages().components.main.characterDesign)
 
 const GUARD = useUnsavedGuard()
+
+const CONV = useConversationStore()
 
 // 人设列表 (按创建顺序)
 const personas = ref<Persona[]>([])
@@ -178,6 +181,8 @@ const toggleActive = async (persona: Persona): Promise<void> => {
 	}
 	if (await selectPersona(persona.id)) {
 		activeId.value = persona.id
+		// 设为人设后触发首轮互动 (有开场白直接用, 没有则发起一次 LLM 请求)
+		void CONV.startPersona(persona)
 	} else {
 		feedback.value = {type: "error", text: I18N.value.saveFailed}
 	}

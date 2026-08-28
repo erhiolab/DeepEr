@@ -10,6 +10,9 @@ export interface ContextRecord {
 	role: string | null
 	content: string
 	tokenCount: number
+	inputTokens?: number | null
+	outputTokens?: number | null
+	hitRate?: number | null
 	createdAt: number
 }
 
@@ -27,6 +30,9 @@ export const contextInsert = async (payload: {
 	role?: string
 	content: string
 	tokenCount?: number
+	inputTokens?: number | null
+	outputTokens?: number | null
+	hitRate?: number | null
 }): Promise<void> => {
 	try {
 		await invoke<number>("context_insert", {
@@ -35,6 +41,9 @@ export const contextInsert = async (payload: {
 				role: payload.role,
 				content: payload.content,
 				tokenCount: payload.tokenCount ?? 0,
+				inputTokens: payload.inputTokens ?? null,
+				outputTokens: payload.outputTokens ?? null,
+				hitRate: payload.hitRate ?? null,
 			},
 		})
 	} catch (error) {

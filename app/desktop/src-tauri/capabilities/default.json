@@ -32,6 +32,7 @@
 		"core:window:allow-center",
 		"core:app:allow-version",
 		"updater:default",
-		"process:default"
+		"process:default",
+		"clipboard-manager:allow-write-text"
 	]
 }

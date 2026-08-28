@@ -132,8 +132,6 @@ pub fn get_str_or(conn: &Connection, key: &str, fallback: &str) -> String {
     }
 }
 
-/// 配置键: 配置结构版本 (不兼容变更时 +1, 用于迁移)
-pub const KEY_CONFIG_SCHEMA_VERSION: &str = "config_schema_version";
 /// 配置键: 首次启动 (数据库创建) 时间
 pub const KEY_INSTALLED_AT: &str = "installed_at";
 /// 配置键: 首次初始化完成时间
@@ -144,9 +142,6 @@ pub const KEY_APP_VERSION: &str = "app_version";
 pub const KEY_LANGUAGE: &str = "language";
 /// 配置键: 首次初始化是否已完成
 pub const KEY_FIRST_RUN_COMPLETED: &str = "first_run_completed";
-
-/// 当前配置结构版本
-const CONFIG_SCHEMA_VERSION: i64 = 1;
 
 /// 当前本地时间, 形如 2026-01-01 12:00:00
 fn now() -> String {
@@ -161,10 +156,6 @@ fn system_language() -> String {
 /// 初始化默认配置
 pub fn init_defaults(conn: &Connection) -> ConfigResult<()> {
     let defaults = [
-        (
-            KEY_CONFIG_SCHEMA_VERSION,
-            ConfigValue::Integer(CONFIG_SCHEMA_VERSION),
-        ),
         (
             KEY_APP_VERSION,
             ConfigValue::String(env!("CARGO_PKG_VERSION").to_string()),
@@ -182,65 +173,6 @@ pub fn init_defaults(conn: &Connection) -> ConfigResult<()> {
             params![key, value.to_storage()],
         )?;
     }
-    Ok(())
-}
-
-/// 检查配置结构版本
-///
-/// current < app version  → 预留未来数据库迁移
-/// current == app version  → 正常
-/// current > app version → 返回错误, 防止旧程序错误修改新数据库
-pub fn ensure_schema_version(conn: &Connection) -> ConfigResult<()> {
-    let current = match get(conn, KEY_CONFIG_SCHEMA_VERSION)? {
-        Some(ConfigValue::Integer(value)) => value,
-        Some(ConfigValue::String(value)) => value.parse::<i64>().unwrap_or(CONFIG_SCHEMA_VERSION),
-        _ => CONFIG_SCHEMA_VERSION,
-    };
-    if current > CONFIG_SCHEMA_VERSION {
-        return Err(format!(
-            "配置数据库版本 {} 高于当前应用支持版本 {}, 请升级应用",
-            current, CONFIG_SCHEMA_VERSION
-        )
-        .into());
-    }
-    if current < CONFIG_SCHEMA_VERSION {
-        migrate_schema(conn, current, CONFIG_SCHEMA_VERSION)?;
-    }
-    Ok(())
-}
-
-/// 数据库结构迁移
-///
-/// 未来版本例如:
-/// v1 → v2
-/// v2 → v3
-/// 在这里逐级迁移
-fn migrate_schema(conn: &Connection, from: i64, to: i64) -> ConfigResult<()> {
-    let mut version = from;
-    while version < to {
-        match version {
-            // v1 → v2
-            //
-            // 示例：
-            // migrate_v1_to_v2(conn)?;
-            1 => {
-                // 当前没有 v2, 暂时不执行实际迁移
-            }
-            _ => {
-                return Err(format!("不支持的配置数据库版本: {}", version).into());
-            }
-        }
-        version += 1;
-    }
-    conn.execute(
-        r#"
-        INSERT INTO config (key, value)
-        VALUES (?1, ?2)
-        ON CONFLICT(key)
-        DO UPDATE SET value = excluded.value
-        "#,
-        params![KEY_CONFIG_SCHEMA_VERSION, to.to_string()],
-    )?;
     Ok(())
 }
 
@@ -262,7 +194,6 @@ pub fn is_first_run(conn: &Connection) -> ConfigResult<bool> {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitConfig {
-    pub config_schema_version: i64,
     pub app_version: String,
     pub installed_at: String,
     pub initialized_at: Option<String>,
@@ -273,18 +204,12 @@ pub struct InitConfig {
 #[tauri::command]
 pub fn get_init_config(state: tauri::State<'_, crate::db::Db>) -> Result<InitConfig, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let schema = match get(&conn, KEY_CONFIG_SCHEMA_VERSION).map_err(|e| e.to_string())? {
-        Some(ConfigValue::Integer(value)) => value,
-        Some(ConfigValue::String(value)) => value.parse::<i64>().unwrap_or(CONFIG_SCHEMA_VERSION),
-        _ => CONFIG_SCHEMA_VERSION,
-    };
     let initialized_at = match get(&conn, KEY_INITIALIZED_AT).map_err(|e| e.to_string())? {
         Some(ConfigValue::String(value)) if !value.is_empty() => Some(value),
         _ => None,
     };
     let language_fallback = system_language();
     Ok(InitConfig {
-        config_schema_version: schema,
         app_version: get_str_or(&conn, KEY_APP_VERSION, "unknown"),
         installed_at: get_str_or(&conn, KEY_INSTALLED_AT, ""),
         initialized_at,

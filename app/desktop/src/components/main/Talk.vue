@@ -6,7 +6,7 @@ import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import {useConversationStore} from "../../services/store/conversation.ts"
 import {getPersona, getSelectedPersonaId, personaAvatarUrl, type Persona} from "../../services/persona"
-import StreamingMessage from "../StreamingMessage.vue"
+import MarkdownRenderer from "../MarkdownRenderer.vue"
 import fallbackAvatar from "../../assets/images/logo.png"
 
 const I18N = computed(() => useLanguages().components.main.talk)
@@ -146,10 +146,12 @@ watch(() => L2D.currentModel, (model) => {
 					<div v-if="item.side === 'center'" class="chat-time">{{ item.text }}</div>
 					<div v-else class="msg-row" :class="item.side">
 						<div v-if="item.side === 'left'" class="bubbles">
-							<StreamingMessage
-								:text="item.text"
-								:is-streaming="CONV.isTyping && item.id === CONV.history[CONV.history.length - 1].id"
-							/>
+							<div
+								class="streaming-message"
+								:class="{streaming: CONV.isTyping && item.id === CONV.history[CONV.history.length - 1].id}"
+							>
+								<MarkdownRenderer :content="item.text"/>
+							</div>
 						</div>
 						<div v-else class="bubble">{{ item.text }}</div>
 					</div>
@@ -351,6 +353,10 @@ watch(() => L2D.currentModel, (model) => {
 	border: 0.1rem solid var(--line-subtle);
 	border-top-left-radius: 0.3rem;
 	color: var(--text-body);
+}
+
+.msg-row.left .streaming-message.streaming {
+	opacity: 0.8;
 }
 
 .msg-row.right .bubble {

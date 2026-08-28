@@ -229,32 +229,70 @@ pub fn persona_delete(
 	if let Some(avatar_path) = &record.avatar_path {
 		let _ = remove_avatar_file(&app, avatar_path);
 	}
-	// 被删的是当前选中人设时, 清除选中配置
-	if let Ok(Some(ConfigValue::Integer(selected))) = config::get(&conn, KEY_SELECTED_PERSONA_ID) {
-		if selected == id {
+	// 被删的是当前选中人设时, 清除选中配置与人设上下文
+	// 注意: 配置存储 "1" 会被 from_storage 读成 Boolean(true), 这里兼容 Integer / String / Boolean
+	if let Ok(Some(value)) = config::get(&conn, KEY_SELECTED_PERSONA_ID) {
+		let selected = match value {
+			ConfigValue::Integer(v) => Some(v),
+			ConfigValue::String(v) => v.parse::<i64>().ok(),
+			ConfigValue::Boolean(true) => Some(1),
+			_ => None,
+		};
+		if selected == Some(id) {
 			let _ = config::delete(&conn, KEY_SELECTED_PERSONA_ID);
+			let _ = conn.execute("DELETE FROM contexts WHERE type = 'person'", []);
 		}
 	}
 	Ok(())
+}
+
+/// 人设系统消息 (与前端 buildPersonaSystemMessage 对应, 入库为 type=person 记录)
+fn persona_system_message(persona: &PersonaRecord) -> String {
+	let mut lines = vec![format!("你是「{}」。", persona.name)];
+	let personality = persona.personality.trim();
+	if !personality.is_empty() {
+		lines.push(format!("【人设】\n{personality}"));
+	}
+	let first_mes = persona.first_mes.trim();
+	if !first_mes.is_empty() {
+		lines.push(format!("【开场白】\n{first_mes}"));
+	}
+	lines.join("\n\n")
 }
 
 /// 设置 / 清除当前选中人设 (null = 清除选择)
 /// invoke("persona_select", { id: 1 })
 #[tauri::command]
 pub fn persona_select(state: tauri::State<'_, db::Db>, id: Option<i64>) -> Result<(), String> {
-	let conn = state
+	let mut conn = state
 		.0
 		.lock()
 		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
 	match id {
 		Some(selected) => {
-			get_persona_by_id(&conn, selected)?;
-			config::set(&conn, KEY_SELECTED_PERSONA_ID, &ConfigValue::Integer(selected))
+			let persona = get_persona_by_id(&conn, selected)?;
+			let tx = conn
+				.transaction()
+				.map_err(|e| format!("开启事务失败: {e}"))?;
+			config::set(&tx, KEY_SELECTED_PERSONA_ID, &ConfigValue::Integer(selected))
 				.map_err(|e| format!("保存选中人设失败: {e}"))?;
+			// 人设插入上下文 (type=person, 每次只保留当前人设一条)
+			tx.execute("DELETE FROM contexts WHERE type = 'person'", [])
+				.map_err(|e| format!("清理旧人设上下文失败: {e}"))?;
+			let content = persona_system_message(&persona);
+			let token_count = ((content.chars().count() / 4).max(1)) as u64;
+			tx.execute(
+				"INSERT INTO contexts (type, role, content, token_count, created_at)
+				 VALUES ('person', 'system', ?1, ?2, ?3)",
+				params![content, token_count, now()],
+			)
+			.map_err(|e| format!("写入人设上下文失败: {e}"))?;
+			tx.commit().map_err(|e| format!("提交事务失败: {e}"))?;
 		}
 		None => {
 			config::delete(&conn, KEY_SELECTED_PERSONA_ID)
 				.map_err(|e| format!("清除选中人设失败: {e}"))?;
+			let _ = conn.execute("DELETE FROM contexts WHERE type = 'person'", []);
 		}
 	}
 	Ok(())

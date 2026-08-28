@@ -52,7 +52,6 @@ export interface ModelActions {
  * 每个模型在模型目录下维护一份 `model.config.json`
  */
 export interface ModelTouchConfig {
-	version: number
 	render: ModelRenderConfig
 	name: string
 	image: string
@@ -63,7 +62,6 @@ export interface ModelTouchConfig {
 
 // 默认模型配置 (空模型)
 const defaultConfig = (): ModelTouchConfig => ({
-	version: 1,
 	render: {scale: 1.0, posX: 0.0, posY: 0.0, rotation: 0},
 	name: "",
 	image: "",

@@ -201,9 +201,14 @@ pub async fn llm_openai_generate(
             }
         },
         |json| {
-            // OpenAI Responses usage: 事件 `response.completed` 的 `usage.input_tokens` / `output_tokens`
+            // OpenAI Responses usage: 事件 `response.completed`, usage 嵌套在 `response.usage` 里
+            // (部分兼容网关把 usage 平铺在事件顶层, 这里两种都兼容)
             if json.get("type").and_then(|v| v.as_str()) == Some("response.completed") {
-                if let Some(usage) = json.get("usage") {
+                let usage = json
+                    .get("response")
+                    .and_then(|r| r.get("usage"))
+                    .or_else(|| json.get("usage"));
+                if let Some(usage) = usage {
                     return (
                         usage.get("input_tokens").and_then(|v| v.as_u64()),
                         usage.get("output_tokens").and_then(|v| v.as_u64()),

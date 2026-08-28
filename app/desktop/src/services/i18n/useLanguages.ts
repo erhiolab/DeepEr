@@ -413,6 +413,24 @@ const buildSnapshot = () => {
 					inputPlaceholder: t("components.main.talk.inputPlaceholder"),
 					more: t("components.main.talk.more"),
 				},
+				toolList: {
+					title: t("components.main.toolList.title"),
+					subtitle: t("components.main.toolList.subtitle"),
+					refresh: t("components.main.toolList.refresh"),
+					searchPlaceholder: t("components.main.toolList.searchPlaceholder"),
+					searchEmpty: t("components.main.toolList.searchEmpty"),
+					searchEmptyHint: t("components.main.toolList.searchEmptyHint"),
+					empty: t("components.main.toolList.empty"),
+					emptyHint: t("components.main.toolList.emptyHint"),
+					total: (n: number) => t("components.main.toolList.total", {n}),
+					builtin: t("components.main.toolList.builtin"),
+					callName: t("components.main.toolList.callName"),
+					registeredAt: t("components.main.toolList.registeredAt"),
+					copyName: t("components.main.toolList.copyName"),
+					copied: t("components.main.toolList.copied"),
+					copyFailed: t("components.main.toolList.copyFailed"),
+					agentHintBuiltin: t("components.main.toolList.agentHintBuiltin"),
+				},
 			}
 		},
 		views: {
@@ -507,6 +525,7 @@ export type LangGroupPath =
 	| "components.main.tts"
 	| "components.main.tts.gptSovits"
 	| "components.main.talk"
+	| "components.main.toolList"
 	| "views.firstRun"
 	| "views.main"
 	| "views.pet"

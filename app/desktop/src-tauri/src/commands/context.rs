@@ -23,13 +23,16 @@ pub fn context_insert(
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     conn.execute(
-        "INSERT INTO contexts (type, role, content, token_count, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO contexts (type, role, content, token_count, input_tokens, output_tokens, hit_rate, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         rusqlite::params![
             args.r#type,
             args.role,
             args.content,
             args.token_count.unwrap_or(0),
+            args.input_tokens,
+            args.output_tokens,
+            args.hit_rate,
             now
         ],
     )
@@ -52,7 +55,7 @@ pub fn context_list(
     let offset = args.offset.unwrap_or(0);
     let mut stmt = conn
         .prepare(
-            "SELECT id, type, role, content, token_count, created_at
+            "SELECT id, type, role, content, token_count, input_tokens, output_tokens, hit_rate, created_at
              FROM contexts
              ORDER BY id DESC
              LIMIT ?1 OFFSET ?2",
@@ -66,7 +69,10 @@ pub fn context_list(
                 role: row.get(2)?,
                 content: row.get(3)?,
                 token_count: row.get(4)?,
-                created_at: row.get(5)?,
+                input_tokens: row.get(5)?,
+                output_tokens: row.get(6)?,
+                hit_rate: row.get(7)?,
+                created_at: row.get(8)?,
             })
         })
         .map_err(|e| format!("读取 context 失败: {e}"))?
@@ -89,6 +95,15 @@ pub struct ContextInsertArgs {
     /// token 数 (可选)
     #[serde(default)]
     pub token_count: Option<u64>,
+    /// 本次请求真实输入 token (可选)
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    /// 本次请求真实输出 token (可选)
+    #[serde(default)]
+    pub output_tokens: Option<u64>,
+    /// 上下文命中率 0~1 (可选): 本次请求实际使用的上下文 token / 库中上下文 token
+    #[serde(default)]
+    pub hit_rate: Option<f64>,
 }
 
 /// 列表参数
@@ -112,5 +127,8 @@ pub struct ContextRecord {
     pub role: Option<String>,
     pub content: String,
     pub token_count: u64,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub hit_rate: Option<f64>,
     pub created_at: i64,
 }
