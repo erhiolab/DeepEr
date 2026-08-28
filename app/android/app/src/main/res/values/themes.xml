@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Nori" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/nori_primary</item>
-        <item name="colorPrimaryVariant">@color/nori_primary_dark</item>
+    <style name="Theme.DeepEr" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/deeper_primary</item>
+        <item name="colorPrimaryVariant">@color/deeper_primary_dark</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">@color/nori_primary</item>
-        <item name="android:windowBackground">@color/nori_bg</item>
-        <item name="android:statusBarColor">@color/nori_bg</item>
-        <item name="android:navigationBarColor">@color/nori_bg</item>
+        <item name="colorSecondary">@color/deeper_primary</item>
+        <item name="android:windowBackground">@color/deeper_bg</item>
+        <item name="android:statusBarColor">@color/deeper_bg</item>
+        <item name="android:navigationBarColor">@color/deeper_bg</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
 
-    <style name="Theme.Nori.Fullscreen" parent="Theme.Nori">
+    <style name="Theme.DeepEr.Fullscreen" parent="Theme.DeepEr">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
         <item name="android:windowFullscreen">false</item>

@@ -1,4 +1,4 @@
-package app.nori.pet
+package cn.erhio.deeper
 
 import android.annotation.SuppressLint
 import android.os.Bundle

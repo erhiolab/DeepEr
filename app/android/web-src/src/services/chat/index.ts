@@ -114,7 +114,7 @@ export const requestStoragePermission = (): void => {
 }
 
 export const getStorageDir = (): string => {
-	try { return bridge().getStorageDir() } catch { return "Download/NoriPet" }
+	try { return bridge().getStorageDir() } catch { return "Download/DeepEr" }
 }
 
 
