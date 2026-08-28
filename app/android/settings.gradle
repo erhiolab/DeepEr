@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "NoriAndroid"
+rootProject.name = "DeepEr"
 include ":app"

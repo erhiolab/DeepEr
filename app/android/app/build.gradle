@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'app.nori.pet'
+    namespace 'cn.erhio.deeper'
     compileSdk 34
 
     defaultConfig {
-        applicationId "app.deeper"
+        applicationId "cn.erhio.deeper"
         minSdk 24
         targetSdk 34
         versionCode 2

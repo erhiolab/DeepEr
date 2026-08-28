@@ -1,4 +1,4 @@
-package app.nori.pet
+package cn.erhio.deeper
 
 import android.app.Activity
 import android.content.ContentUris
@@ -56,7 +56,7 @@ class ChatBridge(private val appContext: Context) {
 
     
     @android.webkit.JavascriptInterface
-    fun getStorageDir(): String = "Download/NoriPet"
+    fun getStorageDir(): String = "Download/DeepEr"
 
     
 
@@ -92,7 +92,7 @@ class ChatBridge(private val appContext: Context) {
                 val cv = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, n)
                     put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/NoriPet")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/DeepEr")
                 }
                 val uri = cr.insert(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), cv)
                     ?: return "err:insert"
@@ -118,7 +118,7 @@ class ChatBridge(private val appContext: Context) {
 
     private fun legacyDir(): File = File(
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-        "NoriPet"
+        "DeepEr"
     )
 
     private fun safeName(name: String): String =

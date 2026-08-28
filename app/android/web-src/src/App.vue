@@ -792,7 +792,7 @@ const applyRenderScale = () => l2d.setRenderScale(renderScaleNum.value)
 const curModelName = computed(() => cfg.model || "未配置模型")
 
 const storageReady = ref(false)
-const storagePath = ref("Download/NoriPet")
+const storagePath = ref("Download/DeepEr")
 
 const modelReady = computed(() => !!cfg.apiKey.trim() && !!cfg.model)
 
