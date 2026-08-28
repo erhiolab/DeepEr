@@ -1,10 +1,19 @@
-import {computed, nextTick, reactive, ref} from "vue"
+/**
+ * AI 对话状态 (统一承载聊天界面 / 桌宠气泡 / 触摸请求的数据源)
+ *
+ * 架构约定:
+ * - context 表是唯一事实源: 人设 (type=person) / 对话 (talk) / 触摸 (touch) 都在库里,
+ *   每次请求从库里构建上下文, 不再前端临时拼装.
+ * - 一次请求 = 构建上下文 (算命中率) → LLM 流式生成 → 记录真实 input/output token → TTS 朗读.
+ * - TTS 统一走 useTTSStore().speak (内部负责 md 清洗 / AI 调参 / 记录 tts 上下文).
+ * - 后续 MCP / 技能 / 工具接入时, 扩展 buildTalkMessages 的上下文类型即可.
+ */
+import {computed, reactive, ref} from "vue"
 import {defineStore} from "pinia"
 import {assetUrl} from "../asset"
 import {contextInsert, contextList, estimateTokens} from "../context"
-import {createStreamingMarkdownSplitter, isFencedCodeBlock} from "../text/markdownSplitter"
 import {logger} from "../logger"
-import {buildPersonaSystemMessage, getPersona, getSelectedPersonaId} from "../persona"
+import type {Persona} from "../persona"
 
 /**
  * 对话消息方向
@@ -26,13 +35,7 @@ export interface ChatMessage {
 }
 
 /**
- * 延迟辅助
- */
-const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
-
-/**
  * AI 对话状态
- * 统一承载聊天界面 (Talk) 与桌宠气泡 (PetView) 的数据源
  */
 export const useConversationStore = defineStore("conversation", () => {
 	// 完整对话历史
@@ -89,7 +92,6 @@ export const useConversationStore = defineStore("conversation", () => {
 
 	/**
 	 * 插入左边 (对方 / AI) 的消息
-	 * 收到回复时自动结束"正在输入"状态
 	 */
 	const pushLeft = (text: string): ChatMessage => {
 		const MSG = push("left", text)
@@ -103,7 +105,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	const pushRight = (text: string): ChatMessage => push("right", text)
 
 	/**
-	 * 插入中间信息 (时间分隔 / 系统状态), 只进历史, 不会出现在桌宠气泡
+	 * 插入中间信息 (时间分隔 / 系统状态)
 	 */
 	const pushCenter = (text: string): ChatMessage => push("center", text)
 
@@ -114,16 +116,27 @@ export const useConversationStore = defineStore("conversation", () => {
 	const CONTEXT_TOKEN_BUDGET = 8000
 
 	/**
-	 * 从 context 表加载历史对话 (type=talk 的 user / assistant 记录), 作为 LLM 上下文.
-	 * 数据库是权威完整历史 (含跨会话), 按 token 预算从最新向前累积, 得到时间正序的消息列表.
+	 * 构建本次 LLM 请求的上下文
+	 *
+	 * 从 context 表读取:
+	 * - type=person: 当前人设 (system 消息, 恒在最前, 不参与预算裁剪)
+	 * - type=talk / touch: 对话历史, 按 token 预算从最新向前累积, 得到时间正序
+	 *
+	 * 返回消息列表与上下文命中率 (实际用到的 token / 库中上下文 token).
 	 */
-	const buildTalkMessages = async (): Promise<LLMMsg[]> => {
+	const buildTalkMessages = async (): Promise<{messages: LLMMsg[], hitRate: number}> => {
 		const RECORDS = await contextList(200, 0)
+		const PERSON = RECORDS.filter(record => record.type === "person" && record.content.trim())
 		const TALK = RECORDS
 			.filter(record => (record.type === "talk" || record.type === "touch") && record.role && record.content.trim())
 			.reverse() // 旧 -> 新
+
 		const MESSAGES: LLMMsg[] = []
 		let used = 0
+		let total = 0
+		for (const record of TALK) {
+			total += record.tokenCount || estimateTokens(record.content)
+		}
 		// 从最新向前累积, 直到预算耗尽
 		for (const record of [...TALK].reverse()) {
 			const COST = record.tokenCount || estimateTokens(record.content)
@@ -134,41 +147,24 @@ export const useConversationStore = defineStore("conversation", () => {
 				content: record.content,
 			})
 		}
-		// MESSAGES 是倒序累积 (最新在前), 翻转得到旧->新
 		const HISTORY = MESSAGES.reverse()
-		// 注入当前启用的人设 (每次请求实时读取, 人设管理器修改后立即生效)
-		const SELECTED_ID = await getSelectedPersonaId()
-		if (SELECTED_ID !== null) {
-			const PERSONA = await getPersona(SELECTED_ID)
-			if (PERSONA) {
-				HISTORY.unshift({role: "system", content: buildPersonaSystemMessage(PERSONA)})
-			}
+
+		// 人设系统消息恒在最前, 不参与预算裁剪
+		for (const person of PERSON.reverse()) {
+			const COST = person.tokenCount || estimateTokens(person.content)
+			used += COST
+			total += COST
+			HISTORY.unshift({role: "system", content: person.content})
 		}
-		return HISTORY
+
+		const hitRate = total > 0 ? Math.min(1, used / total) : 1
+		return {messages: HISTORY, hitRate}
 	}
 
-	// 合成一段文本的语音, 返回可播放 URL (null = 未合成/失败)
-	const synthSegmentTTS = async (seg: string): Promise<string | null> => {
-		try {
-			// 动态导入避免循环依赖
-			const {useTTSStore} = await import("./tts")
-			const TTS = useTTSStore()
-			const RESULT = await TTS.speak(seg)
-			if (!RESULT.ok || !RESULT.audioAssetPath) {
-				await logger.warn(`[conversation] 段 TTS 未合成: ${RESULT.error ?? "无音频"}`)
-				return null
-			}
-			return assetUrl(RESULT.audioAssetPath)
-		} catch (error) {
-			await logger.error("[conversation] 音频合成失败", error)
-			return null
-		}
-	}
-
-	// 播放一段已合成的音频, 播放结束(或失败)才 resolve
-	const playSegmentTTS = async (url: string): Promise<void> => {
-		await new Promise<void>((resolve) => {
-			const AUDIO = new Audio(url)
+	// 播放一段已合成的音频
+	const playAudioAsset = (audioAssetPath: string): Promise<void> =>
+		new Promise<void>((resolve) => {
+			const AUDIO = new Audio(assetUrl(audioAssetPath))
 			const DONE = () => {
 				AUDIO.removeEventListener("ended", DONE)
 				AUDIO.removeEventListener("error", DONE)
@@ -179,98 +175,76 @@ export const useConversationStore = defineStore("conversation", () => {
 			// autoplay 被拦截时同样当作播放完成
 			AUDIO.play().catch(DONE)
 		})
+
+	// 朗读一段回复: 统一走 TTS store (内部负责 md 清洗 / AI 调参 / 记录 tts 上下文 token)
+	const speakReply = async (text: string): Promise<void> => {
+		try {
+			const {useTTSStore} = await import("./tts")
+			const RESULT = await useTTSStore().speak(text)
+			if (RESULT.ok && RESULT.audioAssetPath) await playAudioAsset(RESULT.audioAssetPath)
+		} catch (error) {
+			await logger.error("[conversation] TTS 朗读失败", error)
+		}
 	}
 
-	// 触发一次 AI 回复
-	// - 按 Markdown 感知把文本切成若干段
-	// - 普通文本段: 合成语音并播放, 播放完才发送该气泡, 播放完才进入下一条
-	// - 代码块段: 不朗读, 立即发送气泡
-	const requestLLM = (messages: LLMMsg[], onDone?: () => void) => {
+	/**
+	 * 触发一次 AI 回复
+	 *
+	 * 流式渲染全文 (不再分词), 结束后记录真实 input/output token 与上下文命中率,
+	 * 然后整体交给 TTS 朗读.
+	 */
+	const requestLLM = (context: {messages: LLMMsg[], hitRate: number}, onDone?: () => void) => {
+		// 上下文为空 (例如库异常) 时不发起请求, 避免平台返回空消息 400
+		if (context.messages.length === 0) {
+			pushLeft("上下文为空, 请先发送一条消息")
+			onDone?.()
+			return
+		}
 		const MSG = push("left", "")
 		MSG.isStreaming = true
-		// 待发送队列与增量分割器 (跨增量保持 md 结构完整)
-		const QUEUE: string[] = []
-		const SPLITTER = createStreamingMarkdownSplitter()
-		let sending = false
-		let streamDone = false
-		let fullText: string | null = null
-		const finalize = () => {
-			if (!MSG.isStreaming) return
-			// 兜底: 补齐完整文本 (事件缺失导致 MSG.text 不完整时)
-			if (fullText !== null && MSG.text !== fullText) {
-				MSG.text = fullText
-			}
-			MSG.isStreaming = false
-			setTyping(false)
-			onDone?.()
-		}
-		// 音频驱动的常驻发送循环
-		// - 普通文本段: 合成语音 + 播放, 播完 `MSG.text += seg` 再取下一条
-		// - 代码块段: 立即出气泡, 不阻塞
-		// - 队列空但流未结束时短暂轮询等待新段
-		const kick = () => {
-			if (sending) return
-			sending = true
-			void (async () => {
-				while (!streamDone || QUEUE.length) {
-					if (QUEUE.length) {
-						const SEG = QUEUE.shift()!
-						if (isFencedCodeBlock(SEG)) {
-							// md 代码块: 不朗读, 直接发送气泡
-							MSG.text += SEG
-						} else {
-							// 普通文本段: 先出气泡 (立即), 渲染完成后再后台合成语音并播放;
-							// 播放完才取下一条
-							MSG.text += SEG
-							await nextTick()
-							const URL = await synthSegmentTTS(SEG)
-							if (URL) await playSegmentTTS(URL)
-						}
-					} else {
-						await sleep(15)
-					}
-				}
-				sending = false
-				finalize()
-			})()
-		}
 		setTyping(true)
 		void (async () => {
 			try {
 				// 动态导入避免循环依赖
 				const {useLLMStore} = await import("./llm")
-				const RESULT = await useLLMStore().generateStream({messages}, (delta) => {
-					const {completed} = SPLITTER.consume(delta)
-					if (completed.length) {
-						QUEUE.push(...completed)
-						// 只要队列有数据就立即启动发送 (不等流结束)
-						kick()
-					}
+				const RESULT = await useLLMStore().generateStream({messages: context.messages}, (delta) => {
+					if (delta) MSG.text += delta
 				})
-				// 流式结束: 记录完整文本, 把 splitter 里剩余的尾巴作为最后一段入队
-				streamDone = true
-				fullText = RESULT.ok && RESULT.text ? RESULT.text : null
-				// 记录 AI 回复 (含后端返回的真实输出 token)
+				MSG.isStreaming = false
+				setTyping(false)
 				if (RESULT.ok && RESULT.text) {
+					// 兜底补齐完整文本 (事件缺失时)
+					MSG.text = RESULT.text
+					// 记录 AI 回复 (真实 token + 上下文命中率)
 					void contextInsert({
 						type: "talk",
 						role: "assistant",
 						content: RESULT.text,
 						tokenCount: RESULT.outputTokens ?? estimateTokens(RESULT.text),
+						inputTokens: RESULT.inputTokens,
+						outputTokens: RESULT.outputTokens,
+						hitRate: context.hitRate,
+					})
+					// 回复完成后朗读全文
+					void speakReply(RESULT.text)
+				} else {
+					MSG.text = RESULT.error || "生成失败"
+					// 失败也记录到上下文, 便于排查 (真实 token 缺失时用估算)
+					void contextInsert({
+						type: "talk",
+						role: "assistant",
+						content: MSG.text,
+						tokenCount: estimateTokens(MSG.text),
+						hitRate: context.hitRate,
 					})
 				}
-				const REST = SPLITTER.getRest().trim()
-				if (REST) {
-					QUEUE.push(REST)
-					SPLITTER.reset()
-				}
-				kick()
+				onDone?.()
 			} catch (err) {
 				await logger.error("conversation LLM 请求异常", err)
-				// 异常: 丢弃剩余队列, 结束发送循环并收尾
-				streamDone = true
-				QUEUE.length = 0
-				kick()
+				MSG.isStreaming = false
+				setTyping(false)
+				MSG.text = String(err)
+				onDone?.()
 			}
 		})()
 	}
@@ -290,8 +264,8 @@ export const useConversationStore = defineStore("conversation", () => {
 			tokenCount: estimateTokens(text),
 		})
 		// 用 DB 历史构建 LLM 上下文 (含跨会话历史, 而非仅当前内存)
-		const HISTORY_MSG = await buildTalkMessages()
-		requestLLM(HISTORY_MSG, onDone)
+		const CONTEXT = await buildTalkMessages()
+		requestLLM(CONTEXT, onDone)
 		return MSG
 	}
 
@@ -307,8 +281,30 @@ export const useConversationStore = defineStore("conversation", () => {
 			content: prompt,
 			tokenCount: estimateTokens(prompt),
 		})
-		const MESSAGES = await buildTalkMessages()
-		requestLLM(MESSAGES, onDone)
+		const CONTEXT = await buildTalkMessages()
+		requestLLM(CONTEXT, onDone)
+	}
+
+	/**
+	 * 设置人设后触发首轮互动:
+	 * - 有开场白: 直接作为 AI 首条消息 (不消耗 LLM)
+	 * - 无开场白: 发起一次 LLM 请求生成问候
+	 */
+	const startPersona = async (persona: Persona): Promise<void> => {
+		const OPENING = persona.firstMes.trim()
+		if (OPENING) {
+			pushLeft(OPENING)
+			void contextInsert({
+				type: "talk",
+				role: "assistant",
+				content: OPENING,
+				tokenCount: estimateTokens(OPENING),
+			})
+			void speakReply(OPENING)
+			return
+		}
+		const CONTEXT = await buildTalkMessages()
+		requestLLM(CONTEXT)
 	}
 
 	// 只供聊天界面使用的中间信息 (含 center)
@@ -321,7 +317,6 @@ export const useConversationStore = defineStore("conversation", () => {
 
 	/**
 	 * 从 context 表恢复最近的 talk 历史到界面 (只回显最近 N 条, 幂等).
-	 * 历史仍作为 LLM 上下文; 这里仅把 DB 记录回填进 UI 的 HISTORY.
 	 */
 	const loadHistory = async (limit = HISTORY_RELOAD_LIMIT): Promise<void> => {
 		if (historyLoaded) return
@@ -348,6 +343,7 @@ export const useConversationStore = defineStore("conversation", () => {
 		// 方法
 		sendMessage,
 		sendTouch,
+		startPersona,
 		loadHistory,
 		setTyping,
 		pushLeft,
