@@ -416,6 +416,7 @@ const buildSnapshot = () => {
 				toolList: {
 					title: t("components.main.toolList.title"),
 					subtitle: t("components.main.toolList.subtitle"),
+					all: t("components.main.toolList.all"),
 					refresh: t("components.main.toolList.refresh"),
 					searchPlaceholder: t("components.main.toolList.searchPlaceholder"),
 					searchEmpty: t("components.main.toolList.searchEmpty"),

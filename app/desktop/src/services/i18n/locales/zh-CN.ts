@@ -389,6 +389,7 @@ export default {
 			toolList: {
 				title: "工具",
 				subtitle: "AI 可调用的工具清单, 英文名即调用名",
+				all: "全部",
 				refresh: "刷新",
 				searchPlaceholder: "搜索工具名或描述…",
 				searchEmpty: "没有匹配的工具",

@@ -353,19 +353,17 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 									@input="nameError = false"
 								/>
 							</FormField>
-							<FormField :label="I18N.personality" class="full">
+							<FormField :label="I18N.personality" class="persona-field">
 								<textarea
 									v-model="draft.personality"
 									class="input textarea"
-									rows="6"
 									:placeholder="I18N.personalityPlaceholder"
 								/>
 							</FormField>
-							<FormField :label="I18N.firstMes" class="full">
+							<FormField :label="I18N.firstMes" class="opening-field">
 								<textarea
 									v-model="draft.firstMes"
 									class="input textarea"
-									rows="4"
 									:placeholder="I18N.firstMesPlaceholder"
 								/>
 							</FormField>
@@ -632,11 +630,33 @@ const sourceLabel = (source: string): string => source === PERSONA_SOURCE_SILLYT
 }
 
 .editor-form {
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 1rem 1.2rem;
-	align-content: start;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
 	padding-right: 0.4rem;
+
+	.field:first-child {
+		flex-shrink: 0;
+	}
+
+	.persona-field,
+	.opening-field {
+		flex: 1;
+		min-height: 0;
+	}
+
+	.persona-field {
+		flex: 1.6;
+	}
+
+	.input.textarea {
+		width: 100%;
+		flex: 1;
+		min-height: 0;
+		resize: none;
+	}
 }
 
 .used-tag {

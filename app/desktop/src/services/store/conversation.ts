@@ -6,6 +6,8 @@
  *   上下文构建 / 命中率计算 / 留痕全部在后端 agent_run 完成, 前端只传用户消息.
  * - 一次请求 = 前端传消息 → Rust Agent 循环 (上下文 + 工具协议 + LLM 多轮 + 工具执行 + 留痕)
  *   → 返回最终回答 → TTS 朗读.
+ * - 消息队列: AI 回复期间用户可继续发多条消息 (立即显示, 不打断当前回复),
+ *   当前回复结束后把排队消息一次性批量发给 AI (sendMessage / sendTouch / 人设问候共用同一队列).
  * - TTS 统一走 useTTSStore().speak (内部负责 md 清洗 / AI 调参 / 记录 tts 上下文).
  */
 import {computed, reactive, ref} from "vue"
@@ -32,6 +34,13 @@ export interface ChatMessage {
 	text: string
 	createdAt: number
 	isStreaming?: boolean
+}
+
+// 排队中的一条用户消息 (AI 回复期间用户发来的消息, 下次一次性批量发送)
+interface PendingMessage {
+	content: string
+	kind: "talk" | "touch"
+	onDone?: () => void
 }
 
 // 从工具调用留痕 (type=tool, role=assistant) 中解析调用名列表
@@ -175,9 +184,10 @@ export const useConversationStore = defineStore("conversation", () => {
 	/**
 	 * 触发一次 AI 回复 (上下文构建 + Agent 循环都在后端 agent_run)
 	 *
-	 * @param options 用户消息与类型 (为空时只构建上下文, 用于人设首轮问候)
+	 * @param messages 本批用户消息 (空数组时只构建上下文, 用于人设首轮问候)
+	 * @param onDone   回复流程结束后回调 (成功/失败都会触发)
 	 */
-	const requestLLM = (options: {message?: string, kind?: "talk" | "touch"} = {}, onDone?: () => void) => {
+	const requestLLM = (messages: {content: string, kind: "talk" | "touch"}[], onDone?: () => void) => {
 		const MSG = push("left", "")
 		MSG.isStreaming = true
 		setTyping(true)
@@ -185,7 +195,7 @@ export const useConversationStore = defineStore("conversation", () => {
 			try {
 				// 动态导入避免循环依赖
 				const {runAgent} = await import("../agent/run")
-				const RESULT = await runAgent(options, (name, ok) => {
+				const RESULT = await runAgent({messages}, (name, ok) => {
 					// 工具执行过程可见: 插到当前回复气泡上方, 避免被挤到回答后面
 					pushCenterBefore(MSG.id, `🔧 调用工具 ${name} → ${ok ? "执行成功" : "执行失败"}`)
 				})
@@ -209,15 +219,39 @@ export const useConversationStore = defineStore("conversation", () => {
 		})()
 	}
 
+	// 排队消息 (AI 忙时先入队, 回复结束后一次性批量发送)
+	let pendingQueue: PendingMessage[] = []
+	// 是否有 AI 请求正在执行 (同一时间只跑一个, 不打断)
+	let aiBusy = false
+
+	/**
+	 * 取走队列里全部消息, 批量发起一次 AI 请求 (队列空或 AI 忙时跳过)
+	 */
+	const drainQueue = () => {
+		if (aiBusy || pendingQueue.length === 0) return
+		aiBusy = true
+		const BATCH = pendingQueue.splice(0)
+		requestLLM(
+			BATCH.map(item => ({content: item.content, kind: item.kind})),
+			() => {
+				aiBusy = false
+				// 整批回复结束后逐个回调 (解除触摸锁定等)
+				for (const ITEM of BATCH) ITEM.onDone?.()
+				drainQueue()
+			},
+		)
+	}
+
 	/**
 	 * 发送消息 (用户自己 / 右边)
 	 * @param text 消息内容
-	 * @param onDone LLM 回复流程结束后回调 (成功/失败都会触发), 可用于解除触摸锁定等
+	 * @param onDone 本消息所在批次回复结束后回调 (成功/失败都会触发), 可用于解除触摸锁定等
 	 */
 	const sendMessage = async (text: string, onDone?: () => void): Promise<ChatMessage> => {
 		const MSG = pushRight(text)
-		// 用户消息由后端 agent_run 统一写入 contexts 表并构建上下文
-		requestLLM({message: text, kind: "talk"}, onDone)
+		// 立即显示在聊天里, 同时入队; AI 空闲时马上批量发起, 忙时排队等下一批
+		pendingQueue.push({content: text, kind: "talk", onDone})
+		drainQueue()
 		return MSG
 	}
 
@@ -227,7 +261,8 @@ export const useConversationStore = defineStore("conversation", () => {
 	 * @param onDone LLM 回复流程结束后回调 (成功/失败都会触发), 用于解除触摸锁定
 	 */
 	const sendTouch = async (prompt: string, onDone?: () => void): Promise<void> => {
-		requestLLM({message: prompt, kind: "touch"}, onDone)
+		pendingQueue.push({content: prompt, kind: "touch", onDone})
+		drainQueue()
 	}
 
 	/**
@@ -248,8 +283,9 @@ export const useConversationStore = defineStore("conversation", () => {
 			void speakReply(OPENING)
 			return
 		}
-		// 无开场白: 由后端基于人设上下文生成问候
-		requestLLM({kind: "talk"})
+		// 无开场白: 入队一个空消息, 由后端基于人设上下文生成问候 (不写入 contexts)
+		pendingQueue.push({content: "", kind: "talk"})
+		drainQueue()
 	}
 
 	// 只供聊天界面使用的中间信息 (含 center)
@@ -257,6 +293,8 @@ export const useConversationStore = defineStore("conversation", () => {
 
 	// 清除对话 (保留 id 递增, 避免冲突)
 	const clear = () => {
+		// 丢弃尚未发送的排队消息 (正在执行中的批次不受影响)
+		pendingQueue.length = 0
 		HISTORY.value = []
 	}
 

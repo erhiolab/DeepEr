@@ -25,6 +25,9 @@ const loading = ref(false)
 // 搜索关键词
 const query = ref("")
 
+// 当前标签页 ("" = 全部; 按中文标题「类别-名称」的第一个 - 前的类别分组)
+const activeCategory = ref("")
+
 // 已展开的工具 id
 const expanded = ref<number[]>([])
 
@@ -47,16 +50,46 @@ const reload = async (): Promise<void> => {
 	}
 }
 
-// 搜索过滤 (调用名 / 中文标题 / 描述)
+// 工具类别列表 (按中文标题第一个 - 前的类别, 去重排序)
+const toolCategories = computed(() => {
+	const CATEGORIES = new Set<string>()
+	for (const tool of tools.value) {
+		const INDEX = tool.label.indexOf("-")
+		CATEGORIES.add(INDEX > 0 ? tool.label.slice(0, INDEX) : tool.label)
+	}
+	return [...CATEGORIES].sort((a, b) => a.localeCompare(b, "zh-CN"))
+})
+
+// 当前类别下的工具
+const categoryTools = computed(() => {
+	if (!activeCategory.value) return tools.value
+	return tools.value.filter(tool => {
+		const INDEX = tool.label.indexOf("-")
+		const CATEGORY = INDEX > 0 ? tool.label.slice(0, INDEX) : tool.label
+		return CATEGORY === activeCategory.value
+	})
+})
+
+// 搜索过滤 (调用名 / 中文标题 / 描述, 在选中类别内过滤)
 const filteredTools = computed(() => {
 	const KEYWORD = query.value.trim().toLowerCase()
-	if (!KEYWORD) return tools.value
-	return tools.value.filter(tool =>
+	if (!KEYWORD) return categoryTools.value
+	return categoryTools.value.filter(tool =>
 		tool.name.toLowerCase().includes(KEYWORD) ||
 		tool.label.toLowerCase().includes(KEYWORD) ||
 		tool.description.toLowerCase().includes(KEYWORD),
 	)
 })
+
+// 标签栏横向滚动 (鼠标滚轮)
+const tabBar = ref<HTMLElement | null>(null)
+const onTabsWheel = (event: WheelEvent): void => {
+	const EL = tabBar.value
+	if (!EL || EL.scrollWidth <= EL.clientWidth) return
+	const DELTA = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+	EL.scrollLeft += DELTA
+	event.preventDefault()
+}
 
 // 展开 / 收起工具卡片 (支持同时展开多个)
 const toggleExpand = (id: number): void => {
@@ -66,8 +99,7 @@ const toggleExpand = (id: number): void => {
 }
 
 // 注册时间展示 (内置工具初始化时间为准)
-const formatTime = (timestamp: number): string =>
-	timestamp > 0 ? new Date(timestamp * 1000).toLocaleString() : "—"
+const formatTime = (timestamp: number): string => timestamp > 0 ? new Date(timestamp * 1000).toLocaleString() : "_"
 
 // 复制调用名到剪贴板
 const copyName = async (name: string): Promise<void> => {
@@ -121,6 +153,25 @@ onBeforeUnmount(() => {
 				<Icon name="close" :size="13"/>
 			</button>
 		</div>
+
+		<nav ref="tabBar" class="tool-tabs" @wheel="onTabsWheel">
+			<button
+				class="tool-tab"
+				:class="{active: activeCategory === ''}"
+				@click="activeCategory = ''"
+			>
+				{{ I18N.all }}
+			</button>
+			<button
+				v-for="category in toolCategories"
+				:key="category"
+				class="tool-tab"
+				:class="{active: activeCategory === category}"
+				@click="activeCategory = category"
+			>
+				{{ category }}
+			</button>
+		</nav>
 
 		<div class="tool-stats">
 			<span class="tool-total">{{ I18N.total(tools.length) }}</span>
@@ -295,6 +346,43 @@ onBeforeUnmount(() => {
 		border-radius: 99.9rem;
 		color: var(--deep-teal-soft);
 		background-color: rgba(125, 227, 255, 0.06);
+	}
+}
+
+.tool-tabs {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	overflow-x: auto;
+	scrollbar-width: thin;
+	padding-bottom: 0.2rem;
+
+	.tool-tab {
+		padding: 0.45rem 1.2rem;
+		flex-shrink: 0;
+		border: 0.1rem solid var(--line-subtle);
+		border-radius: 99.9rem;
+		background-color: rgba(255, 255, 255, 0.03);
+		color: var(--text-muted);
+		font-family: inherit;
+		font-size: 1.15rem;
+		font-weight: 600;
+		white-space: nowrap;
+		cursor: pointer;
+		transition: all 0.2s ease;
+
+		&:hover {
+			border-color: var(--deep-teal-soft);
+			color: var(--text-primary);
+		}
+
+		&.active {
+			border-color: var(--deep-teal);
+			color: var(--ink-deep);
+			background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
+			box-shadow: 0 0 0.8rem var(--glow-teal-soft);
+		}
 	}
 }
 

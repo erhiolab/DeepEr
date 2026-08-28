@@ -187,4 +187,19 @@ watch(() => props.hasDraft, (has) => {
 	border-radius: 8px; padding: 9px 11px; color: #e2e8f0; font-size: 13px; outline: none;
 }
 .tm-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 680px) and (max-height: 500px) {
+	.tm-title { font-size: 13px; }
+	.tm-me-btn { padding: 8px 0; font-size: 12px; }
+	.tm-hint { font-size: 11px; padding: 7px 9px; }
+	.tm-item { padding: 8px 10px; }
+	.tm-name { font-size: 12px; }
+	.tm-size { font-size: 10px; }
+	.tm-prompt { font-size: 11px; }
+	.tm-btn { padding: 6px 10px; font-size: 11px; }
+	.tm-empty { font-size: 12px; }
+	.tm-edit { padding: 10px; }
+	.tm-field label { font-size: 11px; }
+	.tm-field input { padding: 8px 10px; font-size: 12px; }
+}
 </style>

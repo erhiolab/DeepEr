@@ -14,6 +14,7 @@ const INSTANCE = new MarkdownIt({
 	html: true,
 	linkify: true,
 	typographer: true,
+	breaks: true,
 })
 
 // 代码高亮, 失败回落转义纯文本

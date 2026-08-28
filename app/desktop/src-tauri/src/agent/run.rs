@@ -38,15 +38,23 @@ enum Platform {
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunArgs {
-	/// 用户消息文本 (可选; 为空时只构建上下文, 不插入新消息, 用于人设首轮问候)
+	/// 用户消息列表 (可多条批量发送; 为空时只构建上下文, 用于人设首轮问候)
 	#[serde(default)]
-	pub message: Option<String>,
-	/// 消息类型: talk / touch (默认 talk)
-	#[serde(default)]
-	pub kind: Option<String>,
+	pub messages: Vec<AgentUserMessage>,
 	/// 前端生成的请求唯一标识 (用于匹配 tool 事件)
 	#[serde(default)]
 	pub request_id: Option<String>,
+}
+
+/// 一条用户消息
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentUserMessage {
+	/// 消息内容 (空串不写入 contexts)
+	pub content: String,
+	/// 消息类型: talk / touch (默认 talk)
+	#[serde(default)]
+	pub kind: Option<String>,
 }
 
 /// Agent 运行结果
@@ -227,13 +235,17 @@ fn prepare_context(
 		.0
 		.lock()
 		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
-	if let Some(message) = args.message.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+	for message in &args.messages {
+		let content = message.content.trim();
+		if content.is_empty() {
+			continue;
+		}
 		insert_context(
 			&conn,
-			args.kind.as_deref().unwrap_or("talk"),
+			message.kind.as_deref().unwrap_or("talk"),
 			"user",
-			message,
-			estimate_tokens(message),
+			content,
+			estimate_tokens(content),
 			None,
 			None,
 			None,

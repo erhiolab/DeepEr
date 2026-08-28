@@ -1003,7 +1003,7 @@ onBeforeUnmount(async () => {
 <style lang="less" scoped>
 .stage-root {
 	position: fixed;
-	inset: 0;
+	top: 0; right: 0; bottom: 0; left: 0;
 	background:
 		radial-gradient(ellipse at 50% 40%, #1e293b 0%, #0b1220 55%, #050912 100%);
 	overflow: hidden;
@@ -1016,7 +1016,7 @@ onBeforeUnmount(async () => {
 
 .l2d-host {
 	position: absolute;
-	inset: 0;
+	top: 0; right: 0; bottom: 0; left: 0;
 	z-index: 1;
 	pointer-events: none;
 	overflow: hidden;
@@ -1024,8 +1024,8 @@ onBeforeUnmount(async () => {
 
 
 .touch-overlay {
-	position: absolute;
-	inset: 0;
+	position: fixed;
+	top: 0; right: 0; bottom: 0; left: 0;
 	z-index: 2;
 	pointer-events: none;
 }
@@ -1044,7 +1044,7 @@ onBeforeUnmount(async () => {
 
 .touch-page {
 	position: fixed;
-	inset: 0;
+	top: 0; right: 0; bottom: 0; left: 0;
 	z-index: 15;
 	background: rgba(2, 6, 23, 0.35);
 	pointer-events: none; 
@@ -1052,7 +1052,7 @@ onBeforeUnmount(async () => {
 }
 .tts-page {
 	position: fixed;
-	inset: 0;
+	top: 0; right: 0; bottom: 0; left: 0;
 	z-index: 15;
 	background: rgba(2, 6, 23, 0.5);
 	display: flex;
@@ -1082,7 +1082,7 @@ onBeforeUnmount(async () => {
 }
 .touch-page .touch-overlay.drawing { cursor: crosshair; }
 .touch-top {
-	position: absolute;
+	position: fixed;
 	top: 0; left: 0; right: 0;
 	z-index: 1;
 	display: flex;
@@ -1097,7 +1097,7 @@ onBeforeUnmount(async () => {
 	text-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
 }
 .touch-editor {
-	position: absolute;
+	position: fixed;
 	left: 0; right: 0; bottom: 0;
 	z-index: 1;
 	max-height: 48vh;
@@ -1124,7 +1124,7 @@ onBeforeUnmount(async () => {
 
 
 .touch-bubble {
-	position: absolute;
+	position: fixed;
 	left: 50%;
 	top: 18%;
 	transform: translateX(-50%);
@@ -1147,7 +1147,7 @@ onBeforeUnmount(async () => {
 
 
 .ai-bubble {
-	position: absolute;
+	position: fixed;
 	left: 12px; right: 12px;
 	bottom: calc(92px + env(safe-area-inset-bottom));
 	z-index: 58;
@@ -1172,7 +1172,7 @@ onBeforeUnmount(async () => {
 .ai-enter-from, .ai-leave-to { opacity: 0; transform: translateY(14px) scale(0.98); }
 
 .topbar {
-	position: absolute;
+	position: fixed;
 	top: 0; left: 0; right: 0;
 	padding: calc(10px + env(safe-area-inset-top)) 14px 8px;
 	display: flex;
@@ -1213,7 +1213,7 @@ onBeforeUnmount(async () => {
 
 
 .chat-panel {
-	position: absolute;
+	position: fixed;
 	left: 10px; right: 10px;
 	bottom: calc(86px + env(safe-area-inset-bottom));
 	max-height: 58vh;
@@ -1291,7 +1291,7 @@ onBeforeUnmount(async () => {
 
 
 .dock {
-	position: absolute;
+	position: fixed;
 	left: 0; right: 0; bottom: 0;
 	padding: 10px 10px calc(12px + env(safe-area-inset-bottom));
 	display: grid;
@@ -1320,7 +1320,7 @@ onBeforeUnmount(async () => {
 
 
 .sheet-mask {
-	position: fixed; inset: 0;
+	position: fixed; top: 0; right: 0; bottom: 0; left: 0;
 	background: rgba(2,6,23,0.55);
 	z-index: 20;
 	display: flex; align-items: flex-end;
@@ -1425,5 +1425,113 @@ onBeforeUnmount(async () => {
 .sheet-enter-from, .sheet-leave-to {
 	opacity: 0;
 	.sheet { transform: translateY(100%); }
+}
+
+@media (max-width: 680px) and (max-height: 500px) {
+	.topbar {
+		padding: calc(6px + env(safe-area-inset-top)) 10px 6px;
+		gap: 6px;
+	}
+	.tag, .loading, .err {
+		padding: 4px 10px;
+		font-size: 12px;
+		border-radius: 999px;
+	}
+	.tag {
+		max-width: 50vw;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.touch-bubble {
+		top: 12%;
+		padding: 7px 12px;
+		font-size: 12px;
+		max-width: 86%;
+	}
+
+	.ai-bubble {
+		left: 8px; right: 8px;
+		bottom: calc(100px + env(safe-area-inset-bottom));
+		max-height: 36vh;
+		padding: 9px 12px;
+		border-radius: 12px;
+	}
+	.ai-bubble-txt { font-size: 13px; line-height: 1.5; }
+
+	.dock {
+		padding: 6px 6px calc(8px + env(safe-area-inset-bottom));
+		grid-template-columns: repeat(3, 1fr);
+		gap: 6px;
+	}
+	.fab {
+		padding: 12px 2px;
+		font-size: 12px;
+		border-radius: 12px;
+	}
+
+	.chat-panel {
+		left: 0; right: 0; top: 0; bottom: 0;
+		max-height: none;
+		border-radius: 0;
+		border: none;
+	}
+	.chat-head { padding: 8px 12px; }
+	.chat-title { font-size: 13px; }
+	.chat-msgs {
+		min-height: 0;
+		padding: 10px 12px;
+	}
+	.bubble { padding: 8px 11px; }
+	.chat-input {
+		padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+		gap: 6px;
+	}
+	.chat-input input { padding: 9px 11px; font-size: 13px; }
+	.chat-input .send { padding: 0 14px; font-size: 13px; }
+
+	.sheet {
+		max-height: 94vh;
+		padding: 6px 12px calc(10px + env(safe-area-inset-bottom));
+		border-top-left-radius: 18px;
+		border-top-right-radius: 18px;
+	}
+	.sheet-head { padding: 6px 2px 10px; margin-bottom: 10px; }
+	.sheet-title { font-size: 14px; }
+	.x { width: 28px; height: 28px; }
+	.grid { gap: 8px; }
+	.mc {
+		border-radius: 12px;
+		.thumb { height: 72px; }
+		img { height: 72px; }
+	}
+	.mname { padding: 6px 8px 8px; font-size: 13px; }
+	.grp-name { font-size: 12px; padding: 5px 2px; }
+	.chip { padding: 6px 11px; font-size: 12px; }
+	.settings-row {
+		padding: 8px 2px;
+		gap: 5px;
+		label { font-size: 12px; }
+		input[type=text], input[type=password] {
+			padding: 8px 10px;
+			font-size: 13px;
+		}
+	}
+	.model-pick select { padding: 8px 10px; font-size: 13px; }
+	.mini { padding: 8px 12px; font-size: 12px; }
+	.hint { font-size: 11px; }
+	.btn { padding: 10px; font-size: 13px; margin-top: 8px; }
+
+	.touch-top { padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
+	.touch-title { font-size: 14px; }
+	.touch-editor {
+		max-height: 62vh;
+		padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+	}
+	.tts-top { padding: calc(8px + env(safe-area-inset-top)) 10px 8px; }
+	.tts-title { font-size: 14px; }
+	.tts-empty { font-size: 13px; }
+	.ba-name { font-size: 9px; padding: 1px 4px; }
 }
 </style>

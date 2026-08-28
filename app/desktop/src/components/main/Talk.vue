@@ -60,12 +60,32 @@ const peerAvatar = computed<string>(() => {
 // 输入框文本
 const inputText = ref("")
 
+// 输入框元素 (用于自适应高度)
+const inputEl = ref<HTMLTextAreaElement | null>(null)
+
+// 输入框自适应高度: 内容变多时自动长高, 超过最高限制后内部滚动
+const autoGrow = () => {
+	const EL = inputEl.value
+	if (!EL) return
+	EL.style.height = "auto"
+	EL.style.height = `${EL.scrollHeight}px`
+}
+
+// Enter 发送 (Shift+Enter 走默认行为换行; 输入法组词中的回车不触发发送)
+const onEnter = (event: KeyboardEvent) => {
+	if (event.isComposing) return
+	event.preventDefault()
+	sendMessage()
+}
+
 // 发送消息
 const sendMessage = () => {
 	const TEXT = inputText.value.trim()
 	if (!TEXT) return
 	CONV.sendMessage(TEXT)
 	inputText.value = ""
+	// 清空后把输入框高度复位成单行
+	nextTick(() => autoGrow())
 }
 
 // 消息列表容器
@@ -160,7 +180,16 @@ watch(() => L2D.currentModel, (model) => {
 		</div>
 		<footer class="talk-footer">
 			<form class="input-bar" @submit.prevent="sendMessage">
-				<input v-model="inputText" type="text" :placeholder="I18N.inputPlaceholder" maxlength="500"/>
+				<textarea
+					ref="inputEl"
+					v-model="inputText"
+					class="talk-input"
+					rows="1"
+					:placeholder="I18N.inputPlaceholder"
+					maxlength="2000"
+					@input="autoGrow"
+					@keydown.enter.exact="onEnter"
+				/>
 				<button class="send-btn" type="submit" :disabled="!inputText.trim()">
 					<Icon name="send" :size="16"/>
 				</button>
@@ -387,33 +416,40 @@ watch(() => L2D.currentModel, (model) => {
 }
 
 .input-bar {
-	padding: 0.35rem 0.4rem 0.35rem 1.2rem;
+	padding: 0.7rem 0.8rem 0.7rem 1.2rem;
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
 	gap: 0.8rem;
 	background-color: var(--surface-deep);
 	border: 0.1rem solid var(--line-strong);
-	border-radius: 99.9rem;
+	border-radius: var(--radius-md);
 	transition: border-color 0.2s ease, box-shadow 0.2s ease;
 
 	&:focus-within {
 		border-color: var(--deep-teal);
 		box-shadow: 0 0 0.8rem var(--glow-teal-soft);
 	}
+}
 
-	input {
-		flex: 1;
-		min-width: 0;
-		border: none;
-		outline: none;
-		background-color: transparent;
-		color: var(--text-primary);
-		font-family: inherit;
-		font-size: 1.3rem;
+.talk-input {
+	flex: 1;
+	min-width: 0;
+	min-height: 2.5rem;
+	max-height: 14rem;
+	padding: 0.35rem 0;
+	border: none;
+	outline: none;
+	background-color: transparent;
+	color: var(--text-primary);
+	font-family: inherit;
+	font-size: 1.3rem;
+	line-height: 1.55;
+	resize: none;
+	overflow-y: auto;
+	scrollbar-width: thin;
 
-		&::placeholder {
-			color: var(--text-faint);
-		}
+	&::placeholder {
+		color: var(--text-faint);
 	}
 }
 

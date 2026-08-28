@@ -34,7 +34,7 @@ export const TAP_MAX_DISTANCE = 12
  * 磨蹭阈值
  * 累计移动超过该距离视为磨蹭
  */
-export const SWIPE_MIN_DISTANCE = 60
+export const SWIPE_MIN_DISTANCE = 120
 
 /**
  * 点击狂点阈值

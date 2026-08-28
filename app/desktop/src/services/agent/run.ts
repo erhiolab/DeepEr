@@ -22,13 +22,21 @@ export interface AgentRunResult {
 }
 
 /**
+ * 一条用户消息 (支持多条批量发送)
+ */
+export interface AgentUserMessage {
+	content: string
+	kind?: "talk" | "touch"
+}
+
+/**
  * 运行 Agent 循环
  *
- * @param options    用户消息与类型 (talk/touch); 上下文由 Rust 侧从 contexts 表构造
+ * @param options    用户消息列表; 上下文由 Rust 侧从 contexts 表构造
  * @param onToolCall 每次工具调用完成后回调 (供 UI 展示执行过程)
  */
 export const runAgent = async (
-	options: {message?: string, kind?: "talk" | "touch"},
+	options: {messages: AgentUserMessage[]},
 	onToolCall?: (name: string, ok: boolean) => void,
 ): Promise<AgentRunResult> => {
 	const REQUEST_ID =
@@ -41,8 +49,7 @@ export const runAgent = async (
 	try {
 		return await invoke<AgentRunResult>("agent_run", {
 			args: {
-				message: options.message ?? null,
-				kind: options.kind ?? "talk",
+				messages: options.messages,
 				requestId: REQUEST_ID,
 			},
 		})
