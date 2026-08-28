@@ -3,10 +3,10 @@
  *
  * 架构约定:
  * - context 表是唯一事实源: 人设 (type=person) / 对话 (talk) / 触摸 (touch) 都在库里,
- *   每次请求从库里构建上下文, 不再前端临时拼装.
- * - 一次请求 = 构建上下文 (算命中率) → LLM 流式生成 → 记录真实 input/output token → TTS 朗读.
+ *   上下文构建 / 命中率计算 / 留痕全部在后端 agent_run 完成, 前端只传用户消息.
+ * - 一次请求 = 前端传消息 → Rust Agent 循环 (上下文 + 工具协议 + LLM 多轮 + 工具执行 + 留痕)
+ *   → 返回最终回答 → TTS 朗读.
  * - TTS 统一走 useTTSStore().speak (内部负责 md 清洗 / AI 调参 / 记录 tts 上下文).
- * - 后续 MCP / 技能 / 工具接入时, 扩展 buildTalkMessages 的上下文类型即可.
  */
 import {computed, reactive, ref} from "vue"
 import {defineStore} from "pinia"
@@ -32,6 +32,27 @@ export interface ChatMessage {
 	text: string
 	createdAt: number
 	isStreaming?: boolean
+}
+
+// 从工具调用留痕 (type=tool, role=assistant) 中解析调用名列表
+const parseToolCallNames = (text: string): string[] => {
+	const NAMES: string[] = []
+	const RE = /<tool_call\b[^>]*name\s*=\s*"([^"]+)"/g
+	for (const MATCH of text.matchAll(RE)) {
+		const NAME = MATCH[1].trim()
+		if (NAME) NAMES.push(NAME)
+	}
+	return NAMES
+}
+
+// 从工具结果留痕 (type=tool, role=user) 中解析 调用名 → 是否成功
+const parseToolResultStatus = (text: string): Record<string, boolean> => {
+	const STATUS: Record<string, boolean> = {}
+	const RE = /<tool_result name="([^"]+)" ok="(true|false)">/g
+	for (const MATCH of text.matchAll(RE)) {
+		STATUS[MATCH[1].trim()] = MATCH[2] === "true"
+	}
+	return STATUS
 }
 
 /**
@@ -109,56 +130,20 @@ export const useConversationStore = defineStore("conversation", () => {
 	 */
 	const pushCenter = (text: string): ChatMessage => push("center", text)
 
-	// LLM 对话消息类型
-	type LLMMsg = {role: "user" | "assistant" | "system", content: string}
-
-	// 给 LLM 的上下文 token 预算 (从 context 表取最近历史的累计上限)
-	const CONTEXT_TOKEN_BUDGET = 8000
-
 	/**
-	 * 构建本次 LLM 请求的上下文
-	 *
-	 * 从 context 表读取:
-	 * - type=person: 当前人设 (system 消息, 恒在最前, 不参与预算裁剪)
-	 * - type=talk / touch: 对话历史, 按 token 预算从最新向前累积, 得到时间正序
-	 *
-	 * 返回消息列表与上下文命中率 (实际用到的 token / 库中上下文 token).
+	 * 在指定消息之前插入中间信息 (用于工具执行过程提示: 应显示在 AI 回复气泡上方)
 	 */
-	const buildTalkMessages = async (): Promise<{messages: LLMMsg[], hitRate: number}> => {
-		const RECORDS = await contextList(200, 0)
-		const PERSON = RECORDS.filter(record => record.type === "person" && record.content.trim())
-		const TALK = RECORDS
-			.filter(record => (record.type === "talk" || record.type === "touch") && record.role && record.content.trim())
-			.reverse() // 旧 -> 新
-
-		const MESSAGES: LLMMsg[] = []
-		let used = 0
-		let total = 0
-		for (const record of TALK) {
-			total += record.tokenCount || estimateTokens(record.content)
+	const pushCenterBefore = (anchorId: number, text: string): ChatMessage => {
+		const MSG = reactive<ChatMessage>({id: nextId++, side: "center", text, createdAt: Date.now()}) as ChatMessage
+		const INDEX = HISTORY.value.findIndex(item => item.id === anchorId)
+		if (INDEX === -1) {
+			HISTORY.value = [...HISTORY.value, MSG]
+		} else {
+			const NEXT = [...HISTORY.value]
+			NEXT.splice(INDEX, 0, MSG)
+			HISTORY.value = NEXT
 		}
-		// 从最新向前累积, 直到预算耗尽
-		for (const record of [...TALK].reverse()) {
-			const COST = record.tokenCount || estimateTokens(record.content)
-			if (MESSAGES.length && used + COST > CONTEXT_TOKEN_BUDGET) break
-			used += COST
-			MESSAGES.push({
-				role: record.role === "assistant" ? "assistant" : "user",
-				content: record.content,
-			})
-		}
-		const HISTORY = MESSAGES.reverse()
-
-		// 人设系统消息恒在最前, 不参与预算裁剪
-		for (const person of PERSON.reverse()) {
-			const COST = person.tokenCount || estimateTokens(person.content)
-			used += COST
-			total += COST
-			HISTORY.unshift({role: "system", content: person.content})
-		}
-
-		const hitRate = total > 0 ? Math.min(1, used / total) : 1
-		return {messages: HISTORY, hitRate}
+		return MSG
 	}
 
 	// 播放一段已合成的音频
@@ -188,57 +173,32 @@ export const useConversationStore = defineStore("conversation", () => {
 	}
 
 	/**
-	 * 触发一次 AI 回复
+	 * 触发一次 AI 回复 (上下文构建 + Agent 循环都在后端 agent_run)
 	 *
-	 * 流式渲染全文 (不再分词), 结束后记录真实 input/output token 与上下文命中率,
-	 * 然后整体交给 TTS 朗读.
+	 * @param options 用户消息与类型 (为空时只构建上下文, 用于人设首轮问候)
 	 */
-	const requestLLM = (context: {messages: LLMMsg[], hitRate: number}, onDone?: () => void) => {
-		// 上下文为空 (例如库异常) 时不发起请求, 避免平台返回空消息 400
-		if (context.messages.length === 0) {
-			pushLeft("上下文为空, 请先发送一条消息")
-			onDone?.()
-			return
-		}
+	const requestLLM = (options: {message?: string, kind?: "talk" | "touch"} = {}, onDone?: () => void) => {
 		const MSG = push("left", "")
 		MSG.isStreaming = true
 		setTyping(true)
 		void (async () => {
 			try {
 				// 动态导入避免循环依赖
-				const {useLLMStore} = await import("./llm")
-				const RESULT = await useLLMStore().generateStream({messages: context.messages}, (delta) => {
-					if (delta) MSG.text += delta
+				const {runAgent} = await import("../agent/run")
+				const RESULT = await runAgent(options, (name, ok) => {
+					// 工具执行过程可见: 插到当前回复气泡上方, 避免被挤到回答后面
+					pushCenterBefore(MSG.id, `🔧 调用工具 ${name} → ${ok ? "执行成功" : "执行失败"}`)
 				})
-				MSG.isStreaming = false
-				setTyping(false)
-				if (RESULT.ok && RESULT.text) {
-					// 兜底补齐完整文本 (事件缺失时)
-					MSG.text = RESULT.text
-					// 记录 AI 回复 (真实 token + 上下文命中率)
-					void contextInsert({
-						type: "talk",
-						role: "assistant",
-						content: RESULT.text,
-						tokenCount: RESULT.outputTokens ?? estimateTokens(RESULT.text),
-						inputTokens: RESULT.inputTokens,
-						outputTokens: RESULT.outputTokens,
-						hitRate: context.hitRate,
-					})
-					// 回复完成后朗读全文
-					void speakReply(RESULT.text)
-				} else {
-					MSG.text = RESULT.error || "生成失败"
-					// 失败也记录到上下文, 便于排查 (真实 token 缺失时用估算)
-					void contextInsert({
-						type: "talk",
-						role: "assistant",
-						content: MSG.text,
-						tokenCount: estimateTokens(MSG.text),
-						hitRate: context.hitRate,
-					})
-				}
-				onDone?.()
+			MSG.isStreaming = false
+			setTyping(false)
+			if (RESULT.ok && RESULT.text) {
+				MSG.text = RESULT.text
+				// 回复完成后朗读全文
+				void speakReply(RESULT.text)
+			} else {
+				MSG.text = RESULT.error || "生成失败"
+			}
+			onDone?.()
 			} catch (err) {
 				await logger.error("conversation LLM 请求异常", err)
 				MSG.isStreaming = false
@@ -256,16 +216,8 @@ export const useConversationStore = defineStore("conversation", () => {
 	 */
 	const sendMessage = async (text: string, onDone?: () => void): Promise<ChatMessage> => {
 		const MSG = pushRight(text)
-		// 记录用户消息 (保证下次读 DB 历史时已包含本条)
-		await contextInsert({
-			type: "talk",
-			role: "user",
-			content: text,
-			tokenCount: estimateTokens(text),
-		})
-		// 用 DB 历史构建 LLM 上下文 (含跨会话历史, 而非仅当前内存)
-		const CONTEXT = await buildTalkMessages()
-		requestLLM(CONTEXT, onDone)
+		// 用户消息由后端 agent_run 统一写入 contexts 表并构建上下文
+		requestLLM({message: text, kind: "talk"}, onDone)
 		return MSG
 	}
 
@@ -275,14 +227,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	 * @param onDone LLM 回复流程结束后回调 (成功/失败都会触发), 用于解除触摸锁定
 	 */
 	const sendTouch = async (prompt: string, onDone?: () => void): Promise<void> => {
-		await contextInsert({
-			type: "touch",
-			role: "user",
-			content: prompt,
-			tokenCount: estimateTokens(prompt),
-		})
-		const CONTEXT = await buildTalkMessages()
-		requestLLM(CONTEXT, onDone)
+		requestLLM({message: prompt, kind: "touch"}, onDone)
 	}
 
 	/**
@@ -303,8 +248,8 @@ export const useConversationStore = defineStore("conversation", () => {
 			void speakReply(OPENING)
 			return
 		}
-		const CONTEXT = await buildTalkMessages()
-		requestLLM(CONTEXT)
+		// 无开场白: 由后端基于人设上下文生成问候
+		requestLLM({kind: "talk"})
 	}
 
 	// 只供聊天界面使用的中间信息 (含 center)
@@ -316,20 +261,61 @@ export const useConversationStore = defineStore("conversation", () => {
 	}
 
 	/**
-	 * 从 context 表恢复最近的 talk 历史到界面 (只回显最近 N 条, 幂等).
+	 * 从 context 表恢复最近历史到界面 (只回显最近 N 条, 幂等).
+	 *
+	 * 回显内容:
+	 * - type=talk: 左右气泡 (user 右 / assistant 左)
+	 * - type=touch: 中间信息 (触摸动作)
+	 * - type=tool: 重建「🔧 调用工具 …」中间提示 (调用名 + 成功/失败, 按记录顺序)
 	 */
 	const loadHistory = async (limit = HISTORY_RELOAD_LIMIT): Promise<void> => {
 		if (historyLoaded) return
 		historyLoaded = true
 		const RECORDS = await contextList(limit, 0)
-		const TALK = RECORDS
-			.filter(record => (record.type === "talk" || record.type === "touch") && record.role && record.content.trim())
-			.reverse()
-		HISTORY.value = TALK.map(record => ({
+		// contextList 按 id 倒序 (最新在前), 反转成时间正序后按 id 自然有序
+		const ORDERED = [...RECORDS].reverse()
+		const ITEMS: {side: ChatSide, text: string, createdAt: number}[] = []
+		let pendingCalls: {name: string, createdAt: number}[] = []
+
+		for (const record of ORDERED) {
+			if (record.type === "talk" || record.type === "touch") {
+				if (!record.role || !record.content.trim()) continue
+				ITEMS.push({
+					side: record.type === "touch" ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
+					text: record.content,
+					createdAt: record.createdAt * 1000,
+				})
+			} else if (record.type === "tool") {
+				if (record.role === "assistant") {
+					// 本轮调用列表 (结果行紧随其后)
+					pendingCalls = parseToolCallNames(record.content).map(name => ({
+						name,
+						createdAt: record.createdAt * 1000,
+					}))
+				} else if (record.role === "user" && pendingCalls.length) {
+					const STATUS = parseToolResultStatus(record.content)
+					for (const call of pendingCalls) {
+						const OK = STATUS[call.name]
+						ITEMS.push({
+							side: "center" as ChatSide,
+							text: `🔧 调用工具 ${call.name} → ${OK === undefined ? "执行" : OK ? "执行成功" : "执行失败"}`,
+							createdAt: call.createdAt,
+						})
+					}
+					pendingCalls = []
+				}
+			}
+		}
+		// 兜底: 调用行没有对应结果行时也展示 (状态未知)
+		for (const call of pendingCalls) {
+			ITEMS.push({side: "center" as ChatSide, text: `🔧 调用工具 ${call.name} → 执行`, createdAt: call.createdAt})
+		}
+
+		HISTORY.value = ITEMS.map(item => ({
 			id: nextId++,
-			side: record.type === "touch" ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
-			text: record.content,
-			createdAt: record.createdAt * 1000,
+			side: item.side,
+			text: item.text,
+			createdAt: item.createdAt,
 		}))
 	}
 

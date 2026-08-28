@@ -186,14 +186,16 @@ export const setMainWindow = async () => {
 	await restoreCursor()
 	// 设置窗口大小
 	await appWindow.setSize(new LogicalSize(1300, 750))
+	// 移动窗口到中心
+	await appWindow.center()
 	// 不置顶
 	await appWindow.setAlwaysOnTop(false)
 	// 允许调整大小 (配合标题栏最大/最小化按钮)
 	await appWindow.setResizable(true)
 	// 显示任务栏图标 (主界面属于"其他页面")
 	await appWindow.setSkipTaskbar(false)
-	// 居中窗口, 避免在角落打开主界面
-	await appWindow.center()
+	// 设置窗口最小大小
+	await appWindow.setMinSize(new LogicalSize(1140, 540))
 	// 显示窗口
 	await appWindow.show()
 	// 获取焦点
@@ -227,6 +229,8 @@ export const setPetWindow = async (): Promise<boolean> => {
 		await appWindow.setAlwaysOnTop(true)
 		// 桌宠页面隐藏任务栏图标
 		await appWindow.setSkipTaskbar(true)
+		// 设置窗口最小大小
+		await appWindow.setMinSize(new LogicalSize(150, 300))
 		// 显示窗口
 		await appWindow.show()
 		// 获取焦点

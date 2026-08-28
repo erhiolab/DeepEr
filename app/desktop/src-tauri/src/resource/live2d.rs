@@ -49,10 +49,6 @@ fn default_touch_type() -> String {
     "tap".to_string()
 }
 
-fn default_version() -> i64 {
-    1
-}
-
 /// 用户自定义可触摸区域
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,9 +122,6 @@ impl Default for ModelActions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelConfig {
-    /// 配置结构版本, 不兼容变更时 +1 用于迁移
-    #[serde(default = "default_version")]
-    pub version: i64,
     /// 模型名称 (显示用, 用于模型列表等界面展示)
     /// 缺失或为空时, 界面回落显示模型目录名 (id); 可随时修改
     #[serde(default)]
@@ -161,7 +154,6 @@ fn default_quality() -> f64 {
 impl Default for ModelConfig {
     fn default() -> Self {
         Self {
-            version: default_version(),
             name: String::new(),
             image: String::new(),
             render: ModelRenderConfig::default(),

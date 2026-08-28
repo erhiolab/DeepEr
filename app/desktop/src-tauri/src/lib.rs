@@ -1,10 +1,12 @@
 mod asset;
+mod agent;
 mod commands;
 mod config;
 mod db;
 mod log;
 mod resource;
 mod secret;
+mod tool;
 mod tray;
 mod api;
 
@@ -90,6 +92,11 @@ pub fn run() {
             commands::persona::persona_delete,
             commands::persona::persona_select,
             commands::persona::persona_import_file,
+
+            commands::tools::tool_list,
+            commands::tools::tool_search,
+            commands::tool::tool_execute,
+            commands::agent::agent_run,
 
             commands::llm::openai_responses::llm_openai_generate,
             commands::llm::openai_responses::llm_openai_test_connection,

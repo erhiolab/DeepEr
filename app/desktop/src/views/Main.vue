@@ -4,23 +4,28 @@ import {useRouter} from "vue-router"
 import useLanguages from "../services/i18n/useLanguages"
 import {config} from "../services/config"
 import {useUnsavedGuard} from "../services/store/unsaved"
+import {minimizeWindow, toggleMaximizeWindow} from "../services/window"
+
 import Icon from "../components/common/Icon.vue"
 import {IconName} from "../services/icon"
-import {minimizeWindow, toggleMaximizeWindow} from "../services/window"
 import TitleBar from "../components/common/TitleBar.vue"
 import Live2D from "../components/Live2D.vue"
+
 import Home from "../components/main/Home.vue"
 import Talk from "../components/main/Talk.vue"
+
 import ModelSelect from "../components/main/ModelSelect.vue"
 import ModelConfig from "../components/main/ModelConfig.vue"
 import Touch from "../components/main/Touch.vue"
-import About from "../components/firstRun/About.vue"
-import LanguageSelect from "../components/main/LanguageSelect.vue"
-import Exception from "../components/main/Exception.vue"
+
 import LLMAdapter from "../components/main/LLMAdapter.vue"
 import TTSAdapter from "../components/main/TTSAdapter.vue"
 import CharacterDesign from "../components/main/CharacterDesign.vue"
 import ToolList from "../components/main/ToolList.vue"
+
+import LanguageSelect from "../components/main/LanguageSelect.vue"
+import Exception from "../components/main/Exception.vue"
+import About from "../components/firstRun/About.vue"
 
 const I18N = computed(() => useLanguages().views.main)
 
@@ -69,7 +74,7 @@ const NAV_GROUPS: NavGroup[] = [
 			{key: "llm", icon: "robot"},
 			{key: "tts", icon: "volume"},
 			{key: "characterDesign", icon: "book-user"},
-			{key: "tool", icon: "volume"},
+			{key: "tool", icon: "tool-case"},
 		],
 	},
 	{

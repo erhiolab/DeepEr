@@ -54,6 +54,21 @@ CREATE TABLE IF NOT EXISTS personas (
     created_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tools (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    label       TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    provider    TEXT NOT NULL DEFAULT 'internal',
+    executor    TEXT NOT NULL DEFAULT '',
+    input_schema TEXT NOT NULL DEFAULT '{}',
+    config      TEXT NOT NULL DEFAULT '{}',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    builtin     INTEGER NOT NULL DEFAULT 0,
+    version     TEXT NOT NULL DEFAULT '1.0.0',
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
 ";
 
 /// 数据库文件名
@@ -72,9 +87,8 @@ pub fn init(app: &AppHandle) -> DbResult<Db> {
     // 初始化默认配置
     // 只补充缺失配置, 不覆盖用户已有配置.
     config::init_defaults(&conn)?;
-    // 检查配置结构版本.
-    // 为未来数据库 / 配置迁移预留.
-    config::ensure_schema_version(&conn)?;
+    // 初始化内置工具 (幂等 upsert, 表结构以 SCHEMA 为准, 不做迁移)
+    crate::tool::repository::init_defaults(&conn)?;
     // 记录数据库位置
     let _ = log::write(
         app,
