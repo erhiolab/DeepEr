@@ -296,6 +296,9 @@ const EXTRACT_SYSTEM_PROMPT: &str = "你是记忆提取器。从对话中提取�
 /// 摘要生成提示词
 const SUMMARY_SYSTEM_PROMPT: &str = "你是对话摘要器。用简洁的中文总结这段对话的要点 (发生了什么、用户的偏好/约定/关键信息), 300 字以内, 只输出摘要正文。";
 
+/// 上下文末尾重申 (长上下文下模型容易对开头的系统消息失焦, 在最新用户消息前再强调一次)
+const CONTEXT_END_REMINDER: &str = "[执行提醒] 你是 DeepEr 的 AI 助手, 保持当前人设。用户要求任何操作时必须先调用工具; 需要时间先查 time-now; 涉及用户个人信息时先 memory-search 长期记忆; 用户姓名/生日/偏好等重要信息记得用 memory-add 保存。";
+
 /// 摘要候选: 对话超过阈值时, 取最早一段未被摘要覆盖的范围
 struct SummaryCandidate {
 	start_id: i64,
@@ -648,6 +651,15 @@ pub async fn run_agent(
 	// 2. 自动记忆召回 (注入长期记忆) + 注入工具协议
 	let messages = recall_memories(&app, &state, built)?;
 	let mut messages = inject_protocol(&state, messages)?;
+	// 3. 在最新用户消息前重申关键指令 (无用户消息时追加到末尾)
+	let reminder = LlmMessage {
+		role: "system".to_string(),
+		content: CONTEXT_END_REMINDER.to_string(),
+	};
+	match messages.iter().rposition(|message| message.role == "user") {
+		Some(last_user) => messages.insert(last_user, reminder),
+		None => messages.push(reminder),
+	}
 	let has_protocol = messages
 		.iter()
 		.any(|m| m.role == "system" && m.content.starts_with(prompt::AGENT_PROTOCOL_MARKER));
