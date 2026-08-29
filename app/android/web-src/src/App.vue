@@ -145,7 +145,6 @@
 					<div class="settings-row">
 						<label>单句最长朗读字数 {{ cfg.tts.maxLen }}</label>
 						<input type="range" min="20" max="160" step="10" v-model.number="cfg.tts.maxLen" :style="rangeFill(cfg.tts.maxLen, 20, 160)" :disabled="!cfg.tts.enabled" />
-						<div class="hint">超长回复会整句跳过不读，0 成本防止念经</div>
 					</div>
 
 					<div class="settings-row">
@@ -153,7 +152,6 @@
 						<div class="chip-row" :class="{off: !cfg.tts.enabled}">
 							<button v-for="v in voiceOptions" :key="v.value" class="vchip" :class="{on: cfg.tts.voice === v.value}" :disabled="!cfg.tts.enabled" @click="cfg.tts.voice = v.value">{{ v.label }}</button>
 						</div>
-						<div class="hint">AI 会结合上下文自动选择每句话的情绪，此处是默认音色</div>
 						<div class="voice-pick preview-row">
 							<button class="mini ripple" :disabled="ttsStatusInfo.state !== 'ready' || !cfg.tts.enabled" @click="previewVoice">试听当前音色</button>
 						</div>
@@ -1061,13 +1059,18 @@ interface ReplyPart {emo: string | null; text: string}
 
 const VOICE_KEYS = Object.keys(VOICE_LABELS)
 
+const REVERSE_LABELS: Record<string, string> = {}
+for (const [k, label] of Object.entries(VOICE_LABELS)) REVERSE_LABELS[label] = k
+
 const parseTaggedLine = (line: string): ReplyPart => {
-	const m = line.match(/^\[([a-zA-Z]+)\]\s*/)
-	if (m) {
-		const tag = m[1].toLowerCase()
-		if (VOICE_KEYS.includes(tag)) return {emo: tag, text: line.slice(m[0].length).trim()}
-	}
-	return {emo: null, text: line}
+	let emo: string | null = null
+	const text = line.replace(/[【\[]([a-zA-Z\u4e00-\u9fff]{1,12})[\]】]/g, (raw, inner: string) => {
+		const key = inner.toLowerCase()
+		const e = VOICE_KEYS.includes(key) ? key : (REVERSE_LABELS[inner] ?? null)
+		if (e && !emo) emo = e
+		return e ? "" : raw
+	}).trim()
+	return {emo, text}
 }
 
 const stripTags = (content: string): ReplyPart => {

@@ -375,6 +375,63 @@ class TtsEngine(private val appContext: Context) {
     private fun lTensor(arr: LongArray, shape: LongArray): OnnxTensor =
         OnnxTensor.createTensor(env, LongBuffer.wrap(arr), shape)
 
+    private class TData(val flat: FloatArray, val dims: LongArray)
+
+    private fun tData(t: OnnxTensor): TData = TData(floatsOf(t), t.info.shape)
+
+    private fun floatsOf(t: OnnxTensor): FloatArray = when (t.info.shape.size) {
+        1 -> t.value as FloatArray
+        2 -> flat2(t.value as Array<FloatArray>)
+        3 -> flat3(t.value as Array<Array<FloatArray>>)
+        4 -> flat4(t.value as Array<Array<Array<FloatArray>>>)
+        else -> throw IllegalStateException("unsupported rank ${t.info.shape.size}")
+    }
+
+    private fun longsOf(t: OnnxTensor): LongArray {
+        val total = t.info.shape.fold(1L) { acc, d -> acc * d }.toInt()
+        return when (val v = t.value) {
+            is LongArray -> v
+            is IntArray -> LongArray(v.size) { v[it].toLong() }
+            is Array<*> -> {
+                val r = LongArray(total); var p = 0
+                for (row in v) {
+                    when (row) {
+                        is LongArray -> { System.arraycopy(row, 0, r, p, row.size); p += row.size }
+                        is IntArray -> { for (x in row) { r[p] = x.toLong(); p++ } }
+                        else -> throw IllegalStateException("unsupported long row")
+                    }
+                }
+                r
+            }
+            else -> throw IllegalStateException("unsupported long tensor")
+        }
+    }
+
+    private fun flat3(a: Array<Array<FloatArray>>): FloatArray {
+        val d2 = if (a.isEmpty() || a[0].isEmpty()) 0 else a[0][0].size
+        val out = FloatArray(a.sumOf { m -> m.size * d2 })
+        var p = 0
+        for (m in a) for (row in m) { System.arraycopy(row, 0, out, p, d2); p += d2 }
+        return out
+    }
+
+    private fun flat2(a: Array<FloatArray>): FloatArray {
+        val rows = a.sumOf { it.size }
+        val out = FloatArray(rows)
+        var p = 0
+        for (row in a) { System.arraycopy(row, 0, out, p, row.size); p += row.size }
+        return out
+    }
+
+    private fun flat4(a: Array<Array<Array<FloatArray>>>): FloatArray {
+        val d3 = if (a.isEmpty() || a[0].isEmpty() || a[0][0].isEmpty()) 0 else a[0][0][0].size
+        val total = a.sumOf { m -> m.sumOf { mid -> mid.size * d3 } }
+        val out = FloatArray(total)
+        var p = 0
+        for (m in a) for (mid in m) for (row in mid) { System.arraycopy(row, 0, out, p, d3); p += d3 }
+        return out
+    }
+
     fun synthesize(text: String, emotion: String): FloatArray {
         ensureSessions()
         val t0 = android.os.SystemClock.elapsedRealtime()
@@ -392,67 +449,76 @@ class TtsEngine(private val appContext: Context) {
         val tTextBert = fTensor(bertFlat, longArrayOf(bertRows.toLong(), BERT_DIM.toLong()))
         val tSsl = fTensor(ref.ssl, longArrayOf(1, 768, ref.sslT.toLong()))
 
-        var tX: OnnxTensor? = null
-        var tPrompts: OnnxTensor? = null
-        var tY: OnnxTensor? = null
-        var tK: OnnxTensor? = null
-        var tV: OnnxTensor? = null
-        var tYEmb: OnnxTensor? = null
-        var tXEx: OnnxTensor? = null
+        val tAudioRef = fTensor(ref.audio32k, longArrayOf(1, ref.audio32k.size.toLong()))
+
         try {
             val encOut = sessEnc!!.run(mapOf(
                 "ref_seq" to tRefSeq, "text_seq" to tTextSeq,
                 "ref_bert" to tRefBert, "text_bert" to tTextBert, "ssl_content" to tSsl),
                 setOf("x", "prompts"))
-            tX = encOut.get(0) as OnnxTensor
-            tPrompts = encOut.get(1) as OnnxTensor
+            val xd = tData(encOut.get(0) as OnnxTensor)
+            val prArr = longsOf(encOut.get(1) as OnnxTensor)
             encOut.close()
 
+            val tX = fTensor(xd.flat, xd.dims)
+            val tPrompts = lTensor(prArr, longArrayOf(1, prArr.size.toLong()))
+
             val fsdOut = sessFsd!!.run(mapOf("x" to tX, "prompts" to tPrompts),
-                setOf("y", "k", "v", "y_emb", "x_example"))
-            tY = fsdOut.get(0) as OnnxTensor
-            tK = fsdOut.get(1) as OnnxTensor
-            tV = fsdOut.get(2) as OnnxTensor
-            tYEmb = fsdOut.get(3) as OnnxTensor
-            tXEx = fsdOut.get(4) as OnnxTensor
+                setOf("out_0", "out_1", "out_2", "out_3", "out_4"))
+            val yArr = longsOf(fsdOut.get(0) as OnnxTensor)
+            val kD = tData(fsdOut.get(1) as OnnxTensor)
+            val vD = tData(fsdOut.get(2) as OnnxTensor)
+            val yEmbD = tData(fsdOut.get(3) as OnnxTensor)
+            val xExD = tData(fsdOut.get(4) as OnnxTensor)
             fsdOut.close()
+            runCatching { tX.close(); tPrompts.close() }
+
+            var tY = lTensor(yArr, longArrayOf(1, yArr.size.toLong()))
+            var tK = fTensor(kD.flat, kD.dims)
+            var tV = fTensor(vD.flat, vD.dims)
+            var tYEmb = fTensor(yEmbD.flat, yEmbD.dims)
+            val tXEx = fTensor(xExD.flat, xExD.dims)
 
             var steps = 0
             var done = false
             while (steps < MAX_AR_STEPS && !done) {
                 if (steps % 50 == 0) android.util.Log.d("TtsEngine", "ar step=$steps/${MAX_AR_STEPS}")
                 val out = sessSdc!!.run(mapOf(
-                    "iy" to tY!!, "ik" to tK!!, "iv" to tV!!, "iy_emb" to tYEmb!!, "ix_example" to tXEx!!),
-                    setOf("y", "k", "v", "y_emb", "logits", "samples"))
-                tY?.close(); tK?.close(); tV?.close(); tYEmb?.close(); tXEx?.close()
-                tY = out.get(0) as OnnxTensor
-                tK = out.get(1) as OnnxTensor
-                tV = out.get(2) as OnnxTensor
-                tYEmb = out.get(3) as OnnxTensor
-                val logits = (out.get(4) as OnnxTensor).value as Array<FloatArray>
-                val samples = (out.get(5) as OnnxTensor).value as Array<LongArray>
+                    "iy" to tY, "ik" to tK, "iv" to tV, "iy_emb" to tYEmb, "ix_example" to tXEx),
+                    setOf("out_0", "out_1", "out_2", "out_3", "out_4", "out_5"))
+                val nyArr = longsOf(out.get(0) as OnnxTensor)
+                val nKD = tData(out.get(1) as OnnxTensor)
+                val nVD = tData(out.get(2) as OnnxTensor)
+                val nyEmbD = tData(out.get(3) as OnnxTensor)
+                val logits = floatsOf(out.get(4) as OnnxTensor)
+                val samples = longsOf(out.get(5) as OnnxTensor)
                 out.close()
+                tY.close(); tK.close(); tV.close(); tYEmb.close()
+                tY = lTensor(nyArr, longArrayOf(1, nyArr.size.toLong()))
+                tK = fTensor(nKD.flat, nKD.dims)
+                tV = fTensor(nVD.flat, nVD.dims)
+                tYEmb = fTensor(nyEmbD.flat, nyEmbD.dims)
                 steps++
-                val row = logits[0]
+                val row = logits
                 var argmax = 0
                 for (i in row.indices) if (row[i] > row[argmax]) argmax = i
-                if (samples[0][0] == EOS || argmax.toLong() == EOS) done = true
+                if (samples[0] == EOS || argmax.toLong() == EOS) done = true
             }
 
-            val yTokens = (tY!!.value as Array<LongArray>)[0].copyOf()
+            val yTokens = (tY.value as Array<LongArray>)[0].copyOf()
             if (yTokens.isNotEmpty()) yTokens[yTokens.size - 1] = 0L
             val tPred = lTensor(yTokens, longArrayOf(1, 1, yTokens.size.toLong()))
             val vitsOut = sessVits!!.run(mapOf(
                 "text_seq" to tTextSeq, "pred_semantic" to tPred,
-                "ref_audio" to fTensor(ref.audio32k, longArrayOf(1, ref.audio32k.size.toLong()))),
+                "ref_audio" to tAudioRef),
                 setOf("audio"))
-            val audio = (vitsOut.get(0) as OnnxTensor).value as Array<FloatArray>
+            val audio = floatsOf(vitsOut.get(0) as OnnxTensor)
             vitsOut.close()
-            android.util.Log.d("TtsEngine", "synth done: steps=$steps audioSec=${audio[0].size / 32000.0} costMs=${android.os.SystemClock.elapsedRealtime() - t0} eosHit=$done")
-            return audio[0]
+            runCatching { tPred.close() }
+            android.util.Log.d("TtsEngine", "synth done: steps=$steps audioSec=${audio.size / 32000.0} costMs=${android.os.SystemClock.elapsedRealtime() - t0} eosHit=$done")
+            return audio
         } finally {
-            listOfNotNull(tX, tPrompts, tY, tK, tV, tYEmb, tXEx).forEach { runCatching { it.close() } }
-            runCatching { tRefSeq.close(); tTextSeq.close(); tRefBert.close(); tTextBert.close(); tSsl.close() }
+            runCatching { tRefSeq.close(); tTextSeq.close(); tRefBert.close(); tTextBert.close(); tSsl.close(); tAudioRef.close() }
         }
     }
 
