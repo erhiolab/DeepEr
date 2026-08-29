@@ -11,6 +11,8 @@ use serde_json::{json, Value};
 
 use crate::tool::handler::ToolHandler;
 use crate::tool::repository;
+use crate::task::next as task_next;
+use crate::task::repository as task_repository;
 
 /// 工具-搜索工具: 按关键词搜索已注册工具
 pub struct ToolSearchHandler;
@@ -69,6 +71,11 @@ pub fn builtin_handlers() -> Vec<Arc<dyn ToolHandler>> {
 		Arc::new(CalculatorHandler),
 		Arc::new(DataJsonHandler),
 		Arc::new(DataTextHandler),
+		Arc::new(ScheduleOnceCreateHandler),
+		Arc::new(ScheduleRecurringCreateHandler),
+		Arc::new(ScheduleUpdateHandler),
+		Arc::new(ScheduleListHandler),
+		Arc::new(ScheduleDeleteHandler),
 	]
 }
 
@@ -514,5 +521,278 @@ impl ToolHandler for DataTextHandler {
 			}
 			_ => Err(format!("action 参数无效: {action}, 可选 template / split / merge")),
 		}
+	}
+}
+
+/// 当前时间戳 (秒)
+fn now_secs() -> i64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|d| d.as_secs() as i64)
+		.unwrap_or(0)
+}
+
+/// 归一化 schedule 参数: 接受数组或单条对象, 校验条目类型
+fn normalize_schedule(raw: Option<&Value>) -> Result<Value, String> {
+	let Some(schedule) = raw else {
+		return Err("参数缺失: schedule(时间设定) 为必填参数".to_string());
+	};
+	// 兼容 AI 把 schedule 传成 JSON 字符串的情况
+	let schedule_value = match schedule {
+		Value::String(text) => serde_json::from_str::<Value>(text)
+			.map_err(|e| format!("schedule 不是合法 JSON: {e}"))?,
+		other => other.clone(),
+	};
+	let mut entries: Vec<Value> = match schedule_value {
+		Value::Array(items) => items,
+		other => vec![other],
+	};
+	if entries.is_empty() {
+		return Err("schedule 不能为空".to_string());
+	}
+	for entry in &mut entries {
+		// AI 可能漏传 type: 根据字段自动推断
+		if entry.get("type").and_then(|v| v.as_str()).is_none() {
+			if let Some(obj) = entry.as_object() {
+				if obj.contains_key("at") {
+					entry["type"] = json!("once");
+				} else if obj.contains_key("minute") {
+					entry["type"] = json!("hourly");
+				} else if obj.contains_key("weekdays") {
+					entry["type"] = json!("weekly");
+				} else if obj.contains_key("time") {
+					entry["type"] = json!("daily");
+				}
+			} else if entry.is_string() {
+				// 字符串: HH:MM → daily; 否则按 once 时间解析
+				let text = entry.as_str().unwrap_or_default().trim();
+				let parts: Vec<&str> = text.split(':').collect();
+				if parts.len() == 2 && parts[0].parse::<u32>().is_ok() && parts[1].parse::<u32>().is_ok() {
+					*entry = json!({ "type": "daily", "time": text });
+				} else {
+					let timestamp = task_next::parse_once_at(entry)?;
+					*entry = json!({ "type": "once", "at": timestamp });
+				}
+			} else if entry.is_number() {
+				let timestamp = task_next::parse_once_at(entry)?;
+				*entry = json!({ "type": "once", "at": timestamp });
+			}
+		}
+		let entry_type = entry
+			.get("type")
+			.and_then(|v| v.as_str())
+			.map(str::to_string);
+		match entry_type.as_deref() {
+			// once 的 at 兼容 Unix 秒与时间字符串, 统一归一化成 Unix 秒
+			Some("once") => {
+				let at = entry
+					.get("at")
+					.cloned()
+					.ok_or_else(|| "once 条目缺少 at".to_string())?;
+				let timestamp = task_next::parse_once_at(&at)?;
+				entry["at"] = json!(timestamp);
+			}
+			Some("hourly") => {
+				let minute = entry.get("minute").and_then(|v| v.as_u64());
+				if !minute.is_some_and(|m| m < 60) {
+					return Err("hourly 条目 minute 需为 0~59".to_string());
+				}
+			}
+			Some("daily") | Some("weekly") => {
+				let time = entry.get("time").and_then(|v| v.as_str()).map(str::trim);
+				if !time.is_some_and(|t| !t.is_empty()) {
+					return Err("daily/weekly 条目缺少 time(HH:MM)".to_string());
+				}
+				if entry_type.as_deref() == Some("weekly") {
+					let weekdays = entry.get("weekdays").and_then(|v| v.as_array());
+					if !weekdays.is_some_and(|array| !array.is_empty()) {
+						return Err("weekly 条目缺少 weekdays".to_string());
+					}
+				}
+			}
+			_ => return Err(format!("schedule 条目 type 无效: {:?}", entry_type)),
+		}
+	}
+	Ok(Value::Array(entries))
+}
+
+/// 定时-新增一次性任务 (扁平参数, 不需要拼 schedule JSON)
+pub struct ScheduleOnceCreateHandler;
+
+impl ToolHandler for ScheduleOnceCreateHandler {
+	fn name(&self) -> &str {
+		"schedule-create-once"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let title = string_arg(&args, &["title", "名称"]);
+		let content = string_arg(&args, &["content", "内容"]);
+		if title.is_empty() {
+			return Err("参数缺失: title(任务名称) 为必填参数".to_string());
+		}
+		if content.is_empty() {
+			return Err("参数缺失: content(到点发给 AI 的内容) 为必填参数".to_string());
+		}
+		let at = args
+			.get("at")
+			.ok_or_else(|| "参数缺失: at(执行时间) 为必填参数".to_string())?;
+		let timestamp = task_next::parse_once_at(at)?;
+		let schedule = json!([{ "type": "once", "at": timestamp }]);
+		let id = task_repository::create(conn, &title, &content, "once", &schedule, now_secs())?;
+		Ok(json!({ "ok": true, "id": id, "title": title, "at": timestamp }))
+	}
+}
+
+/// 收集时间点参数: 接受数组或单个 "HH:MM" 字符串
+fn collect_times(args: &Value) -> Result<Vec<String>, String> {
+	match args.get("times") {
+		Some(Value::Array(items)) => {
+			let times: Vec<String> = items
+				.iter()
+				.filter_map(|v| v.as_str())
+				.map(str::trim)
+				.filter(|s| !s.is_empty())
+				.map(String::from)
+				.collect();
+			if times.is_empty() {
+				Err("参数缺失: times(时间点 HH:MM 数组) 不能为空".to_string())
+			} else {
+				Ok(times)
+			}
+		}
+		Some(Value::String(text)) if !text.trim().is_empty() => Ok(vec![text.trim().to_string()]),
+		_ => Err("参数缺失: times(时间点 HH:MM, 数组或单个字符串) 为必填参数".to_string()),
+	}
+}
+
+/// 定时-新增循环任务 (扁平参数, cycle: hourly/daily/weekly)
+pub struct ScheduleRecurringCreateHandler;
+
+impl ToolHandler for ScheduleRecurringCreateHandler {
+	fn name(&self) -> &str {
+		"schedule-create-recurring"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let title = string_arg(&args, &["title", "名称"]);
+		let content = string_arg(&args, &["content", "内容"]);
+		if title.is_empty() {
+			return Err("参数缺失: title(任务名称) 为必填参数".to_string());
+		}
+		if content.is_empty() {
+			return Err("参数缺失: content(到点发给 AI 的内容) 为必填参数".to_string());
+		}
+		let cycle = string_arg(&args, &["cycle", "循环"]);
+		let schedule = match cycle.as_str() {
+			"hourly" => {
+				let minute = args
+					.get("minute")
+					.and_then(|v| v.as_u64())
+					.ok_or_else(|| "参数缺失: minute(每小时的分钟 0~59) 为必填参数".to_string())?;
+				if minute >= 60 {
+					return Err("minute 需为 0~59".to_string());
+				}
+				json!([{ "type": "hourly", "minute": minute }])
+			}
+			"daily" => {
+				let times = collect_times(&args)?;
+				Value::Array(times.into_iter().map(|time| json!({ "type": "daily", "time": time })).collect())
+			}
+			"weekly" => {
+				let weekdays: Vec<u32> = args
+					.get("weekdays")
+					.and_then(|v| v.as_array())
+					.ok_or_else(|| "参数缺失: weekdays(星期 1~7 数组) 为必填参数".to_string())?
+					.iter()
+					.filter_map(|v| v.as_u64())
+					.map(|day| day as u32)
+					.collect();
+				if weekdays.is_empty() {
+					return Err("weekdays 不能为空".to_string());
+				}
+				let times = collect_times(&args)?;
+				Value::Array(
+					times
+						.into_iter()
+						.map(|time| json!({ "type": "weekly", "weekdays": weekdays.clone(), "time": time }))
+						.collect(),
+				)
+			}
+			_ => return Err(format!("cycle 参数无效: {cycle}, 可选 hourly / daily / weekly")),
+		};
+		let id = task_repository::create(conn, &title, &content, "permanent", &schedule, now_secs())?;
+		Ok(json!({ "ok": true, "id": id, "title": title }))
+	}
+}
+
+/// 定时-修改任务 (只更新提供的字段)
+pub struct ScheduleUpdateHandler;
+
+impl ToolHandler for ScheduleUpdateHandler {
+	fn name(&self) -> &str {
+		"schedule-update"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let id = args
+			.get("id")
+			.and_then(|v| v.as_i64())
+			.ok_or_else(|| "参数缺失: id(任务 id) 为必填参数".to_string())?;
+		let existing = task_repository::get(conn, id)?.ok_or_else(|| format!("任务不存在: {id}"))?;
+
+		let title = string_arg(&args, &["title", "名称"]);
+		let content = string_arg(&args, &["content", "内容"]);
+		let kind = string_arg(&args, &["kind", "类型"]);
+		let next_title = if title.is_empty() { existing.title.clone() } else { title };
+		let next_content = if content.is_empty() { existing.content.clone() } else { content };
+		let next_kind = if kind.is_empty() {
+			existing.kind.clone()
+		} else if kind == "once" || kind == "permanent" {
+			kind
+		} else {
+			return Err("kind 参数无效: 可选 permanent / once".to_string());
+		};
+		let next_schedule = match args.get("schedule") {
+			Some(_) => normalize_schedule(args.get("schedule"))?,
+			None => existing.schedule.clone(),
+		};
+		task_repository::update(conn, id, &next_title, &next_content, &next_kind, &next_schedule, now_secs())?;
+		Ok(json!({ "ok": true, "id": id }))
+	}
+}
+
+/// 定时-查询任务
+pub struct ScheduleListHandler;
+
+impl ToolHandler for ScheduleListHandler {
+	fn name(&self) -> &str {
+		"schedule-list"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let tasks = task_repository::list(conn)?;
+		if let Some(enabled) = args.get("enabled").and_then(|v| v.as_bool()) {
+			let filtered: Vec<_> = tasks.into_iter().filter(|task| task.enabled == enabled).collect();
+			return Ok(json!({ "tasks": filtered }));
+		}
+		Ok(json!({ "tasks": tasks }))
+	}
+}
+
+/// 定时-删除任务
+pub struct ScheduleDeleteHandler;
+
+impl ToolHandler for ScheduleDeleteHandler {
+	fn name(&self) -> &str {
+		"schedule-delete"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let id = args
+			.get("id")
+			.and_then(|v| v.as_i64())
+			.ok_or_else(|| "参数缺失: id(任务 id) 为必填参数".to_string())?;
+		task_repository::delete(conn, id)?;
+		Ok(json!({ "ok": true, "id": id }))
 	}
 }

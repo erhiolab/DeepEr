@@ -6,6 +6,7 @@ mod db;
 mod log;
 mod resource;
 mod secret;
+mod task;
 mod tool;
 mod tray;
 mod api;
@@ -39,6 +40,10 @@ pub fn run() {
             )?;
             // 初始化数据库 (先于托盘: 托盘初始化时需要读取首次运行状态)
             let db_handle = db::init(app_handle)?;
+            // 先注册 DB 状态, 再启动调度线程 (线程内会访问该状态)
+            app.manage(db_handle);
+            // 初始化定时任务调度线程 (后台持续检查, 到点 emit 事件)
+            task::scheduler::init(app_handle.clone())?;
             // 初始化资源目录 (资源和下载临时目录)
             resource::init(app_handle).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
             log::write(
@@ -47,7 +52,6 @@ pub fn run() {
                 "info",
                 "资源目录初始化完成",
             )?;
-            app.manage(db_handle);
             // 校准资源索引 (磁盘 ⇄ DB): 启动时执行一次, 之后列表直接从 DB 读
             if let Some(state) = app.try_state::<db::Db>() {
                 if let Ok(conn) = state.0.lock() {
@@ -97,6 +101,13 @@ pub fn run() {
             commands::tools::tool_search,
             commands::tool::tool_execute,
             commands::agent::agent_run,
+
+            commands::tasks::task_list,
+            commands::tasks::task_create,
+            commands::tasks::task_update,
+            commands::tasks::task_delete,
+            commands::tasks::task_next,
+            commands::tasks::task_set_enabled,
 
             commands::llm::openai_responses::llm_openai_generate,
             commands::llm::openai_responses::llm_openai_test_connection,

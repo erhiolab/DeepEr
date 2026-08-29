@@ -113,6 +113,46 @@ const BUILTIN_TOOLS: &[(&str, &str, &str, &str, &str, &str)] = &[
 		r#"{"type":"object","properties":{"action":{"type":"string","description":"template / split / merge"},"data":{"type":"string","description":"模板或文本"},"vars":{"type":"object","description":"模板变量"},"delimiter":{"type":"string","description":"分隔符"},"items":{"type":"array","description":"要合并的文本数组"}},"required":["action"]}"#,
 		"{}",
 	),
+	(
+		"schedule-create-once",
+		"定时-新增一次性任务",
+		"新建一个只执行一次的定时任务. 参数: title(必填, 任务名称), content(必填, 到点发给 AI 的内容), at(必填, 执行时间, Unix 秒或 'YYYY-MM-DD HH:MM:SS' 字符串)",
+		"schedule-create-once",
+		r#"{"type":"object","properties":{"title":{"type":"string","description":"任务名称"},"content":{"type":"string","description":"到点发给 AI 的内容"},"at":{"type":"string","description":"执行时间, Unix 秒或 YYYY-MM-DD HH:MM:SS"}},"required":["title","content","at"]}"#,
+		"{}",
+	),
+	(
+		"schedule-create-recurring",
+		"定时-新增循环任务",
+		"新建一个永久循环的定时任务. 参数: title(必填, 任务名称), content(必填, 到点发给 AI 的内容), cycle(必填, hourly/daily/weekly), minute(仅 hourly, 每小时的分钟 0~59), times(仅 daily/weekly, 时间点 HH:MM 数组或单个字符串), weekdays(仅 weekly, 星期 1~7 数组)",
+		"schedule-create-recurring",
+		r#"{"type":"object","properties":{"title":{"type":"string","description":"任务名称"},"content":{"type":"string","description":"到点发给 AI 的内容"},"cycle":{"type":"string","description":"hourly / daily / weekly"},"minute":{"type":"integer","description":"每小时的分钟 0~59"},"times":{"type":"array","description":"时间点 HH:MM 数组或单个字符串"},"weekdays":{"type":"array","description":"星期 1~7 数组"}},"required":["title","content","cycle"]}"#,
+		"{}",
+	),
+	(
+		"schedule-update",
+		"定时-修改任务",
+		"修改定时任务. 参数: id(必填, 任务 id), title/content/kind/schedule 均可选, 只更新提供的字段",
+		"schedule-update",
+		r#"{"type":"object","properties":{"id":{"type":"integer","description":"任务 id"},"title":{"type":"string"},"content":{"type":"string"},"kind":{"type":"string"},"schedule":{"type":"array"}},"required":["id"]}"#,
+		"{}",
+	),
+	(
+		"schedule-list",
+		"定时-查询任务",
+		"查询全部定时任务. 参数: enabled(可选, true/false 按启用状态过滤)",
+		"schedule-list",
+		r#"{"type":"object","properties":{"enabled":{"type":"boolean","description":"按启用状态过滤"}},"required":[]}"#,
+		"{}",
+	),
+	(
+		"schedule-delete",
+		"定时-删除任务",
+		"删除一个定时任务. 参数: id(必填, 任务 id)",
+		"schedule-delete",
+		r#"{"type":"object","properties":{"id":{"type":"integer","description":"任务 id"}},"required":["id"]}"#,
+		"{}",
+	),
 ];
 
 /// 初始化: 内置工具 upsert (幂等, 定义以代码为准)
@@ -135,6 +175,12 @@ pub fn init_defaults(conn: &Connection) -> rusqlite::Result<()> {
 			params![name, label, description, executor, schema, config, timestamp],
 		)?;
 	}
+	// 清理已下架的内置工具 (种子表里不再存在的 builtin 行, 如被拆分/替换的旧工具)
+	let current_names: Vec<&str> = BUILTIN_TOOLS.iter().map(|tool| tool.0).collect();
+	let placeholders = (0..current_names.len()).map(|_| "?").collect::<Vec<_>>().join(",");
+	let sql = format!("DELETE FROM tools WHERE builtin = 1 AND name NOT IN ({placeholders})");
+	let mut stmt = conn.prepare(&sql)?;
+	stmt.execute(rusqlite::params_from_iter(current_names.iter()))?;
 	Ok(())
 }
 

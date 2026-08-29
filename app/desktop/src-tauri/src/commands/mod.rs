@@ -28,6 +28,7 @@ pub mod log;
 pub mod persona;
 pub mod resource;
 pub mod task_manager;
+pub mod tasks;
 pub mod tool;
 pub mod tools;
 pub mod tts;

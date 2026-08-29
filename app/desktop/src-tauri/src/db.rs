@@ -69,6 +69,16 @@ CREATE TABLE IF NOT EXISTS tools (
     created_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tasks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'permanent',
+    schedule    TEXT NOT NULL DEFAULT '[]',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
 ";
 
 /// 数据库文件名

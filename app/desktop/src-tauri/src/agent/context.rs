@@ -54,11 +54,11 @@ pub fn build(conn: &Connection, budget: u64) -> Result<(Vec<LlmMessage>, f64), S
 		.iter()
 		.filter(|row| row.kind == "person" && !row.content.trim().is_empty())
 		.collect();
-	// 对话 / 触摸历史 (按查询顺序为最新在前)
+	// 对话 / 触摸 / 定时任务历史 (按查询顺序为最新在前; 定时任务以独立 type 区分, 不混入用户输入)
 	let talks: Vec<&ContextRow> = rows
 		.iter()
 		.filter(|row| {
-			(row.kind == "talk" || row.kind == "touch")
+			(row.kind == "talk" || row.kind == "touch" || row.kind == "schedule")
 				&& row.role.as_deref().is_some_and(|role| !role.trim().is_empty())
 				&& !row.content.trim().is_empty()
 		})
