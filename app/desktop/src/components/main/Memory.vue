@@ -42,6 +42,7 @@ const TYPE_OPTIONS = [
 	{value: "core", labelKey: "typeCore"},
 ] as const
 
+// 记忆类型标签
 const typeLabel = (type: string): string => {
 	const OPTION = TYPE_OPTIONS.find(item => item.value === type)
 	return OPTION ? I18N.value[OPTION.labelKey] : type
@@ -49,16 +50,29 @@ const typeLabel = (type: string): string => {
 
 // 记忆列表
 const memories = ref<MemoryRecord[]>([])
+
+// 列表加载状态
 const loaded = ref(false)
+
+// 搜索查询
 const query = ref("")
 
 // 编辑器
 const editorOpen = ref(false)
+
+// 编辑记忆ID
 const editingId = ref<number | null>(null)
+
+// 保存状态
 const saving = ref(false)
+
+// 编辑器是否脏
 const dirty = ref(false)
+
+// 编辑器是否同步
 let syncing = false
 
+// 记忆草稿
 interface MemoryDraft {
 	content: string
 	type: string
@@ -67,6 +81,7 @@ interface MemoryDraft {
 	tagsText: string
 }
 
+// 默认草稿
 const defaultDraft = (): MemoryDraft => ({
 	content: "",
 	type: "fact",
@@ -75,13 +90,17 @@ const defaultDraft = (): MemoryDraft => ({
 	tagsText: "",
 })
 
+// 当前草稿
 const draft = ref<MemoryDraft>(defaultDraft())
+
+// 错误信息
 const errors = ref<Record<string, string | null>>({})
 
 watch(draft, () => {
 	if (editorOpen.value && !syncing) dirty.value = true
 }, {deep: true, flush: "sync"})
 
+// 应用草稿
 const applyDraft = (next: MemoryDraft): void => {
 	syncing = true
 	draft.value = next
@@ -95,8 +114,11 @@ const deleteTarget = ref<MemoryRecord | null>(null)
 
 // 页面反馈
 const feedback = ref<{type: "ok" | "error", text: string} | null>(null)
+
+// 页面反馈定时器
 let feedbackTimer: ReturnType<typeof setTimeout> | null = null
 
+// 显示反馈
 const showFeedback = (type: "ok" | "error", text: string): void => {
 	feedback.value = {type, text}
 	if (feedbackTimer) clearTimeout(feedbackTimer)
@@ -113,6 +135,7 @@ const load = async (): Promise<void> => {
 	loaded.value = true
 }
 
+// 过滤记忆列表
 const filteredMemories = computed(() => memories.value)
 
 // 编辑器
@@ -124,6 +147,7 @@ const draftFromMemory = (memory: MemoryRecord): MemoryDraft => ({
 	tagsText: memory.tags.join(", "),
 })
 
+// 打开创建记忆编辑器
 const openCreate = async (): Promise<void> => {
 	if (!(await flushEditor())) return
 	editingId.value = null
@@ -131,6 +155,7 @@ const openCreate = async (): Promise<void> => {
 	editorOpen.value = true
 }
 
+// 打开编辑记忆编辑器
 const openEdit = async (memory: MemoryRecord): Promise<void> => {
 	if (editingId.value === memory.id && !dirty.value) return
 	if (!(await flushEditor())) return
@@ -139,6 +164,7 @@ const openEdit = async (memory: MemoryRecord): Promise<void> => {
 	editorOpen.value = true
 }
 
+// 关闭编辑器
 const closeEditor = (): void => {
 	if (!saving.value) {
 		editorOpen.value = false
@@ -146,11 +172,13 @@ const closeEditor = (): void => {
 	}
 }
 
+// 刷新编辑器
 const flushEditor = async (): Promise<boolean> => {
 	if (!dirty.value) return true
 	return await save()
 }
 
+// 构建记忆输入
 const buildInput = (): MemoryInput => ({
 	content: draft.value.content.trim(),
 	type: draft.value.type,
@@ -159,6 +187,7 @@ const buildInput = (): MemoryInput => ({
 	tags: draft.value.tagsText.split(/[,，]/).map(tag => tag.trim()).filter(Boolean),
 })
 
+// 保存记忆
 const save = async (): Promise<boolean> => {
 	const NEXT_ERRORS: Record<string, string | null> = {}
 	if (!draft.value.content.trim()) NEXT_ERRORS.content = I18N.value.contentEmpty
@@ -185,6 +214,7 @@ const save = async (): Promise<boolean> => {
 	}
 }
 
+// 删除记忆
 const doDelete = async (): Promise<void> => {
 	const TARGET = deleteTarget.value
 	if (!TARGET) return
@@ -332,7 +362,6 @@ onBeforeUnmount(() => {
 					</template>
 				</SectionCard>
 			</div>
-			<EmptyState v-else class="editor-placeholder" icon="database" :hint="I18N.editorHint"/>
 		</div>
 
 		<ConfirmDialog
@@ -360,6 +389,8 @@ onBeforeUnmount(() => {
 	display: flex;
 	flex-direction: column;
 	gap: 1rem;
+	// 原生表单控件 (下拉 / 滑杆 / 日期) 走深色渲染, 避免系统浅色样式出现黑字
+	color-scheme: dark;
 }
 
 .action-btn {
@@ -611,10 +642,6 @@ onBeforeUnmount(() => {
 	min-height: 0;
 }
 
-.editor-placeholder {
-	flex: 1;
-}
-
 .editor-badge {
 	padding: 0.15rem 0.7rem;
 	border: 0.1rem solid var(--line-strong);
@@ -629,6 +656,17 @@ onBeforeUnmount(() => {
 	display: flex;
 	flex-direction: column;
 	gap: 0.9rem;
+
+	input,
+	textarea,
+	select {
+		color: var(--text-primary);
+	}
+
+	select option {
+		color: var(--text-primary);
+		background-color: var(--bg-deep);
+	}
 }
 
 .form-grid {
@@ -641,6 +679,24 @@ onBeforeUnmount(() => {
 	width: 100%;
 	accent-color: var(--deep-teal-bright);
 	cursor: pointer;
+
+	&::-webkit-slider-runnable-track {
+		height: 0.4rem;
+		border-radius: 99.9rem;
+		background-color: rgba(255, 255, 255, 0.1);
+	}
+
+	&::-webkit-slider-thumb {
+		width: 1.4rem;
+		height: 1.4rem;
+		margin-top: -0.5rem;
+		border: none;
+		border-radius: 50%;
+		background-image: linear-gradient(90deg, var(--deep-teal-bright), var(--deep-teal));
+		box-shadow: 0 0 0.6rem var(--glow-teal-soft);
+		-webkit-appearance: none;
+		appearance: none;
+	}
 }
 
 .memory-feedback {

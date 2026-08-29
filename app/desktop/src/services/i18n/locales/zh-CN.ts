@@ -467,7 +467,6 @@ export default {
 				searchPlaceholder: "搜索记忆内容或标签…",
 				empty: "还没有记忆",
 				emptyHint: "点击「新建记忆」记录重要信息, 或让 AI 通过记忆工具帮你保存",
-				editorHint: "从左侧选择记忆编辑, 或点击「新建记忆」",
 				content: "内容",
 				contentPlaceholder: "这条记忆要记住什么…",
 				type: "类型",

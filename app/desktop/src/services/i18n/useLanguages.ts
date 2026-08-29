@@ -492,7 +492,6 @@ const buildSnapshot = () => {
 					searchPlaceholder: t("components.main.memory.searchPlaceholder"),
 					empty: t("components.main.memory.empty"),
 					emptyHint: t("components.main.memory.emptyHint"),
-					editorHint: t("components.main.memory.editorHint"),
 					content: t("components.main.memory.content"),
 					contentPlaceholder: t("components.main.memory.contentPlaceholder"),
 					type: t("components.main.memory.type"),
