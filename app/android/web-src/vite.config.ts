@@ -1,11 +1,18 @@
 import {defineConfig} from "vite"
 import vue from "@vitejs/plugin-vue"
+import legacy from "@vitejs/plugin-legacy"
 import path from "node:path"
 
 const OUT_DIR = path.resolve(__dirname, "../app/src/main/assets/web")
 
 export default defineConfig({
-	plugins: [vue()],
+	plugins: [
+		vue(),
+		legacy({
+			targets: ["Chrome >= 61", "Android >= 7"],
+			modernPolyfills: true,
+		}),
+	],
 	base: "./",
 	resolve: {
 		alias: {
@@ -17,6 +24,7 @@ export default defineConfig({
 		port: 5174,
 	},
 	build: {
+		target: "es2015",
 		outDir: OUT_DIR,
 		emptyOutDir: true,
 		assetsInlineLimit: 0,

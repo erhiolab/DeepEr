@@ -7,14 +7,35 @@ import NORI_PROMPT from "./nori-prompt.md?raw"
 
 export const PERSONA_PROMPT: string = NORI_PROMPT
 
+export interface TtsSettings {
+	enabled: boolean
+	chat: boolean
+	touch: boolean
+	voice: string
+	follow: boolean
+	maxLen: number
+	voices: Record<string, string>
+}
+
 export interface Settings {
 	apiKey: string
 	baseUrl: string
 	model: string
-	
+
 	bubbleScale: number
-	
+
 	renderScale: number
+	tts: TtsSettings
+}
+
+export const DEFAULT_TTS_SETTINGS: TtsSettings = {
+	enabled: true,
+	chat: true,
+	touch: true,
+	voice: "gentleness",
+	follow: true,
+	maxLen: 80,
+	voices: {},
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -23,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	model: "",
 	bubbleScale: 1,
 	renderScale: 1,
+	tts: {...DEFAULT_TTS_SETTINGS},
 }
 
 export interface ChatMsg {
@@ -59,11 +81,12 @@ const bridge = (): NoriChat => {
 export const loadSettings = (): Settings => {
 	try {
 		const raw = bridge().readFile("settings.json")
-		if (!raw) return {...DEFAULT_SETTINGS}
+		if (!raw) return {...DEFAULT_SETTINGS, tts: {...DEFAULT_TTS_SETTINGS, voices: {}}}
 		const parsed = JSON.parse(raw)
-		return {...DEFAULT_SETTINGS, ...parsed}
+		const merged: Settings = {...DEFAULT_SETTINGS, ...parsed, tts: {...DEFAULT_TTS_SETTINGS, ...(parsed?.tts ?? {}), voices: {...(parsed?.tts?.voices ?? {})}}}
+		return merged
 	} catch {
-		return {...DEFAULT_SETTINGS}
+		return {...DEFAULT_SETTINGS, tts: {...DEFAULT_TTS_SETTINGS, voices: {}}}
 	}
 }
 
@@ -99,8 +122,16 @@ export const readMemory = (): string => {
 	try { return bridge().readMemory() } catch { return "" }
 }
 
-export const appendMemory = (text: string): void => {
-	try { if (text.trim()) bridge().appendMemory(text.trim()) } catch {  }
+export const appendMemory = (text: string): string => {
+	try { return bridge().appendMemory(text) } catch { return "err" }
+}
+
+export const readFile = (name: string): string => {
+	try { return bridge().readFile(name) } catch { return "" }
+}
+
+export const writeFile = (name: string, content: string): string => {
+	try { return bridge().writeFile(name, content) } catch { return "err:bridge" }
 }
 
 

@@ -1,6 +1,7 @@
 package cn.erhio.deeper
 
 import android.content.Context
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
@@ -14,7 +15,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.zip.ZipInputStream
 
-
 class ModelBridge(private val appContext: Context) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -25,24 +25,49 @@ class ModelBridge(private val appContext: Context) {
 
     companion object {
         private const val API_BASE = "https://api.elake.top/deeper"
-        const val MODELS_ROOT = "models"
+        const val MODELS_ROOT = "DeepEr/models"
     }
 
     val modelsDir: File
-        
-        get() = File(appContext.filesDir, MODELS_ROOT)
+        get() = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            MODELS_ROOT
+        )
 
-    
+    private fun migrateLegacyModels() {
+        val legacy = File(appContext.filesDir, "models")
+        if (!legacy.isDirectory) return
+        modelsDir.mkdirs()
+        legacy.listFiles()?.forEach { dir ->
+            val target = File(modelsDir, dir.name)
+            if (target.exists()) return@forEach
+            if (!dir.renameTo(target)) {
+                runCatching { dir.copyRecursively(target, overwrite = true) }
+            }
+        }
+        runCatching { legacy.deleteRecursively() }
+    }
+
     @android.webkit.JavascriptInterface
     fun download(id: String) {
         ioExecutor.execute {
             val json = runCatching {
+                if (!ChatBridge.storageReady(appContext)) {
+                    return@runCatching err("请先在设置中授予文件访问权限, 再下载模型")
+                }
+                migrateLegacyModels()
+                if (!modelsDir.isDirectory && !modelsDir.mkdirs()) {
+                    return@runCatching err("无法创建模型目录, 请检查存储权限")
+                }
                 val modelDir = modelsDir.resolve(safeSegment(id))
                 val existing = findEntryBase(modelDir)
                 if (existing != null) return@runCatching ok(existing)
                 val url = getDownloadUrl(id)
-                val zipBytes = fetchBytes(url)
-                ok(installZip(id, zipBytes))
+                val zipFile = File(appContext.cacheDir, "model_${safeSegment(id)}.zip")
+                downloadToFile(url, zipFile)
+                val entryBase = installZip(id, zipFile)
+                zipFile.delete()
+                ok(entryBase)
             }.getOrElse { e ->
                 err(e.message ?: "下载失败")
             }
@@ -58,11 +83,11 @@ class ModelBridge(private val appContext: Context) {
         }
     }
 
-    
     @android.webkit.JavascriptInterface
     fun listInstalled(): String {
         val arr = JSONArray()
         runCatching {
+            migrateLegacyModels()
             val root = modelsDir
             root.listFiles()?.forEach { dir ->
                 dir.takeIf { it.isDirectory }?.let { d ->
@@ -75,13 +100,11 @@ class ModelBridge(private val appContext: Context) {
         return arr.toString()
     }
 
-    
     @android.webkit.JavascriptInterface
     fun delete(id: String) {
         runCatching { modelsDir.resolve(safeSegment(id)).deleteRecursively() }
     }
 
-    
     private fun findEntryBase(modelDir: File): String? {
         if (!modelDir.isDirectory) return null
         return modelDir.walkTopDown()
@@ -90,7 +113,7 @@ class ModelBridge(private val appContext: Context) {
                 val rel = f.toRelativeString(modelDir).replace('\\', '/')
                 val parts = rel.split("/").filter { it.isNotEmpty() }
                 val base = when {
-                    parts.isEmpty()-> null
+                    parts.isEmpty() -> null
                     parts.size <= 1 -> f.name.removeSuffix(".model3.json")
                     else -> parts[0]
                 }
@@ -99,7 +122,6 @@ class ModelBridge(private val appContext: Context) {
             .minByOrNull { depthOfEntry(modelDir, it) }
     }
 
-    
     private fun depthOfEntry(modelDir: File, entryBase: String): Int {
         val dir = modelDir.resolve(safeSegment(entryBase))
         val f = File(dir, "$entryBase.model3.json")
@@ -124,50 +146,64 @@ class ModelBridge(private val appContext: Context) {
         }
     }
 
-    private fun fetchBytes(url: String): ByteArray {
-        val u = URL(url)
-        val conn = (u.openConnection() as HttpURLConnection).apply {
+    private fun downloadToFile(url: String, out: File) {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
             readTimeout = 30_000
         }
         try {
             if (conn.responseCode !in 200..299) throw RuntimeException("下载 ZIP 失败: HTTP ${conn.responseCode}")
-            return conn.inputStream.use { it.readBytes() }
+            conn.inputStream.use { input ->
+                FileOutputStream(out).use { output -> input.copyTo(output, 128 * 1024) }
+            }
         } finally {
             conn.disconnect()
         }
     }
 
-    private fun installZip(id: String, data: ByteArray): String {
+    private fun installZip(id: String, zipFile: File): String {
         val target = modelsDir.resolve(safeSegment(id))
         if (target.exists()) target.deleteRecursively()
-        target.mkdirs()
-        val entries = LinkedHashMap<String, ByteArray>()
-        ZipInputStream(data.inputStream()).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                if (!entry.isDirectory) entries[sanitize(entry.name)] = zip.readBytes()
-                zip.closeEntry()
-                entry = zip.nextEntry
+        val tmp = File(modelsDir, ".tmp_$id")
+        tmp.deleteRecursively()
+        tmp.mkdirs()
+        try {
+            ZipInputStream(zipFile.inputStream().buffered()).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory) {
+                        val out = tmp.resolve(sanitize(entry.name))
+                        if (isSafeChild(out, tmp)) {
+                            out.parentFile?.mkdirs()
+                            FileOutputStream(out).use { output -> zip.copyTo(output, 128 * 1024) }
+                        }
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
             }
+            val best = tmp.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".model3.json", true) }
+                .map { it.toRelativeString(tmp).replace('\\', '/') }
+                .minByOrNull { it.count { c -> c == '/' } }
+                ?: throw RuntimeException("模型包缺少 .model3.json")
+            val parts = best.split("/")
+            val entryBase = parts.last().removeSuffix(".model3.json").trim()
+            if (entryBase.isEmpty()) throw RuntimeException("模型入口名无效")
+            val prefix = parts.dropLast(1).joinToString("/")
+            val outBase = File(target, safeSegment(entryBase))
+            tmp.walkTopDown().filter { it.isFile }.forEach { f ->
+                var rel = f.toRelativeString(tmp).replace('\\', '/')
+                if (prefix.isNotEmpty() && rel.startsWith("$prefix/")) rel = rel.removePrefix("$prefix/")
+                val out = outBase.resolve(sanitizeSegments(rel))
+                if (!isSafeChild(out, target)) return@forEach
+                out.parentFile?.mkdirs()
+                if (!f.renameTo(out)) f.copyTo(out, overwrite = true)
+            }
+            return entryBase
+        } finally {
+            tmp.deleteRecursively()
         }
-        
-        val entryFiles = entries.filterKeys { it.endsWith(".model3.json", true) }
-        val best = entryFiles.keys.minByOrNull { it.count { c -> c == '/' } } ?: throw RuntimeException("模型包缺少 .model3.json")
-        val parts = best.split("/")
-        val entryBase = parts[parts.size - 1].removeSuffix(".model3.json").trim()
-        if (entryBase.isEmpty()) throw RuntimeException("模型入口名无效")
-        val prefix = parts.dropLast(1).joinToString("/")
-        val outBase = File(target, safeSegment(entryBase))
-        for ((rawPath, bytes) in entries) {
-            var rel = rawPath
-            if (prefix.isNotEmpty() && rel.startsWith("$prefix/")) rel = rel.removePrefix("$prefix/")
-            val out = outBase.resolve(sanitizeSegments(rel, entryBase))
-            out.parentFile?.mkdirs()
-            if (!isSafeChild(out, target)) continue
-            FileOutputStream(out).use { it.write(bytes) }
-        }
-        return entryBase
     }
 
     private fun isSafeChild(f: File, root: File): Boolean {
@@ -178,7 +214,7 @@ class ModelBridge(private val appContext: Context) {
         }
     }
 
-    private fun sanitizeSegments(rel: String, entryBase: String): String {
+    private fun sanitizeSegments(rel: String): String {
         val segs = rel.split("/").filter { it.isNotEmpty() && it != "." && it != ".." }
         return sanitize(segs.joinToString("/"))
     }

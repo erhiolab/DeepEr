@@ -4,32 +4,21 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <!-- 头部圆 (用 4 段贝塞尔近似圆) -->
     <path
         android:fillColor="#38BDF8"
         android:pathData="M54,18 C71.6,18 86,32.4 86,50 C86,67.6 71.6,82 54,82 C36.4,82 22,67.6 22,50 C22,32.4 36.4,18 54,18 Z" />
-
-    <!-- 身体 -->
     <path
         android:fillColor="#6366F1"
         android:pathData="M24,80 C24,62 38,50 54,50 C70,50 84,62 84,80 L84,90 L24,90 Z" />
-
-    <!-- 左眼 -->
     <path
         android:fillColor="#0F172A"
         android:pathData="M39.5,46 a4.5,4.5 0 1,0 9,0 a4.5,4.5 0 1,0 -9,0 Z" />
-
-    <!-- 右眼 -->
     <path
         android:fillColor="#0F172A"
         android:pathData="M59.5,46 a4.5,4.5 0 1,0 9,0 a4.5,4.5 0 1,0 -9,0 Z" />
-
-    <!-- 嘴 (用空心轮廓, 通过两条描边 path 近似; 简化成填充的弧) -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#0F172A"
         android:strokeWidth="3.5"
         android:pathData="M44,64 Q54,72 64,64" />
-
 </vector>

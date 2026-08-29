@@ -26,10 +26,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var assetLoader: WebViewAssetLoader
     private val modelBridge by lazy { ModelBridge(applicationContext) }
     private val chatBridge by lazy { ChatBridge(this) }
+    private val ttsBridge by lazy { TtsBridge(applicationContext) }
 
     companion object {
-        
-        
         private const val ENTRY_URL = "https://appassets.androidplatform.net/assets/web/index.html"
     }
 
@@ -47,8 +46,10 @@ class MainActivity : AppCompatActivity() {
 
         webView.addJavascriptInterface(modelBridge, "NoriBridge")
         webView.addJavascriptInterface(chatBridge, "NoriChat")
+        webView.addJavascriptInterface(ttsBridge, "NoriTTS")
         chatBridge.attach(webView)
         modelBridge.attach(webView)
+        ttsBridge.attach(webView)
 
         setupImmersive()
         setupWebView()
@@ -96,7 +97,6 @@ class MainActivity : AppCompatActivity() {
         settings.textZoom = 100
         webView.setBackgroundColor(0xFF0F172A.toInt())
         webView.webChromeClient = object : WebChromeClient() {
-            
             override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
                 if (message?.message()?.isNotBlank() == true) {
                     android.util.Log.d("WebViewConsole", "${message.message()} [src=${message.sourceId()}:${message.lineNumber()}]")
@@ -110,12 +110,10 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): WebResourceResponse? {
                 val url = request?.url ?: return null
-                
                 serveModelFile(url.toString())?.let { return it }
                 return assetLoader.shouldInterceptRequest(url)
             }
 
-            
             private fun serveModelFile(url: String): WebResourceResponse? {
                 val marker = "/live2d/"
                 val idx = url.indexOf(marker)

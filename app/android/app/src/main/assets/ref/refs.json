@@ -1,0 +1,17 @@
+[
+  { "name": "happy", "audio": "happy.wav", "prompt": "太好了！我早就猜到你会这么说了，真的特别开心！", "prompt_lang": "zh" },
+  { "name": "angry", "audio": "angry.wav", "prompt": "我真的有点生气了，你这样做太让我失望了。", "prompt_lang": "zh" },
+  { "name": "care", "audio": "care.wav", "prompt": "你最近好像有点累，要不要我陪你聊聊天？", "prompt_lang": "zh" },
+  { "name": "confession", "audio": "confession.wav", "prompt": "其实……我好像有一点喜欢你，不知道为什么就想告诉你。", "prompt_lang": "zh" },
+  { "name": "gentleness", "audio": "gentleness.wav", "prompt": "没关系的，今天已经做得很好了，你先好好休息一下吧。", "prompt_lang": "zh" },
+  { "name": "invitation", "audio": "invitation.wav", "prompt": "今天天气挺好的，要不要一起出去走走？", "prompt_lang": "zh" },
+  { "name": "missingYou", "audio": "missingYou.wav", "prompt": "你不在的时候，我总是忍不住想起你，感觉时间过得好慢。", "prompt_lang": "zh" },
+  { "name": "pampering", "audio": "pampering.wav", "prompt": "好～都听你的，行了吧？", "prompt_lang": "zh" },
+  { "name": "playful", "audio": "playful.wav", "prompt": "诶嘿～被你发现啦！", "prompt_lang": "zh" },
+  { "name": "retain", "audio": "retain.wav", "prompt": "这个故事还没讲完呢，你别急着走呀。", "prompt_lang": "zh" },
+  { "name": "spitting", "audio": "spitting.wav", "prompt": "喂喂，你又在偷偷摸鱼了？", "prompt_lang": "zh" },
+  { "name": "thank", "audio": "thank.wav", "prompt": "谢谢你今天陪着我，我真的很开心。", "prompt_lang": "zh" },
+  { "name": "thinking", "audio": "thinking.wav", "prompt": "唔…让我想想哦…嗯，好啦！", "prompt_lang": "zh" },
+  { "name": "tsundere", "audio": "tsundere.wav", "prompt": "哼！本小姐才不稀罕呢。", "prompt_lang": "zh" },
+  { "name": "wronged", "audio": "wronged.wav", "prompt": "我明明已经很努力了，为什么你还是不理解我呢……", "prompt_lang": "zh" }
+]

@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.webkit.WebView
+import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -18,7 +19,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-
 
 class ChatBridge(private val appContext: Context) {
 
@@ -31,34 +31,46 @@ class ChatBridge(private val appContext: Context) {
     fun attach(v: WebView) { webView = v }
 
     @android.webkit.JavascriptInterface
-    fun isStorageReady(): Boolean {
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return true
-        return appContext.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-    }
+    fun isStorageReady(): Boolean = storageReady(appContext)
 
-    
     @android.webkit.JavascriptInterface
     fun requestStoragePermission() {
         mainHandler.post {
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                (appContext as? Activity)?.requestPermissions(
-                    arrayOf(
-                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                        android.Manifest.permission.READ_EXTERNAL_STORAGE
-                    ),
-                    1001
-                )
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                    if (!Environment.isExternalStorageManager()) {
+                        runCatching {
+                            val intent = android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:${appContext.packageName}")
+                            )
+                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            appContext.startActivity(intent)
+                        }.onFailure {
+                            runCatching {
+                                appContext.startActivity(
+                                    android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        }
+                    }
+                }
+                Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q -> {
+                    (appContext as? Activity)?.requestPermissions(
+                        arrayOf(
+                            android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                            android.Manifest.permission.READ_EXTERNAL_STORAGE
+                        ),
+                        1001
+                    )
+                }
             }
         }
     }
 
-    
     @android.webkit.JavascriptInterface
     fun getStorageDir(): String = "Download/DeepEr"
-
-    
 
     private fun queryUri(name: String): Uri? {
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -123,8 +135,6 @@ class ChatBridge(private val appContext: Context) {
 
     private fun safeName(name: String): String =
         name.replace(Regex("[^A-Za-z0-9._-]"), "_").takeIf { it.isNotBlank() } ?: "data"
-
-    
 
     @android.webkit.JavascriptInterface
     fun fetchModels(baseUrl: String, apiKey: String) {
@@ -232,5 +242,14 @@ class ChatBridge(private val appContext: Context) {
 
     companion object {
         private const val MEMORY_FILE = "memory.txt"
+
+        fun storageReady(ctx: Context): Boolean {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return Environment.isExternalStorageManager()
+            }
+            return ContextCompat.checkSelfPermission(
+                ctx, android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
     }
 }

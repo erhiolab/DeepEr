@@ -98,6 +98,8 @@
 					@update="onTouchUpdate"
 					@remove="onTouchRemove"
 					@reset-draft="resetTouchDraft"
+					@cfg-export="exportTouchCfg"
+					@cfg-import="importTouchCfg"
 				/>
 			</div>
 		</div>
@@ -110,7 +112,75 @@
 				<button class="x" @click="panel = ''">✕</button>
 			</div>
 			<div class="tts-body">
-				<div class="tts-empty">语音合成（TTS）功能即将上线</div>
+				<div class="tts-status" :class="ttsStatusInfo.state">
+					<span class="dot"></span>
+					<span>{{ ttsStateLabel }}</span>
+					<span v-if="ttsStatusInfo.message" class="msg">{{ ttsStatusInfo.message }}</span>
+					<button v-if="ttsStatusInfo.state !== 'ready' && ttsStatusInfo.state !== 'absent'" class="mini" @click="reinitTts">重新初始化</button>
+				</div>
+
+				<div class="tts-scroll">
+					<div class="tgl-row">
+						<div>
+							<div class="tgl-label">语音朗读</div>
+							<div class="tgl-sub">关闭后聊天和触摸都不再发声</div>
+						</div>
+						<label class="tgl"><input type="checkbox" v-model="cfg.tts.enabled" /><span></span></label>
+					</div>
+					<div class="tgl-row" :class="{off: !cfg.tts.enabled}">
+						<div>
+							<div class="tgl-label">聊天回复朗读</div>
+							<div class="tgl-sub">逐条朗读 AI 的聊天回复</div>
+						</div>
+						<label class="tgl"><input type="checkbox" v-model="cfg.tts.chat" :disabled="!cfg.tts.enabled" /><span></span></label>
+					</div>
+					<div class="tgl-row" :class="{off: !cfg.tts.enabled}">
+						<div>
+							<div class="tgl-label">触摸回应朗读</div>
+							<div class="tgl-sub">朗读触摸互动时 AI 的回应</div>
+						</div>
+						<label class="tgl"><input type="checkbox" v-model="cfg.tts.touch" :disabled="!cfg.tts.enabled" /><span></span></label>
+					</div>
+
+					<div class="settings-row">
+						<label>单句最长朗读字数 {{ cfg.tts.maxLen }}</label>
+						<input type="range" min="20" max="160" step="10" v-model.number="cfg.tts.maxLen" :disabled="!cfg.tts.enabled" />
+						<div class="hint">超长回复会整句跳过不读，0 成本防止念经</div>
+					</div>
+
+					<div class="settings-row">
+						<label>默认音色</label>
+						<div class="voice-pick">
+							<select v-model="cfg.tts.voice" :disabled="!cfg.tts.enabled">
+								<option v-for="v in voiceOptions" :key="v.value" :value="v.value">{{ v.label }}</option>
+							</select>
+							<button class="mini ripple" :disabled="ttsStatusInfo.state !== 'ready' || !cfg.tts.enabled" @click="previewVoice">试听</button>
+						</div>
+					</div>
+
+					<div class="tgl-row" :class="{off: !cfg.tts.enabled}">
+						<div>
+							<div class="tgl-label">情绪自动换声</div>
+							<div class="tgl-sub">根据回复内容自动切换音色</div>
+						</div>
+						<label class="tgl"><input type="checkbox" v-model="cfg.tts.follow" :disabled="!cfg.tts.enabled" /><span></span></label>
+					</div>
+
+					<template v-if="cfg.tts.follow && cfg.tts.enabled">
+						<div class="settings-row" v-for="c in VOICE_CATS" :key="c.key">
+							<label>{{ c.label }}</label>
+							<div class="voice-pick">
+								<select v-model="cfg.tts.voices[c.key]">
+									<option value="">自动（{{ catDef(c.key) }}）</option>
+									<option v-for="v in voiceOptions" :key="v.value" :value="v.value">{{ v.label }}</option>
+								</select>
+							</div>
+						</div>
+					</template>
+
+					<button class="btn ripple primary" @click="saveTtsNow">保存 TTS 设置</button>
+					<div class="tts-foot-hint">首次合成需要加载模型（约 1.2GB），第一次会慢一些</div>
+				</div>
 			</div>
 		</div>
 		</Transition>
@@ -228,12 +298,16 @@ import {
 	sendChat,
 	readMemory,
 	appendMemory,
+	readFile,
+	writeFile,
 	isStorageReady,
 	requestStoragePermission,
 	PERSONA_PROMPT,
 	getStorageDir,
+	DEFAULT_TTS_SETTINGS,
 	type ChatMsg,
 } from "./services/chat"
+import {ttsInit, ttsSynthesize, ttsPlay, ttsStop, ttsStatus, ttsEmotions, ttsReinit, type TtsStatus} from "./services/tts"
 
 type P = "model" | "motion" | "expression" | "touch" | "settings" | "tts" | ""
 
@@ -388,6 +462,7 @@ __watch(() => panel.value, (newVal) => {
 		drawStart = null
 		drawDragged = false
 	}
+	if (newVal === 'tts') refreshTtsStatus()
 })
 
 __watch([scale, offsetX, offsetY, ready], () => {
@@ -433,6 +508,16 @@ const surface = (content: string) => {
 	else showAiBubble(content)
 }
 
+	const speakText = async (text: string, scene: "chat" | "touch", emo: string | null = null) => {
+		if (!cfg.tts.enabled) return
+		if (scene === "chat" && !cfg.tts.chat) return
+		if (scene === "touch" && !cfg.tts.touch) return
+		const clean = text.replace(/^⚠/, "").trim()
+		if (!clean || clean.length > cfg.tts.maxLen) return
+		const id = await ttsSynthesize(clean, emo ? voiceForTag(emo) : voiceForText(clean))
+		if (id) ttsPlay(id)
+	}
+
 const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
 	const desc = (area.prompt && area.prompt.trim()) ? area.prompt.trim() : (area.name || "未知")
 	const pool = type === "swipe" ? SWIPE_VERBS : TAP_VERBS
@@ -450,17 +535,19 @@ const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
 	const hist = messages.value.slice(-14).map(({role, content}) => ({role, content}) as ChatMsg)
 	
 	const payload: ChatMsg[] = [...context, ...hist, {role: "user", content: text, ts: Date.now()}]
-	try {
-		const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
-		if (res.ok) {
-			surface(res.content ?? "")
-			triggerEmotion(res.content ?? "")
-		} else {
-			surface(`⚠ ${res.message ?? "请求失败"}`)
+		try {
+			const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
+			if (res.ok) {
+				const parsed = stripTags(res.content ?? "")
+				surface(parsed.text)
+				triggerEmotion(parsed.text)
+				void speakText(parsed.text, "touch", parsed.emo)
+			} else {
+				surface(`⚠ ${res.message ?? "请求失败"}`)
+			}
+		} catch (e: any) {
+			surface(`⚠ ${e?.message ?? "请求失败"}`)
 		}
-	} catch (e: any) {
-		surface(`⚠ ${e?.message ?? "请求失败"}`)
-	}
 }
 
 
@@ -775,6 +862,7 @@ const cfg = reactive({
 	model: "",
 	bubbleScale: 1,
 	renderScale: 1,
+	tts: {...DEFAULT_TTS_SETTINGS, voices: {} as Record<string, string>},
 })
 
 
@@ -795,6 +883,107 @@ const storageReady = ref(false)
 const storagePath = ref("Download/DeepEr")
 
 const modelReady = computed(() => !!cfg.apiKey.trim() && !!cfg.model)
+
+// ===================== TTS 设置页 =====================
+
+// TTS 情绪类别 → 默认参考音色（与 assets/ref/refs.json 中的情绪对应）
+const VOICE_CATS: {key: string; label: string; def: string}[] = [
+	{key: "happy", label: "开心时用", def: "happy"},
+	{key: "angry", label: "生气时用", def: "angry"},
+	{key: "sad", label: "难过时用", def: "wronged"},
+	{key: "shy", label: "害羞时用", def: "tsundere"},
+	{key: "surprised", label: "惊讶时用", def: "playful"},
+	{key: "serious", label: "认真时用", def: "thinking"},
+	{key: "speechless", label: "无语时用", def: "spitting"},
+]
+
+const VOICE_LABELS: Record<string, string> = {
+	gentleness: "温柔",
+	happy: "开心",
+	angry: "生气",
+	care: "关心",
+	confession: "告白",
+	invitation: "邀请",
+	missingYou: "想念",
+	pampering: "宠溺",
+	playful: "俏皮",
+	retain: "挽留",
+	spitting: "怼人",
+	thank: "感谢",
+	thinking: "沉思",
+	tsundere: "傲娇",
+	wronged: "委屈",
+}
+
+const catDef = (key: string) => VOICE_LABELS[VOICE_CATS.find((c) => c.key === key)?.def ?? ""] ?? "温柔"
+
+const ttsStatusInfo = ref<TtsStatus>({state: "absent", message: ""})
+const voiceOptions = ref<{value: string; label: string}[]>([])
+
+const FALLBACK_VOICES = Object.keys(VOICE_LABELS)
+
+const ttsStateLabel = computed(() => ({
+	absent: "未在 APP 内运行（浏览器预览无语音）",
+	copying: "正在解压 TTS 模型…",
+	unavailable: "TTS 不可用",
+	ready: "TTS 引擎就绪",
+}[ttsStatusInfo.value.state] ?? "未知状态"))
+
+const refreshVoiceOptions = () => {
+	const names = ttsEmotions()
+	const list = names.length ? names : FALLBACK_VOICES
+	voiceOptions.value = list.map((n) => ({value: n, label: VOICE_LABELS[n] ?? n}))
+	if (!list.includes(cfg.tts.voice)) cfg.tts.voice = list.includes("gentleness") ? "gentleness" : list[0]
+}
+
+const refreshTtsStatus = () => {
+	ttsStatusInfo.value = ttsStatus()
+	refreshVoiceOptions()
+}
+
+const reinitTts = async () => {
+	ttsStatusInfo.value = {state: "copying", message: "正在初始化…"}
+	const ok = await ttsReinit()
+	refreshTtsStatus()
+	if (!ok) ttsStatusInfo.value.message = ttsStatusInfo.value.message || "初始化失败"
+}
+
+const previewVoice = async () => {
+	const id = await ttsSynthesize("嗨，我是Nori，能听到我的声音吗", cfg.tts.voice || "gentleness")
+	if (!id) triggerBubble("TTS 未就绪，稍等初始化完成再试")
+}
+
+const saveTtsNow = () => {
+	saveSettingsNow()
+	triggerBubble("TTS 设置已保存")
+}
+
+const TOUCH_EXPORT_FILE = "touch_config.json"
+
+const exportTouchCfg = () => {
+	if (!currentModelId.value) { triggerBubble("请先在「模型」里加载一个模型"); return }
+	const t = loadTouchConfig(currentModelId.value)
+	t.touches = touchAreas.value
+	const r = writeFile(TOUCH_EXPORT_FILE, JSON.stringify(t))
+	if (r === "ok") triggerBubble(`已导出到 ${getStorageDir()}/${TOUCH_EXPORT_FILE}`)
+	else triggerBubble("导出失败：请先授予存储权限")
+}
+
+const importTouchCfg = () => {
+	if (!currentModelId.value) { triggerBubble("请先在「模型」里加载一个模型"); return }
+	const raw = readFile(TOUCH_EXPORT_FILE)
+	if (!raw) { triggerBubble(`未找到 ${TOUCH_EXPORT_FILE}，请先导出或拷入该文件`); return }
+	try {
+		const data = JSON.parse(raw)
+		const touches = Array.isArray(data?.touches) ? data.touches : []
+		if (!touches.length) { triggerBubble("文件里没有触摸区域"); return }
+		touchAreas.value = touches
+		saveTouch()
+		triggerBubble(`已导入 ${touches.length} 个触摸区域（已覆盖原配置）`)
+	} catch {
+		triggerBubble("导入失败：文件格式不正确")
+	}
+}
 
 const toggleChat = () => {
 	chatOpen.value = !chatOpen.value
@@ -831,7 +1020,8 @@ const send = async () => {
 
 	typing.value = true
 	try {
-		
+		ttsStop()
+
 		const memory = readMemory()
 		const context: ChatMsg[] = [
 			{role: "system", content: PERSONA_PROMPT} as ChatMsg,
@@ -843,17 +1033,22 @@ const send = async () => {
 		const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
 		if (res.ok) {
 			const reply = res.content ?? ""
-			
+
 			const parts = splitReplies(reply)
 			for (let i = 0; i < parts.length; i++) {
-				if (i > 0) await sleep(400 + Math.random() * 900)
-				messages.value.push({role: "assistant", content: parts[i], ts: Date.now()})
+				const {emo, text: part} = parts[i]
+				const readable = cfg.tts.enabled && cfg.tts.chat && part.length <= cfg.tts.maxLen
+				const id = readable ? await ttsSynthesize(part, emo ? voiceForTag(emo) : voiceForText(part)) : null
+				if (i > 0) await sleep(300 + Math.random() * 500)
+				messages.value.push({role: "assistant", content: part, ts: Date.now()})
 				persistChat(messages.value)
 				scrollChatBottom()
+				if (id) ttsPlay(id)
+				applyPartExpression(emo, part)
 			}
-			
-			triggerEmotion(reply)
-			
+
+			playIdleMotionOnce()
+
 			appendMemoryIfAny(text)
 		} else {
 			messages.value.push({role: "assistant", content: `⚠ ${res.message ?? "请求失败"}`, ts: Date.now()})
@@ -869,15 +1064,43 @@ const DIRECTIVE = [
 	"追加硬规则，最终优先级最高：",
 	"1. 回复中不要使用任何标点符号（不要句号、逗号、省略号、叹号、问号）。",
 	"2. 每次回复拆成 2~3 条独立短句，每句自占一行，用换行分隔，模拟真人逐条发送的感觉。",
+	"3. 每行开头必须带一个情绪标签，格式为 [情绪]，从下面列表选一个：",
+	"gentleness(温柔) happy(开心) angry(生气) care(关心) confession(告白) invitation(邀请) missingYou(想念) pampering(宠溺) playful(俏皮) retain(挽留) spitting(怼人) thank(感谢) thinking(沉思) tsundere(傲娇) wronged(委屈)",
+	"4. 标签要结合对话上下文和这句话应有的语气神情来选，接下来这句话用什么情绪说就选什么；标签后跟一个空格再写正文。",
 ].join("\n")
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 
-const splitReplies = (reply: string): string[] => {
+interface ReplyPart {emo: string | null; text: string}
+
+const VOICE_KEYS = Object.keys(VOICE_LABELS)
+
+const parseTaggedLine = (line: string): ReplyPart => {
+	const m = line.match(/^\[([a-zA-Z]+)\]\s*/)
+	if (m) {
+		const tag = m[1].toLowerCase()
+		if (VOICE_KEYS.includes(tag)) return {emo: tag, text: line.slice(m[0].length).trim()}
+	}
+	return {emo: null, text: line}
+}
+
+const stripTags = (content: string): ReplyPart => {
+	const lines = content.split(/\n+/)
+	let emo: string | null = null
+	const cleaned = lines.map((l) => {
+		const p = parseTaggedLine(l.trim())
+		if (!emo && p.emo) emo = p.emo
+		return p.text
+	}).filter((s) => s)
+	return {emo, text: cleaned.join("\n")}
+}
+
+const splitReplies = (reply: string): ReplyPart[] => {
 	const lines = reply.split(/\n+/).map((s) => s.trim()).filter((s) => s)
-	if (lines.length >= 2) return lines.map((s) => s.replace(/[。！？!?^~，,]+$/g, ""))
-	return [reply.trim()]
+	const strip = (s: string) => s.replace(/[。！？!?^~，,]+$/g, "")
+	if (lines.length >= 2) return lines.map((s) => { const p = parseTaggedLine(s); return {emo: p.emo, text: strip(p.text)} }).filter((p) => p.text)
+	return [parseTaggedLine(reply.trim())]
 }
 
 const appendMemoryIfAny = (text: string) => {
@@ -890,18 +1113,61 @@ const appendMemoryIfAny = (text: string) => {
 
 
 
-const EMOTION_RULES: {key: RegExp; match: string[]}[] = [
-	{key: /开心|高兴|happy|哈哈|嘿嘿|太棒|好呀|超棒|真棒|喜欢|开心就|笑嘻嘻|哈哈/, match: ["happy", "smile", "kira"]},
-	{key: /生气|讨厌|不喜欢|气死|居然|过分|气鼓/, match: ["angry"]},
-	{key: /难过|伤心|失落|孤单|想念|呜呜|哭了|想哭|难受|好想/, match: ["sad", "tears", "troubled", "worried"]},
-	{key: /害羞|不好意思|唔\.\.|诶\.\.|脸红了/, match: ["shy"]},
-	{key: /困了|好困|累|想睡|睡觉/, match: ["sleep"]},
-	{key: /惊讶|诶！|哇|不会吧|真的吗|嚇/, match: ["surprised", "dizzy"]},
-	{key: /认真|严肃|重要|承诺|答应/, match: ["serious", "angry"]},
-	{key: /无奈|叹气|真是|哎/, match: ["speechless", "doubt", "troubled"]},
+const EMOTION_RULES: {key: RegExp; match: string[]; cat: string}[] = [
+	{key: /开心|高兴|happy|哈哈|嘿嘿|太棒|好呀|超棒|真棒|喜欢|开心就|笑嘻嘻|哈哈/, match: ["happy", "smile", "kira"], cat: "happy"},
+	{key: /生气|讨厌|不喜欢|气死|居然|过分|气鼓/, match: ["angry"], cat: "angry"},
+	{key: /难过|伤心|失落|孤单|想念|呜呜|哭了|想哭|难受|好想/, match: ["sad", "tears", "troubled", "worried"], cat: "sad"},
+	{key: /害羞|不好意思|唔\.\.|诶\.\.|脸红了/, match: ["shy"], cat: "shy"},
+	{key: /困了|好困|累|想睡|睡觉/, match: ["sleep"], cat: ""},
+	{key: /惊讶|诶！|哇|不会吧|真的吗|嚇/, match: ["surprised", "dizzy"], cat: "surprised"},
+	{key: /认真|严肃|重要|承诺|答应/, match: ["serious", "angry"], cat: "serious"},
+	{key: /无奈|叹气|真是|哎/, match: ["speechless", "doubt", "troubled"], cat: "speechless"},
 ]
 
+const detectEmotionCategory = (text: string): string | null => {
+	for (const rule of EMOTION_RULES) {
+		if (rule.cat && rule.key.test(text)) return rule.cat
+	}
+	return null
+}
 
+const voiceForText = (text: string): string => {
+	if (!cfg.tts.follow) return cfg.tts.voice || "gentleness"
+	const cat = detectEmotionCategory(text)
+	if (cat) {
+		const override = cfg.tts.voices[cat]
+		if (override) return override
+		const def = VOICE_CATS.find((c) => c.key === cat)?.def
+		if (def) return def
+	}
+	return cfg.tts.voice || "gentleness"
+}
+
+const TAG_CAT: Record<string, string> = {
+	happy: "happy", angry: "angry", wronged: "sad", tsundere: "shy",
+	playful: "surprised", thinking: "serious", spitting: "speechless", missingYou: "sad",
+}
+
+const voiceForTag = (emo: string): string => {
+	const cat = TAG_CAT[emo]
+	if (cat) {
+		const override = cfg.tts.voices[cat]
+		if (override) return override
+	}
+	return emo
+}
+
+const applyPartExpression = (emo: string | null, part: string) => {
+	if (!ready.value) return
+	let hit: string | null = null
+	const cat = emo ? TAG_CAT[emo] : null
+	if (cat) {
+		const rule = EMOTION_RULES.find((r) => r.cat === cat)
+		if (rule) hit = expressions.value.find((name) => rule.match.some((k) => name.toLowerCase().includes(k))) ?? null
+	}
+	if (!hit) hit = detectExpression(part)
+	if (hit) l2d.playExpression(hit)
+}
 const detectExpression = (text: string): string | null => {
 	const lower = text.toLowerCase()
 	for (const rule of EMOTION_RULES) {
@@ -935,7 +1201,7 @@ const triggerEmotion = (text: string) => {
 const grantStorage = () => requestStoragePermission()
 
 const saveSettingsNow = () => {
-	saveSettings({apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, bubbleScale: Number(cfg.bubbleScale) || 1, renderScale: renderScaleNum.value})
+	saveSettings({apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, bubbleScale: Number(cfg.bubbleScale) || 1, renderScale: renderScaleNum.value, tts: {...cfg.tts, voices: {...cfg.tts.voices}}})
 	applyRenderScale()
 	modelLoadMsg.value = ""
 }
@@ -961,6 +1227,7 @@ onMounted(async () => {
 	cfg.model = s.model
 	cfg.bubbleScale = s.bubbleScale || 1
 	cfg.renderScale = s.renderScale || nativeDpr.value
+	cfg.tts = {...DEFAULT_TTS_SETTINGS, ...s.tts, voices: {...(s.tts?.voices ?? {})}}
 	window.__noriRenderScale = renderScaleNum.value
 	storagePath.value = getStorageDir()
 	storageReady.value = isStorageReady()
@@ -971,6 +1238,8 @@ onMounted(async () => {
 	}
 	messages.value = loadChat()
 	if (cfg.apiKey.trim()) refreshModels()
+
+	if (window.NoriTTS) void ttsInit()
 
 	
 	try {
@@ -1072,14 +1341,78 @@ onBeforeUnmount(async () => {
 .tts-body {
 	flex: 1;
 	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+}
+.tts-status {
+	display: flex;
 	align-items: center;
-	justify-content: center;
+	gap: 8px;
+	padding: 10px 12px;
+	margin-top: 6px;
+	border-radius: 12px;
+	background: rgba(30, 41, 59, 0.75);
+	border: 1px solid rgba(148, 163, 184, 0.2);
+	font-size: 13px;
+	color: #cbd5e1;
+	.dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; flex: none; }
+	&.ready { border-color: rgba(74, 222, 128, 0.35); .dot { background: #4ade80; box-shadow: 0 0 8px rgba(74, 222, 128, 0.7); } }
+	&.copying { .dot { background: #fbbf24; animation: tts-pulse 1s ease-in-out infinite; } }
+	&.unavailable { border-color: rgba(248, 113, 113, 0.35); .dot { background: #f87171; } }
+	.msg { flex: 1; font-size: 12px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
-.tts-empty {
-	color: #64748b;
+@keyframes tts-pulse { 50% { opacity: 0.3; } }
+.tts-scroll {
+	flex: 1;
+	overflow-y: auto;
+	margin-top: 10px;
+	padding-bottom: 24px;
+}
+.tts-foot-hint { margin-top: 10px; font-size: 11px; color: #475569; text-align: center; line-height: 1.6; }
+.tgl-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 11px 2px;
+	&.off { opacity: 0.45; }
+}
+.tgl-label { font-size: 13px; color: #cbd5e1; }
+.tgl-sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+.tgl {
+	position: relative;
+	width: 44px; height: 24px;
+	flex: none;
+	input { opacity: 0; width: 0; height: 0; }
+	span {
+		position: absolute; inset: 0;
+		border-radius: 999px;
+		background: rgba(71, 85, 105, 0.7);
+		transition: background 0.2s;
+		&::after {
+			content: "";
+			position: absolute; top: 3px; left: 3px;
+			width: 18px; height: 18px;
+			border-radius: 50%;
+			background: #e2e8f0;
+			transition: transform 0.2s;
+		}
+	}
+	input:checked + span { background: #38bdf8; }
+	input:checked + span::after { transform: translateX(20px); }
+}
+.voice-pick { display: flex; gap: 8px; align-items: center; }
+.voice-pick select {
+	flex: 1;
+	background: rgba(30, 41, 59, 0.9);
+	color: #e2e8f0;
+	border: 1px solid rgba(148, 163, 184, 0.25);
+	border-radius: 10px;
+	padding: 10px;
 	font-size: 14px;
-	text-align: center;
 }
+.btn.primary { background: linear-gradient(135deg, #38bdf8, #6366f1); color: #fff; border: none; }
 .touch-page .touch-overlay.drawing { cursor: crosshair; }
 .touch-top {
 	position: fixed;

@@ -41,9 +41,9 @@ const STOP_NEW = `  stopAllExpressions() {
 const GL_OLD = `getContext("webgl2", { preserveDrawingBuffer: true })`
 const GL_NEW = `getContext("webgl2")`
 
-// 移动端性能: 背缓冲分辨率封顶 DPR=1.5, 避免 9x 像素填充导致动画卡顿
 const RESIZE_DPR_OLD = `this._canvas.width = this._canvas.clientWidth * window.devicePixelRatio, this._canvas.height = this._canvas.clientHeight * window.devicePixelRatio, this._gl.viewport(0, 0, this._gl.drawingBufferWidth, this._gl.drawingBufferHeight);`
-const RESIZE_DPR_NEW = `this._canvas.width = this._canvas.clientWidth * Math.min(window.devicePixelRatio || 1, 1), this._canvas.height = this._canvas.clientHeight * Math.min(window.devicePixelRatio || 1, 1), this._gl.viewport(0, 0, this._gl.drawingBufferWidth, this._gl.drawingBufferHeight);`
+const RESIZE_DPR_CAPPED = `this._canvas.width = this._canvas.clientWidth * Math.min(window.devicePixelRatio || 1, 1), this._canvas.height = this._canvas.clientHeight * Math.min(window.devicePixelRatio || 1, 1), this._gl.viewport(0, 0, this._gl.drawingBufferWidth, this._gl.drawingBufferHeight);`
+const RESIZE_DPR_SCALED = `this._canvas.width = this._canvas.clientWidth * (window.__noriRenderScale || Math.min(window.devicePixelRatio || 1, 1)), this._canvas.height = this._canvas.clientHeight * (window.__noriRenderScale || Math.min(window.devicePixelRatio || 1, 1)), this._gl.viewport(0, 0, this._gl.drawingBufferWidth, this._gl.drawingBufferHeight);`
 
 const LOAD_ASSETS_OLD = `}).catch((e) => {
       F(` + "`Failed to load file ${this._modelHomeDir}.model3.json`" + `);
@@ -100,8 +100,6 @@ const MOTION_RESET_NEW = `    if (i == B.priorityForce) {
       }
     }`
 
-// 暴露模型自然画布尺寸到全局: 用于触摸区域通过 contain() 映射对齐到真实模型内容矩形,
-// 使框随模型缩放/位移而同步 (移动端的画布是 100% 全屏, 模型在内部等比适配, 尺寸会丢失)
 const MODEL_INFO_OLD = `this._model.saveParameters(), this._modelMatrix = new qi(`
 const MODEL_INFO_NEW = `window.__noriModelCanvas = { w: this._model.getCanvasWidth(), h: this._model.getCanvasHeight() }; this._model.saveParameters(), this._modelMatrix = new qi(`
 
@@ -119,14 +117,13 @@ const applyAll = (n, o, n2) => {
 apply("多表情叠加", CLEANUP_OLD, CLEANUP_NEW)
 apply("表情参数还原", STOP_OLD, STOP_NEW)
 applyAll("preserveDrawingBuffer", GL_OLD, GL_NEW)
-apply("背缓冲DPR封顶", RESIZE_DPR_OLD, RESIZE_DPR_NEW)
+apply("渲染倍率(从封顶版)", RESIZE_DPR_CAPPED, RESIZE_DPR_SCALED)
+apply("渲染倍率(从原始版)", RESIZE_DPR_OLD, RESIZE_DPR_SCALED)
 apply("加载失败标记", LOAD_ASSETS_OLD, LOAD_ASSETS_NEW)
 apply("加载超时reject", WAITING_OLD, WAITING_NEW)
 apply("纹理CORS1", TEX_IMG_OLD, TEX_IMG_NEW)
 apply("纹理CORS2", TEX_NEW_OLD, TEX_NEW_NEW)
-// 强行动作前重置模型参数, 消除跨动作的肢体残留(手臂重叠)
 apply("动作前参数复位", MOTION_RESET_OLD, MOTION_RESET_NEW)
-// 暴露模型自然画布尺寸
 apply("模型尺寸暴露", MODEL_INFO_OLD, MODEL_INFO_NEW)
 
 if (changed) writeFileSync(TARGET, source)

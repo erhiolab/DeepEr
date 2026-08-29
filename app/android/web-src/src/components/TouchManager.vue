@@ -20,6 +20,8 @@ const emit = defineEmits<{
 	(e: "update", id: string, patch: Partial<TouchArea>): void
 	(e: "remove", id: string): void
 	(e: "resetDraft"): void
+	(e: "cfgExport"): void
+	(e: "cfgImport"): void
 }>()
 
 
@@ -81,6 +83,12 @@ watch(() => props.hasDraft, (has) => {
 			</button>
 		</div>
 
+		<div class="tm-tools io">
+			<button class="tm-me-btn" @click="emit('cfgExport')">导出配置</button>
+			<button class="tm-me-btn" @click="emit('cfgImport')">导入配置</button>
+		</div>
+		<div class="tm-io-hint">导出到 Download/DeepEr/touch_config.json，两台手机间可互拷分享</div>
+
 		<div v-if="drawing" class="tm-hint">在模型上按住拖动画新矩形，松手填写名称</div>
 		<div v-else-if="adjusting" class="tm-hint warn">点住已有区域可拖动调整位置</div>
 
@@ -139,6 +147,8 @@ watch(() => props.hasDraft, (has) => {
 .tm-head { display: flex; align-items: center; }
 .tm-title { font-size: 14px; font-weight: 600; color: #f1f5f9; }
 .tm-tools { display: flex; gap: 8px; }
+.tm-tools.io { margin-top: -2px; }
+.tm-io-hint { font-size: 11px; color: #64748b; line-height: 1.5; }
 .tm-me-btn {
 	flex: 1;
 	padding: 9px 0;

@@ -30,3 +30,12 @@ Thumbs.db
 
 # web-src node
 /web-src/node_modules/
+
+# signing key
+/keystore/
+
+# bundled tts models (synced from F:/TTSAI, not tracked)
+/app/src/main/assets/tts/
+/app/src/std/assets/tts/
+/app/src/full/assets/tts/
+/app/src/main/assets/tts_data/
