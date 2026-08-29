@@ -489,6 +489,8 @@ export default {
 				delete: "删除",
 				deleteConfirmTitle: "删除记忆",
 				deleteConfirmMessage: "确定要删除这条记忆吗？\n删除后不可恢复。",
+				unsavedTitle: "有未保存的修改",
+				unsavedMessage: "记忆有未保存的修改，离开前要保存吗？",
 			},
 		}
 	},

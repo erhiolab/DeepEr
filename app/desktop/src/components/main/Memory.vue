@@ -236,8 +236,8 @@ onMounted(() => {
 	GUARD.register({
 		hasUnsaved: () => dirty.value,
 		onSave: () => save(),
-		title: I18N.value.title,
-		message: I18N.value.saveFailed,
+		title: I18N.value.unsavedTitle,
+		message: I18N.value.unsavedMessage,
 		saveLabel: I18N.value.saveAndLeave,
 		discardLabel: I18N.value.discardLeave,
 	})

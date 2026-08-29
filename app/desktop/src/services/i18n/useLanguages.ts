@@ -514,6 +514,8 @@ const buildSnapshot = () => {
 					delete: t("components.main.memory.delete"),
 					deleteConfirmTitle: t("components.main.memory.deleteConfirmTitle"),
 					deleteConfirmMessage: t("components.main.memory.deleteConfirmMessage"),
+					unsavedTitle: t("components.main.memory.unsavedTitle"),
+					unsavedMessage: t("components.main.memory.unsavedMessage"),
 				},
 			}
 		},
