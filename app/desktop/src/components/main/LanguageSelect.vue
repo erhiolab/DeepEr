@@ -3,9 +3,8 @@ import {computed, ref, onMounted} from "vue"
 import useLanguage from "../../services/i18n"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import type {LanguageType} from "../../services/i18n"
-import zhCn from "../../assets/images/flags/cn.png"
-import enGb from "../../assets/images/flags/gb.png"
-import enUs from "../../assets/images/flags/us.png"
+import zhCn from "../../assets/images/flags/zh-CN.png"
+import zhTw from "../../assets/images/flags/zh-TW.png"
 import Icon from "../common/Icon.vue"
 import PageHeader from "../common/PageHeader.vue"
 import {logger} from "../../services/logger"
@@ -18,16 +17,14 @@ const I18N = computed(() => useLanguages().components.main.languageSelect)
 const FLAG_MAP: Record<string, string> = {
 	"zh-CN": zhCn,
 	"zh": zhCn,
-	"en": enGb,
-	"en-US": enUs
+	"zh-TW": zhTw,
 }
 
 // 语言 code → 显示名称 (fallback 用 Intl.DisplayNames)
 const NAME_MAP: Record<string, string> = {
 	"zh-CN": "简体中文",
 	"zh": "简体中文",
-	"en": "English",
-	"en-US": "English (US)",
+	"zh-TW": "繁體中文",
 }
 
 // 获取语言国旗图片 (fallback 用 code 本身)
