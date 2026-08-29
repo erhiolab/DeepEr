@@ -8,6 +8,7 @@
 //! - 同一会话内新建/修改/启用任务会把 last_fired 重置为当前时刻, 避免触发"过去的"时间
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -22,6 +23,11 @@ use crate::task::{next, repository};
 
 /// 到点事件名 (前端按此监听)
 pub const SCHEDULED_TASK_EVENT: &str = "scheduled-task-due";
+
+/// 记忆清理周期 (tick 数, 每秒一次 → 约 1 小时)
+const MEMORY_CLEANUP_INTERVAL: usize = 3600;
+/// 清理计数器
+static CLEANUP_TICK: AtomicUsize = AtomicUsize::new(0);
 
 /// 调度器共享状态: task_id → 上次触发时刻
 pub struct SchedulerState(pub Arc<Mutex<HashMap<i64, i64>>>);
@@ -46,6 +52,25 @@ pub fn init(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
 fn tick(app: &AppHandle) {
 	let timestamp = now();
+	// 周期性清理过期记忆 (启动后第一次 + 每小时一次; 核心记忆 importance>=1.0 保留)
+	let cleanup_tick = CLEANUP_TICK.fetch_add(1, Ordering::Relaxed) + 1;
+	if cleanup_tick == 1 || cleanup_tick % MEMORY_CLEANUP_INTERVAL == 0 {
+		if let Some(state) = app.try_state::<db::Db>() {
+			if let Ok(conn) = state.0.lock() {
+				let deleted = conn
+					.execute(
+						"DELETE FROM memories
+						 WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?1 AND importance < 1.0",
+						rusqlite::params![timestamp],
+					)
+					.unwrap_or(0);
+				if deleted > 0 {
+					let _ = log::write(app, &LogSource::Backend, "info", &format!("记忆清理: 过期删除 {deleted} 条"));
+				}
+			}
+		}
+	}
+
 	// 用 try_state 防御: DB 状态未就绪时跳过本轮
 	let Some(state) = app.try_state::<db::Db>() else {
 		return;

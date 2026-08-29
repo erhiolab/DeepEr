@@ -484,6 +484,39 @@ const buildSnapshot = () => {
 					saved: t("components.main.scheduled.saved"),
 					saveFailed: t("components.main.scheduled.saveFailed"),
 				},
+				memory: {
+					title: t("components.main.memory.title"),
+					subtitle: t("components.main.memory.subtitle"),
+					newMemory: t("components.main.memory.newMemory"),
+					refresh: t("components.main.memory.refresh"),
+					searchPlaceholder: t("components.main.memory.searchPlaceholder"),
+					empty: t("components.main.memory.empty"),
+					emptyHint: t("components.main.memory.emptyHint"),
+					content: t("components.main.memory.content"),
+					contentPlaceholder: t("components.main.memory.contentPlaceholder"),
+					type: t("components.main.memory.type"),
+					importance: t("components.main.memory.importance"),
+					importanceHint: t("components.main.memory.importanceHint"),
+					confidence: t("components.main.memory.confidence"),
+					confidenceHint: t("components.main.memory.confidenceHint"),
+					tags: t("components.main.memory.tags"),
+					tagsPlaceholder: t("components.main.memory.tagsPlaceholder"),
+					typeFact: t("components.main.memory.typeFact"),
+					typePreference: t("components.main.memory.typePreference"),
+					typeProject: t("components.main.memory.typeProject"),
+					typeEvent: t("components.main.memory.typeEvent"),
+					typeRelationship: t("components.main.memory.typeRelationship"),
+					typeCore: t("components.main.memory.typeCore"),
+					saved: t("components.main.memory.saved"),
+					saveFailed: t("components.main.memory.saveFailed"),
+					contentEmpty: t("components.main.memory.contentEmpty"),
+					accessCount: (n: number) => t("components.main.memory.accessCount", {n}),
+					delete: t("components.main.memory.delete"),
+					deleteConfirmTitle: t("components.main.memory.deleteConfirmTitle"),
+					deleteConfirmMessage: t("components.main.memory.deleteConfirmMessage"),
+					unsavedTitle: t("components.main.memory.unsavedTitle"),
+					unsavedMessage: t("components.main.memory.unsavedMessage"),
+				},
 			}
 		},
 		views: {
@@ -511,8 +544,9 @@ const buildSnapshot = () => {
 				action: t("common.label.action"),
 				tts: t("common.label.tts"),
 				characterDesign: t("common.label.characterDesign"),
-				tool: t("common.label.tool"),
 				scheduled: t("common.label.scheduled"),
+				memory: t("common.label.memory"),
+				tool: t("common.label.tool"),
 				exception: t("common.label.exception"),
 				about: t("common.label.about"),
 			},
@@ -581,6 +615,7 @@ export type LangGroupPath =
 	| "components.main.talk"
 	| "components.main.toolList"
 	| "components.main.scheduled"
+	| "components.main.memory"
 	| "views.firstRun"
 	| "views.main"
 	| "views.pet"

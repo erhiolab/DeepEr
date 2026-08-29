@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod db;
 mod log;
+mod memory;
 mod resource;
 mod secret;
 mod task;
@@ -96,6 +97,16 @@ pub fn run() {
             commands::persona::persona_delete,
             commands::persona::persona_select,
             commands::persona::persona_import_file,
+
+            commands::memory::memory_list,
+            commands::memory::memory_search,
+            commands::memory::memory_create,
+            commands::memory::memory_update,
+            commands::memory::memory_delete,
+
+            commands::summary::summary_list,
+            commands::summary::summary_create,
+            commands::summary::summary_delete,
 
             commands::tools::tool_list,
             commands::tools::tool_search,

@@ -1,12 +1,13 @@
 //! Agent 循环 (Rust 侧)
 //!
-//! 流程: 注入工具协议 → LLM 生成 → 解析 <tool_call> → ToolService 执行 →
+//! 流程: 记忆召回 + 注入工具协议 → LLM 生成 → 解析 <tool_call> → ToolService 执行 →
 //! 以 <tool_result> 回填再次生成, 直到 LLM 不再发起调用 (有最大轮数与结果长度保护).
 //! 每轮工具调用通过 `agent-tool-call` 事件推给前端展示, 并写入 contexts 表留痕.
 
 use rusqlite::Connection;
-use serde_json::json;
-use tauri::{AppHandle, Emitter};
+use serde_json::{json, Value};
+use std::sync::atomic::{AtomicI64, Ordering};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agent::context::{self, estimate_tokens, CONTEXT_TOKEN_BUDGET};
 use crate::agent::parser;
@@ -16,6 +17,9 @@ use crate::commands::llm::{
 };
 use crate::db;
 use crate::log::{self, LogSource};
+use crate::memory::model::MemoryInput;
+use crate::memory::repository as memory_repository;
+use crate::memory::summaries::{self, SummaryInput};
 use crate::tool::service::ToolService;
 
 /// 循环保护上限
@@ -24,6 +28,16 @@ const MAX_ROUNDS: usize = 6;
 const MAX_RESULT_CHARS: usize = 4000;
 /// 上下文里最多保留几轮工具调用往返
 const MAX_TOOL_PAIRS: usize = 2;
+/// 自动记忆召回条数上限
+const MEMORY_RECALL_LIMIT: usize = 5;
+/// 记忆提炼节流 (秒): 距上次提炼不足该值则跳过
+const EXTRACT_THROTTLE_SECS: i64 = 120;
+/// 上次记忆提炼时间 (内存级节流)
+static LAST_EXTRACT_AT: AtomicI64 = AtomicI64::new(0);
+/// 对话超过该条数才自动生成摘要
+const SUMMARY_MIN_TALKS: usize = 80;
+/// 摘要保留的最近对话条数 (更早的才摘要)
+const SUMMARY_KEEP_RECENT: usize = 30;
 /// 工具调用事件名 (前端按 requestId 匹配)
 const TOOL_EVENT: &str = "agent-tool-call";
 
@@ -101,14 +115,23 @@ fn active_platform(state: &tauri::State<'_, db::Db>) -> Result<Platform, String>
 	}
 }
 
-/// 注入工具协议系统消息 (幂等; 插到所有人设 system 消息之后)
-fn inject_protocol(mut messages: Vec<LlmMessage>) -> Vec<LlmMessage> {
+/// 注入工具协议系统消息 (幂等; 插到所有人设 system 消息之后; 重要工具清单来自 tools 表)
+fn inject_protocol(
+	state: &tauri::State<'_, db::Db>,
+	mut messages: Vec<LlmMessage>,
+) -> Result<Vec<LlmMessage>, String> {
 	if messages
 		.iter()
 		.any(|m| m.role == "system" && m.content.starts_with(prompt::AGENT_PROTOCOL_MARKER))
 	{
-		return messages;
+		return Ok(messages);
 	}
+	let conn = state
+		.0
+		.lock()
+		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+	let system_prompt = prompt::build_system_prompt(&conn)?;
+	drop(conn);
 	let insert_at = messages
 		.iter()
 		.rposition(|m| m.role == "system")
@@ -118,10 +141,10 @@ fn inject_protocol(mut messages: Vec<LlmMessage>) -> Vec<LlmMessage> {
 		insert_at,
 		LlmMessage {
 			role: "system".to_string(),
-			content: prompt::build_system_prompt(),
+			content: system_prompt,
 		},
 	);
-	messages
+	Ok(messages)
 }
 
 /// 调一次 LLM 生成 (按平台路由到对应后端命令)
@@ -259,6 +282,350 @@ fn prepare_context(
 	context::build(&conn, CONTEXT_TOKEN_BUDGET)
 }
 
+/// 当前时间戳 (秒)
+fn now_secs() -> i64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|d| d.as_secs() as i64)
+		.unwrap_or(0)
+}
+
+/// 记忆提炼提示词: 只输出 JSON 数组
+const EXTRACT_SYSTEM_PROMPT: &str = "你是记忆提取器。从对话中提取值得长期记住的信息: 用户的姓名/生日/偏好/习惯/约定/重要事件/美好回忆等。\n只输出 JSON 数组, 不要输出其他任何文字, 格式: [{\"content\": \"记忆内容\", \"type\": \"fact|preference|project|event|relationship|core\", \"importance\": 0~1, \"confidence\": 0~1, \"tags\": [\"标签\"]}]\n没有值得记住的信息时输出 []";
+
+/// 摘要生成提示词
+const SUMMARY_SYSTEM_PROMPT: &str = "你是对话摘要器。用简洁的中文总结这段对话的要点 (发生了什么、用户的偏好/约定/关键信息), 300 字以内, 只输出摘要正文。";
+
+/// 上下文末尾重申 (长上下文下模型容易对开头的系统消息失焦, 在最新用户消息前再强调一次)
+const CONTEXT_END_REMINDER: &str = "[执行提醒] 你是 DeepEr 的 AI 助手, 保持当前人设。用户要求任何操作时必须先调用工具; 需要时间先查 time-now; 涉及用户个人信息时先 memory-search 长期记忆; 用户姓名/生日/偏好等重要信息记得用 memory-add 保存。";
+
+/// 摘要候选: 对话超过阈值时, 取最早一段未被摘要覆盖的范围
+struct SummaryCandidate {
+	start_id: i64,
+	end_id: i64,
+	transcript: String,
+}
+
+/// 读取摘要候选 (同步, 避免 DB 锁跨 await)
+fn read_summary_candidate(
+	conn: &Connection,
+	min_total: usize,
+	keep_recent: usize,
+) -> Result<Option<SummaryCandidate>, String> {
+	let mut stmt = conn
+		.prepare("SELECT id FROM contexts WHERE type = 'talk' ORDER BY id")
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let ids: Vec<i64> = stmt
+		.query_map([], |row| row.get::<_, i64>(0))
+		.map_err(|e| format!("读取对话失败: {e}"))?
+		.collect::<Result<_, _>>()
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	if ids.len() <= min_total {
+		return Ok(None);
+	}
+	let end_index = ids.len() - 1 - keep_recent;
+	let start_id = ids[0];
+	let end_id = ids[end_index];
+	// 已被摘要覆盖则跳过
+	let max_end: Option<i64> = conn
+		.query_row(
+			"SELECT MAX(end_context_id) FROM summaries WHERE status = 'active'",
+			[],
+			|row| row.get::<_, Option<i64>>(0),
+		)
+		.map_err(|e| format!("查询摘要失败: {e}"))?;
+	if max_end.is_some_and(|max| max >= end_id) {
+		return Ok(None);
+	}
+	// 拼接该段对话
+	let mut stmt = conn
+		.prepare(
+			"SELECT role, content FROM contexts WHERE id BETWEEN ?1 AND ?2 AND type = 'talk' ORDER BY id",
+		)
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let rows = stmt
+		.query_map(rusqlite::params![start_id, end_id], |row| {
+			Ok((
+				row.get::<_, Option<String>>(0)?,
+				row.get::<_, String>(1)?,
+			))
+		})
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let segment: Vec<(Option<String>, String)> = rows
+		.collect::<Result<_, _>>()
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let transcript = segment
+		.iter()
+		.map(|(role, content)| {
+			let label = if role.as_deref() == Some("assistant") { "助手" } else { "用户" };
+			format!("{label}: {content}")
+		})
+		.collect::<Vec<_>>()
+		.join("\n")
+		.chars()
+		.take(12000)
+		.collect();
+	Ok(Some(SummaryCandidate { start_id, end_id, transcript }))
+}
+
+/// 读取最近对话 (同步, 避免 DB 锁跨 await)
+fn read_recent_talk(conn: &Connection) -> Result<Vec<(i64, Option<String>, String)>, String> {
+	let mut stmt = conn
+		.prepare(
+			"SELECT id, role, content FROM contexts
+			 WHERE type = 'talk' AND role IS NOT NULL AND content != ''
+			 ORDER BY id DESC LIMIT 20",
+		)
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let rows = stmt
+		.query_map([], |row| {
+			Ok((
+				row.get::<_, i64>(0)?,
+				row.get::<_, Option<String>>(1)?,
+				row.get::<_, String>(2)?,
+			))
+		})
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let talk: Vec<(i64, Option<String>, String)> = rows
+		.collect::<Result<_, _>>()
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	Ok(talk)
+}
+
+/// 提炼结果去重入库 (同步), 返回新增条数
+fn save_extracted_memories(conn: &Connection, items: &[Value], now: i64) -> Result<i64, String> {
+	let mut stmt = conn
+		.prepare("SELECT content FROM memories")
+		.map_err(|e| format!("查询记忆失败: {e}"))?;
+	let existing: Vec<String> = stmt
+		.query_map([], |row| row.get::<_, String>(0))
+		.map_err(|e| format!("查询记忆失败: {e}"))?
+		.collect::<Result<_, _>>()
+		.map_err(|e| format!("查询记忆失败: {e}"))?;
+	let mut added = 0;
+	for item in items {
+		let Some(content) = item
+			.get("content")
+			.and_then(|v| v.as_str())
+			.map(str::trim)
+			.filter(|s| !s.is_empty())
+		else {
+			continue;
+		};
+		if existing.iter().any(|old| old == content) {
+			continue;
+		}
+		let input = MemoryInput {
+			content: content.to_string(),
+			r#type: item.get("type").and_then(|v| v.as_str()).unwrap_or("fact").to_string(),
+			importance: item.get("importance").and_then(|v| v.as_f64()).unwrap_or(0.5),
+			confidence: item.get("confidence").and_then(|v| v.as_f64()).unwrap_or(1.0),
+			tags: item
+				.get("tags")
+				.and_then(|v| v.as_array())
+				.map(|array| {
+					array
+						.iter()
+						.filter_map(|v| v.as_str())
+						.map(String::from)
+						.collect()
+				})
+				.unwrap_or_default(),
+			expires_at: None,
+		};
+		if let Ok(normalized) = input.normalize() {
+			if memory_repository::create(conn, &normalized, now).is_ok() {
+				added += 1;
+			}
+		}
+	}
+	Ok(added)
+}
+
+/// 对话结束后的记忆提炼 (后台任务, 不阻塞回复)
+async fn extract_memories_from_conversation(app: &AppHandle) -> Result<(), String> {
+	let timestamp = now_secs();
+	if timestamp - LAST_EXTRACT_AT.load(Ordering::Relaxed) < EXTRACT_THROTTLE_SECS {
+		return Ok(());
+	}
+
+	let state = app.state::<db::Db>();
+	// 1. 读最近对话 (同步, 不跨 await)
+	let talk = {
+		let conn = state
+			.0
+			.lock()
+			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+		read_recent_talk(&conn)?
+	};
+	if talk.is_empty() {
+		return Ok(());
+	}
+
+	let transcript = talk
+		.iter()
+		.rev()
+		.map(|(_, role, content)| {
+			let label = if role.as_deref() == Some("assistant") { "助手" } else { "用户" };
+			format!("{label}: {content}")
+		})
+		.collect::<Vec<_>>()
+		.join("\n");
+
+	// 调 LLM 提炼
+	let platform = active_platform(&state)?;
+	let messages = vec![
+		LlmMessage {
+			role: "system".to_string(),
+			content: EXTRACT_SYSTEM_PROMPT.to_string(),
+		},
+		LlmMessage {
+			role: "user".to_string(),
+			content: transcript,
+		},
+	];
+	let outcome = generate_round(platform, app.clone(), state.clone(), messages).await?;
+	let Some(text) = outcome.text else {
+		return Err(outcome.error.unwrap_or_else(|| "提炼无输出".to_string()));
+	};
+
+	// 解析 JSON 数组 (容忍 ```json 代码块包裹)
+	let cleaned = text
+		.trim()
+		.trim_start_matches("```json")
+		.trim_start_matches("```")
+		.trim_end_matches("```")
+		.trim();
+	let items: Vec<Value> = serde_json::from_str(cleaned)
+		.or_else(|_| match cleaned.find('[').zip(cleaned.rfind(']')) {
+			Some((start, end)) => serde_json::from_str::<Vec<Value>>(&cleaned[start..=end]),
+			None => Err(serde_json::Error::io(std::io::Error::new(
+				std::io::ErrorKind::InvalidData,
+				"未找到 JSON 数组",
+			))),
+		})
+		.map_err(|e| format!("提炼结果解析失败: {e}"))?;
+
+	// 2. 去重 + 入库 (同步, 不跨 await)
+	let added = {
+		let conn = state
+			.0
+			.lock()
+			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+		save_extracted_memories(&conn, &items, timestamp)?
+	};
+
+	// 3. 摘要生成: 对话过长时压缩最早一段未被摘要覆盖的对话
+	let candidate = {
+		let conn = state
+			.0
+			.lock()
+			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+		read_summary_candidate(&conn, SUMMARY_MIN_TALKS, SUMMARY_KEEP_RECENT)?
+	};
+	if let Some(candidate) = candidate {
+		let messages = vec![
+			LlmMessage {
+				role: "system".to_string(),
+				content: SUMMARY_SYSTEM_PROMPT.to_string(),
+			},
+			LlmMessage {
+				role: "user".to_string(),
+				content: candidate.transcript,
+			},
+		];
+		let outcome = generate_round(platform, app.clone(), state.clone(), messages).await?;
+		if let Some(text) = outcome.text {
+			let content = truncate(text.trim(), 800);
+			if !content.is_empty() {
+				let input = SummaryInput {
+					start_context_id: candidate.start_id,
+					end_context_id: candidate.end_id,
+					level: 1,
+					content: content.to_string(),
+					token_count: estimate_tokens(&content) as i64,
+				};
+				let conn = state
+					.0
+					.lock()
+					.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+				let _ = summaries::create(&conn, &input, timestamp);
+			}
+		}
+	}
+
+	LAST_EXTRACT_AT.store(timestamp, Ordering::Relaxed);
+	let _ = log::write(app, &LogSource::Backend, "info", &format!("记忆提炼: 新增 {added} 条"));
+	Ok(())
+}
+
+/// 记忆召回: 用最近一条用户消息检索长期记忆, 注入为 system 消息 (供 AI 参考)
+fn recall_memories(
+	app: &AppHandle,
+	state: &tauri::State<'_, db::Db>,
+	mut messages: Vec<LlmMessage>,
+) -> Result<Vec<LlmMessage>, String> {
+	// 取最近一条用户消息作为检索关键词 (无用户消息时按重要性/新鲜度召回)
+	let query: String = messages
+		.iter()
+		.rev()
+		.find(|message| message.role == "user")
+		.map(|message| message.content.chars().take(200).collect())
+		.unwrap_or_default();
+
+	let conn = state
+		.0
+		.lock()
+		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+	let memories = memory_repository::search_scored(&conn, &query, MEMORY_RECALL_LIMIT, now_secs())?;
+	drop(conn);
+	if memories.is_empty() {
+		return Ok(messages);
+	}
+
+	let recall_lines: Vec<String> = memories
+		.iter()
+		.map(|memory| {
+			format!(
+				"- [{}] {} (重要度 {}%, 置信度 {}%)",
+				memory.r#type,
+				truncate(&memory.content, 240),
+				(memory.importance * 100.0).round() as i64,
+				(memory.confidence * 100.0).round() as i64,
+			)
+		})
+		.collect();
+	let recall_text = format!(
+		"[长期记忆回忆] 以下是与当前对话相关的长期记忆, 回答时可以参考 (若与最新对话冲突, 以最新对话为准):\n{}",
+		recall_lines.join("\n")
+	);
+
+	// 插到所有人设 system 消息之后 (协议提示词随后注入到更靠后的位置)
+	let insert_at = messages
+		.iter()
+		.rposition(|message| message.role == "system")
+		.map(|index| index + 1)
+		.unwrap_or(0);
+	messages.insert(
+		insert_at,
+		LlmMessage {
+			role: "system".to_string(),
+			content: recall_text,
+		},
+	);
+	let _ = log::write(
+		app,
+		&LogSource::Backend,
+		"info",
+		&format!(
+			"[agent] 记忆召回: {} 条, 关键词长度={}",
+			memories.len(),
+			query.chars().count()
+		),
+	);
+	Ok(messages)
+}
+
 /// 运行 Agent 循环 (非流式: 内部多轮调用, 完成后返回最终回答)
 pub async fn run_agent(
 	app: AppHandle,
@@ -281,7 +648,18 @@ pub async fn run_agent(
 			calls: 0,
 		});
 	}
-	let mut messages = inject_protocol(built);
+	// 2. 自动记忆召回 (注入长期记忆) + 注入工具协议
+	let messages = recall_memories(&app, &state, built)?;
+	let mut messages = inject_protocol(&state, messages)?;
+	// 3. 在最新用户消息前重申关键指令 (无用户消息时追加到末尾)
+	let reminder = LlmMessage {
+		role: "system".to_string(),
+		content: CONTEXT_END_REMINDER.to_string(),
+	};
+	match messages.iter().rposition(|message| message.role == "user") {
+		Some(last_user) => messages.insert(last_user, reminder),
+		None => messages.push(reminder),
+	}
 	let has_protocol = messages
 		.iter()
 		.any(|m| m.role == "system" && m.content.starts_with(prompt::AGENT_PROTOCOL_MARKER));
@@ -345,6 +723,18 @@ async fn run_loop(
 		let calls = parser::parse_tool_calls(&text);
 		if calls.is_empty() {
 			record_assistant(&state, &text, Some(total_input), Some(total_output), hit_rate)?;
+			// 回复完成 → 后台自动提炼记忆 (不阻塞回复)
+			let extract_app = app.clone();
+			tauri::async_runtime::spawn(async move {
+				if let Err(error) = extract_memories_from_conversation(&extract_app).await {
+					let _ = log::write(
+						&extract_app,
+						&LogSource::Backend,
+						"error",
+						&format!("记忆提炼失败: {error}"),
+					);
+				}
+			});
 			return Ok(AgentRunOutcome {
 				ok: true,
 				text: Some(text),

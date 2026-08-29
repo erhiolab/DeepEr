@@ -153,6 +153,46 @@ const BUILTIN_TOOLS: &[(&str, &str, &str, &str, &str, &str)] = &[
 		r#"{"type":"object","properties":{"id":{"type":"integer","description":"任务 id"}},"required":["id"]}"#,
 		"{}",
 	),
+	(
+		"memory-add",
+		"记忆-添加记忆",
+		"保存一条长期记忆. 参数: content(必填, 记忆内容), type(可选, fact/preference/project/event/relationship/core, 默认 fact), importance(可选 0~1, 默认 0.5), confidence(可选 0~1, 默认 1.0), tags(可选, 标签数组)",
+		"memory-add",
+		r#"{"type":"object","properties":{"content":{"type":"string","description":"记忆内容"},"type":{"type":"string","description":"fact/preference/project/event/relationship/core"},"importance":{"type":"number","description":"0~1"},"confidence":{"type":"number","description":"0~1"},"tags":{"type":"array","description":"标签数组"}},"required":["content"]}"#,
+		"{}",
+	),
+	(
+		"memory-search",
+		"记忆-搜索记忆",
+		"按关键词回忆长期记忆 (内容/标签命中, 打分排序). 参数: query(必填, 关键词), limit(可选, 默认 5)",
+		"memory-search",
+		r#"{"type":"object","properties":{"query":{"type":"string","description":"搜索关键词"},"limit":{"type":"integer","description":"返回条数, 默认 5"}},"required":["query"]}"#,
+		"{}",
+	),
+	(
+		"memory-list",
+		"记忆-获取全部记忆",
+		"获取全部长期记忆清单. 参数: limit(可选, 默认 50, 上限 200)",
+		"memory-list",
+		r#"{"type":"object","properties":{"limit":{"type":"integer","description":"返回条数, 默认 50"}},"required":[]}"#,
+		"{}",
+	),
+	(
+		"memory-update",
+		"记忆-更新记忆",
+		"整体更新一条记忆. 参数: id(必填, 记忆 id), content/type/importance/confidence/tags 同 memory-add",
+		"memory-update",
+		r#"{"type":"object","properties":{"id":{"type":"integer","description":"记忆 id"},"content":{"type":"string"},"type":{"type":"string"},"importance":{"type":"number"},"confidence":{"type":"number"},"tags":{"type":"array"}},"required":["id","content"]}"#,
+		"{}",
+	),
+	(
+		"memory-delete",
+		"记忆-删除记忆",
+		"删除一条长期记忆. 参数: id(必填, 记忆 id)",
+		"memory-delete",
+		r#"{"type":"object","properties":{"id":{"type":"integer","description":"记忆 id"}},"required":["id"]}"#,
+		"{}",
+	),
 ];
 
 /// 初始化: 内置工具 upsert (幂等, 定义以代码为准)

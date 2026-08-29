@@ -315,6 +315,14 @@ export const icon = {
 			"M6.38 18.7 4 21",
 			"M17.64 18.67 20 21"
 		]
+	},
+	// 数据库
+	database: {
+		stroke: [
+			"M12 5m-9 0a9 3 0 1 0 18 0 9 3 0 1 0-18 0",
+			"M3 5v14a9 3 0 0 0 18 0V5",
+			"M3 12a9 3 0 0 0 18 0"
+		]
 	}
 } satisfies Record<string, IconData>
 
