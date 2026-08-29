@@ -33,6 +33,7 @@
 		"core:app:allow-version",
 		"updater:default",
 		"process:default",
-		"clipboard-manager:allow-write-text"
+		"clipboard-manager:allow-write-text",
+        "core:window:allow-set-min-size"
 	]
 }

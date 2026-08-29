@@ -108,6 +108,8 @@ pub fn run() {
             commands::summary::summary_create,
             commands::summary::summary_delete,
 
+            commands::stats::stats_home,
+
             commands::tools::tool_list,
             commands::tools::tool_search,
             commands::tool::tool_execute,

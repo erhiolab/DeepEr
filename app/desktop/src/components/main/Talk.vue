@@ -2,6 +2,7 @@
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue"
 import Icon from "../common/Icon.vue"
 import {assetUrlSafe} from "../../services/asset.ts"
+import {getOfficialCovers, localModelCover} from "../../services/live2dCover"
 import useLanguages from "../../services/i18n/useLanguages.ts"
 import {useLive2DStore} from "../../services/store/live2d.ts"
 import {useConversationStore} from "../../services/store/conversation.ts"
@@ -28,6 +29,16 @@ const modelImageUrl = (modelName: string, image: string): string | null => {
 	return assetUrlSafe(`live2d/${modelName}/${image}`)
 }
 
+// 官方模型远程封面 (无本地封面时回退, 与模型选择页/主页一致)
+const officialCover = ref<string | null>(null)
+
+const loadOfficialCover = async (): Promise<void> => {
+	const MODEL = L2D.currentModel
+	if (!MODEL) return
+	const COVERS = await getOfficialCovers()
+	officialCover.value = COVERS[MODEL] ?? null
+}
+
 // 确保已加载当前模型的配置 (名称/封面图)
 const ensureConfig = async (): Promise<void> => {
 	const MODEL = L2D.currentModel
@@ -43,16 +54,17 @@ const peerName = computed<string>(() => {
 	return (L2D.config.name || MODEL)
 })
 
-// 对方头像: 优先取人设头像, 否则取当前模型封面图, 无图时回落占位头像
+// 对方头像: 优先取人设头像, 否则取当前模型封面 (本地配置 → 官方 coverUrl), 无图回落占位头像
 const peerAvatar = computed<string>(() => {
 	if (persona.value) {
 		const URL = personaAvatarUrl(persona.value)
 		if (URL) return URL
 	}
 	const MODEL = L2D.currentModel
-	if (MODEL && L2D.config.image) {
-		const URL = modelImageUrl(MODEL, L2D.config.image)
-		if (URL) return URL
+	if (MODEL) {
+		const LOCAL = localModelCover(MODEL, L2D.config.image) ?? modelImageUrl(MODEL, L2D.config.image)
+		if (LOCAL) return LOCAL
+		if (officialCover.value) return officialCover.value
 	}
 	return fallbackAvatar
 })
@@ -128,6 +140,7 @@ onMounted(async () => {
 	await CONV.loadHistory()
 	scrollToBottom()
 	await ensureConfig()
+	await loadOfficialCover()
 	await loadPersona()
 })
 
@@ -137,7 +150,10 @@ onUnmounted(() => {
 
 // 模型切换时重新加载配置, 及时跟上新名称/头像
 watch(() => L2D.currentModel, (model) => {
-	if (model) void ensureConfig()
+	if (model) {
+		void ensureConfig()
+		void loadOfficialCover()
+	}
 })
 </script>
 

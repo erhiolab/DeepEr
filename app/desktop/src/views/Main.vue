@@ -5,6 +5,7 @@ import useLanguages from "../services/i18n/useLanguages"
 import {config} from "../services/config"
 import {useUnsavedGuard} from "../services/store/unsaved"
 import {minimizeWindow, toggleMaximizeWindow} from "../services/window"
+import {setChatPageActive} from "../services/chatNotify"
 
 import Icon from "../components/common/Icon.vue"
 import {IconName} from "../services/icon"
@@ -120,6 +121,7 @@ const isNavKey = (value: string): value is NavKey => NAV_GROUPS.some((group) => 
 onMounted(async () => {
 	const SAVED = await config.get("main_active_nav")
 	if (SAVED && isNavKey(SAVED)) activeNav.value = SAVED
+	setChatPageActive(activeNav.value === "talk")
 })
 
 // 切换方向: 1 = 下, -1 = 上 (决定动画方向)
@@ -134,6 +136,7 @@ const switchNav = async (key: NavKey) => {
 	const TARGET_INDEX = ALL_NAV_ITEMS.value.findIndex((item) => item.key === key)
 	direction.value = TARGET_INDEX > ACTIVE_INDEX ? 1 : -1
 	activeNav.value = key
+	setChatPageActive(key === "talk")
 	// 离开模型导航时关闭配置页回到模型列表
 	if (key !== "model") configModelId.value = null
 	await config.set("main_active_nav", key)

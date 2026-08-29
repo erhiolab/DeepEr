@@ -28,6 +28,7 @@ pub mod log;
 pub mod memory;
 pub mod persona;
 pub mod resource;
+pub mod stats;
 pub mod summary;
 pub mod task_manager;
 pub mod tasks;

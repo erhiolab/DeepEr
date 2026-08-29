@@ -10,45 +10,49 @@ export type LanguageSnapshot = ReturnType<typeof buildSnapshot>
 const buildSnapshot = () => {
 	const t = i18n.global.t
 	return {
-			common: {
-				label: {
-					add: t("common.label.add"),
-					save: t("common.label.save"),
-					cancel: t("common.label.cancel"),
-					delete: t("common.label.delete"),
-					download: t("common.label.download"),
-					refresh: t("common.label.refresh"),
-					apply: t("common.label.apply"),
-					redraw: t("common.label.redraw"),
-					browse: t("common.label.browse"),
-					url: t("common.label.url"),
-					test: t("common.label.test"),
-					back: t("common.label.back"),
-					open: t("common.label.open"),
-					close: t("common.label.close"),
-					show: t("common.label.show"),
-					hide: t("common.label.hide"),
-					loading: t("common.label.loading"),
-					testing: t("common.label.testing"),
-					testOk: t("common.label.testOk"),
-					testFail: t("common.label.testFail"),
-					saving: t("common.label.saving"),
-					saved: t("common.label.saved"),
-					saveFailed: t("common.label.saveFailed"),
-					importing: t("common.label.importing"),
-					importDone: t("common.label.importDone"),
-					importFailed: t("common.label.importFailed"),
-					saveAndLeave: t("common.label.saveAndLeave"),
-					discardLeave: t("common.label.discardLeave"),
-					modelName: t("common.label.modelName"),
-					topK: t("common.label.topK"),
-					topP: t("common.label.topP"),
+		common: {
+			label: {
+				add: t("common.label.add"),
+				save: t("common.label.save"),
+				cancel: t("common.label.cancel"),
+				delete: t("common.label.delete"),
+				download: t("common.label.download"),
+				refresh: t("common.label.refresh"),
+				apply: t("common.label.apply"),
+				redraw: t("common.label.redraw"),
+				browse: t("common.label.browse"),
+				url: t("common.label.url"),
+				test: t("common.label.test"),
+				back: t("common.label.back"),
+				open: t("common.label.open"),
+				close: t("common.label.close"),
+				show: t("common.label.show"),
+				hide: t("common.label.hide"),
+				loading: t("common.label.loading"),
+				testing: t("common.label.testing"),
+				testOk: t("common.label.testOk"),
+				testFail: t("common.label.testFail"),
+				saving: t("common.label.saving"),
+				saved: t("common.label.saved"),
+				saveFailed: t("common.label.saveFailed"),
+				importing: t("common.label.importing"),
+				importDone: t("common.label.importDone"),
+				importFailed: t("common.label.importFailed"),
+				saveAndLeave: t("common.label.saveAndLeave"),
+				discardLeave: t("common.label.discardLeave"),
+				modelName: t("common.label.modelName"),
+				topK: t("common.label.topK"),
+				topP: t("common.label.topP"),
 				temperature: t("common.label.temperature"),
 				batchSize: t("common.label.batchSize"),
 				textSplitMethod: t("common.label.textSplitMethod"),
 				textLang: t("common.label.textLang"),
 				promptLang: t("common.label.promptLang"),
 				saveConfig: t("common.label.saveConfig"),
+			},
+			code: {
+				copy: t("common.code.copy"),
+				copied: t("common.code.copied"),
 			},
 			download: {
 				downloadFailed: t("common.download.downloadFailed"),
@@ -483,6 +487,8 @@ const buildSnapshot = () => {
 					minuteInvalid: t("components.main.scheduled.minuteInvalid"),
 					saved: t("components.main.scheduled.saved"),
 					saveFailed: t("components.main.scheduled.saveFailed"),
+					weekdayPrefix: t("components.main.scheduled.weekdayPrefix"),
+					weekdayLabels: t("components.main.scheduled.weekdayLabels"),
 				},
 				memory: {
 					title: t("components.main.memory.title"),
@@ -516,6 +522,49 @@ const buildSnapshot = () => {
 					deleteConfirmMessage: t("components.main.memory.deleteConfirmMessage"),
 					unsavedTitle: t("components.main.memory.unsavedTitle"),
 					unsavedMessage: t("components.main.memory.unsavedMessage"),
+				},
+				home: {
+					goodMorning: t("components.main.home.goodMorning"),
+					goodAfternoon: t("components.main.home.goodAfternoon"),
+					goodEvening: t("components.main.home.goodEvening"),
+					goodNight: t("components.main.home.goodNight"),
+					statMessages: t("components.main.home.statMessages"),
+					statToday: t("components.main.home.statToday"),
+					statTokens: t("components.main.home.statTokens"),
+					statHitRate: t("components.main.home.statHitRate"),
+					activity: t("components.main.home.activity"),
+					activityHint: t("components.main.home.activityHint"),
+					overview: t("components.main.home.overview"),
+					inputTokens: t("components.main.home.inputTokens"),
+					outputTokens: t("components.main.home.outputTokens"),
+					memories: t("components.main.home.memories"),
+					tools: t("components.main.home.tools"),
+					scheduledTasks: t("components.main.home.scheduledTasks"),
+					nextTask: t("components.main.home.nextTask"),
+					nextTaskNone: t("components.main.home.nextTaskNone"),
+					recent: t("components.main.home.recent"),
+					recentEmpty: t("components.main.home.recentEmpty"),
+					year: t("components.main.home.year"),
+					month: t("components.main.home.month"),
+					day: t("components.main.home.day"),
+					chartTooltip: (tokens: number, messages: number) => t("components.main.home.chartTooltip", {
+						tokens,
+						messages
+					}),
+					user: t("components.main.home.user"),
+					assistant: t("components.main.home.assistant"),
+				},
+				chat: {
+					toolCall: (name: string, result: string) => t("components.main.chat.toolCall", {name, result}),
+					toolResultSuccess: t("components.main.chat.toolResultSuccess"),
+					toolResultFailed: t("components.main.chat.toolResultFailed"),
+					toolResultRunning: t("components.main.chat.toolResultRunning"),
+					scheduleTrigger: (title: string, content: string) => t("components.main.chat.scheduleTrigger", {
+						title,
+						content
+					}),
+					generateFailed: t("components.main.chat.generateFailed"),
+					unknownReason: t("components.main.chat.unknownReason"),
 				},
 			}
 		},
@@ -616,6 +665,8 @@ export type LangGroupPath =
 	| "components.main.toolList"
 	| "components.main.scheduled"
 	| "components.main.memory"
+	| "components.main.home"
+	| "components.main.chat"
 	| "views.firstRun"
 	| "views.main"
 	| "views.pet"
@@ -652,11 +703,11 @@ type DeepPick<T, Path extends string> = Path extends `${infer Head}.${infer Tail
  */
 export const useLangGroups = <M extends Record<string, LangGroupPath>>(
 	map: M,
-): {[K in keyof M]: ComputedRef<DeepPick<LanguageSnapshot, M[K]>>} => {
+): { [K in keyof M]: ComputedRef<DeepPick<LanguageSnapshot, M[K]>> } => {
 	const RESULT = {} as Record<keyof M, ComputedRef<unknown>>
 	for (const ALIAS of Object.keys(map) as (keyof M)[]) {
 		const PATH = map[ALIAS]
 		RESULT[ALIAS] = computed(() => pick(snapshot.value, PATH))
 	}
-	return RESULT as {[K in keyof M]: ComputedRef<DeepPick<LanguageSnapshot, M[K]>>}
+	return RESULT as { [K in keyof M]: ComputedRef<DeepPick<LanguageSnapshot, M[K]>> }
 }

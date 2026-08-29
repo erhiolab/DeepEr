@@ -4,6 +4,7 @@ import MarkdownIt from "markdown-it"
 import hljs from "highlight.js"
 import {openUrl} from "@tauri-apps/plugin-opener"
 import {logger} from "../services/logger"
+import useLanguages from "../services/i18n/useLanguages"
 import "highlight.js/styles/github-dark.css"
 
 const PROPS = defineProps<{
@@ -47,7 +48,7 @@ INSTANCE.renderer.rules.fence = (tokens, idx, _options, _env, _self): string => 
 	const HIGHLIGHTED = highlightCode(CODE, LANG)
 	return [
 		`<div class="code-block" data-lang="${LANG}">`,
-		`<div class="code-header"><span class="code-lang">${LANG}</span><button type="button" class="copy-btn">复制</button></div>`,
+		`<div class="code-header"><span class="code-lang">${LANG}</span><button type="button" class="copy-btn">${useLanguages().common.code.copy}</button></div>`,
 		`<pre><code class="hljs">${HIGHLIGHTED}</code></pre>`,
 		`</div>`,
 	].join("")
@@ -61,8 +62,8 @@ const HTML_CONTENT = computed(() => INSTANCE.render(PROPS.content))
 const copyCode = (button: HTMLButtonElement) => {
 	const CODE = button.closest(".code-block")?.querySelector("code")?.textContent ?? ""
 	void navigator?.clipboard?.writeText(CODE)
-	const ORIGINAL = button.textContent ?? "复制"
-	button.textContent = "已复制"
+	const ORIGINAL = button.textContent ?? useLanguages().common.code.copy
+	button.textContent = useLanguages().common.code.copied
 	setTimeout(() => {
 		button.textContent = ORIGINAL
 	}, 1200)

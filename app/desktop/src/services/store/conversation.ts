@@ -15,6 +15,8 @@ import {defineStore} from "pinia"
 import {assetUrl} from "../asset"
 import {contextInsert, contextList, estimateTokens} from "../context"
 import {logger} from "../logger"
+import {maybeNotifyAiReply} from "../chatNotify"
+import useLanguages from "../i18n/useLanguages"
 import type {Persona} from "../persona"
 
 /**
@@ -64,6 +66,23 @@ const parseToolResultStatus = (text: string): Record<string, boolean> => {
 	return STATUS
 }
 
+// 时间分隔阈值: 30 分钟
+const TIME_GAP_MS = 30 * 60 * 1000
+
+const pad2 = (n: number): string => String(n).padStart(2, "0")
+
+/**
+ * 时间分隔文案: 今天 → 时分; 更早 → 年月日 时分
+ */
+const formatTimeDivider = (timestamp: number): string => {
+	const DATE = new Date(timestamp)
+	const NOW = new Date()
+	const TIME = `${pad2(DATE.getHours())}:${pad2(DATE.getMinutes())}`
+	const SAME_DAY = DATE.getFullYear() === NOW.getFullYear() && DATE.getMonth() === NOW.getMonth() && DATE.getDate() === NOW.getDate()
+	if (SAME_DAY) return TIME
+	return `${DATE.getFullYear()}-${pad2(DATE.getMonth() + 1)}-${pad2(DATE.getDate())} ${TIME}`
+}
+
 /**
  * AI 对话状态
  */
@@ -83,6 +102,14 @@ export const useConversationStore = defineStore("conversation", () => {
 	// 生成一条消息并写入历史 (消息为响应式对象, 便于流式中文本增量更新)
 	const push = (side: ChatSide, text: string, isStreaming = false): ChatMessage => {
 		const MSG = reactive<ChatMessage>({id: nextId++, side, text, createdAt: Date.now(), isStreaming}) as ChatMessage
+		// 与上一条普通消息间隔超过 30 分钟 → 插入时间分隔
+		if ((side === "left" || side === "right") && HISTORY.value.length > 0) {
+			const PREV = HISTORY.value[HISTORY.value.length - 1]
+			if ((PREV.side === "left" || PREV.side === "right") && MSG.createdAt - PREV.createdAt >= TIME_GAP_MS) {
+				const DIVIDER = reactive<ChatMessage>({id: nextId++, side: "center", text: formatTimeDivider(MSG.createdAt), createdAt: MSG.createdAt}) as ChatMessage
+				HISTORY.value = [...HISTORY.value, DIVIDER]
+			}
+		}
 		HISTORY.value = [...HISTORY.value, MSG]
 		return MSG
 	}
@@ -197,17 +224,23 @@ export const useConversationStore = defineStore("conversation", () => {
 				const {runAgent} = await import("../agent/run")
 				const RESULT = await runAgent({messages}, (name, ok, output) => {
 					// 工具执行过程可见: 插到当前回复气泡上方, 避免被挤到回答后面
-					const REASON = ok ? "" : `: ${(output ?? "未知原因").slice(0, 80)}`
-					pushCenterBefore(MSG.id, `🔧 调用工具 ${name} → ${ok ? "执行成功" : `执行失败${REASON}`}`)
+					const CHAT = useLanguages().components.main.chat
+					const REASON = ok ? "" : `: ${(output ?? CHAT.unknownReason).slice(0, 80)}`
+					const RESULT_LABEL = ok
+						? CHAT.toolResultSuccess
+						: `${CHAT.toolResultFailed}${REASON}`
+					pushCenterBefore(MSG.id, CHAT.toolCall(name, RESULT_LABEL))
 				})
 			MSG.isStreaming = false
 			setTyping(false)
 			if (RESULT.ok && RESULT.text) {
 				MSG.text = RESULT.text
+				// 不在聊天页时提示音提醒 (带防抖)
+				maybeNotifyAiReply()
 				// 回复完成后朗读全文
 				void speakReply(RESULT.text)
 			} else {
-				MSG.text = RESULT.error || "生成失败"
+				MSG.text = RESULT.error || useLanguages().components.main.chat.generateFailed
 			}
 			onDone?.()
 			} catch (err) {
@@ -273,7 +306,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	 * @param content 任务内容 (到点发给 AI)
 	 */
 	const sendScheduled = (title: string, content: string, onDone?: () => void): void => {
-		const TEXT = `⏰ 定时任务「${title}」\n${content}`
+		const TEXT = useLanguages().components.main.chat.scheduleTrigger(title, content)
 		pushCenter(TEXT)
 		pendingQueue.push({content: TEXT, kind: "schedule", onDone})
 		drainQueue()
@@ -318,7 +351,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	 * 回显内容:
 	 * - type=talk: 左右气泡 (user 右 / assistant 左)
 	 * - type=touch / schedule: 中间信息 (触摸动作 / 定时任务触发, 状态类不显示在用户气泡)
-	 * - type=tool: 重建「🔧 调用工具 …」中间提示 (调用名 + 成功/失败, 按记录顺序)
+	 * - type=tool: 重建'🔧 调用工具 ^'中间提示 (调用名 + 成功/失败, 按记录顺序)
 	 */
 	const loadHistory = async (limit = HISTORY_RELOAD_LIMIT): Promise<void> => {
 		if (historyLoaded) return
@@ -346,11 +379,17 @@ export const useConversationStore = defineStore("conversation", () => {
 					}))
 				} else if (record.role === "user" && pendingCalls.length) {
 					const STATUS = parseToolResultStatus(record.content)
+					const CHAT = useLanguages().components.main.chat
 					for (const call of pendingCalls) {
 						const OK = STATUS[call.name]
+						const RESULT_LABEL = OK === undefined
+							? CHAT.toolResultRunning
+							: OK
+								? CHAT.toolResultSuccess
+								: CHAT.toolResultFailed
 						ITEMS.push({
 							side: "center" as ChatSide,
-							text: `🔧 调用工具 ${call.name} → ${OK === undefined ? "执行" : OK ? "执行成功" : "执行失败"}`,
+							text: CHAT.toolCall(call.name, RESULT_LABEL),
 							createdAt: call.createdAt,
 						})
 					}
@@ -360,10 +399,25 @@ export const useConversationStore = defineStore("conversation", () => {
 		}
 		// 兜底: 调用行没有对应结果行时也展示 (状态未知)
 		for (const call of pendingCalls) {
-			ITEMS.push({side: "center" as ChatSide, text: `🔧 调用工具 ${call.name} → 执行`, createdAt: call.createdAt})
+			const CHAT = useLanguages().components.main.chat
+			ITEMS.push({
+				side: "center" as ChatSide,
+				text: CHAT.toolCall(call.name, CHAT.toolResultRunning),
+				createdAt: call.createdAt,
+			})
 		}
 
-		HISTORY.value = ITEMS.map(item => ({
+		// 相邻消息间隔超过 30 分钟插入
+		const WITH_DIVIDERS: {side: ChatSide, text: string, createdAt: number}[] = []
+		for (const item of ITEMS) {
+			const PREV = WITH_DIVIDERS[WITH_DIVIDERS.length - 1]
+			if (PREV && item.createdAt - PREV.createdAt >= TIME_GAP_MS) {
+				WITH_DIVIDERS.push({side: "center" as ChatSide, text: formatTimeDivider(item.createdAt), createdAt: item.createdAt})
+			}
+			WITH_DIVIDERS.push(item)
+		}
+
+		HISTORY.value = WITH_DIVIDERS.map(item => ({
 			id: nextId++,
 			side: item.side,
 			text: item.text,

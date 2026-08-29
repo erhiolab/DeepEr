@@ -58,9 +58,12 @@ const dirty = ref(false)
 // 程序化赋值草稿时跳过脏标记
 let syncing = false
 
-// 星期选项 (1=周一..7=周日)
-const WEEKDAY_SHORT = ["一", "二", "三", "四", "五", "六", "日"]
-const WEEKDAYS = WEEKDAY_SHORT.map((label, index) => ({value: index + 1, label: `周${label}`}))
+// 星期选项 (1=周一..7=周日), 标签走 i18n
+const weekdayShort = computed(() => I18N.value.weekdayLabels.split(" "))
+const weekdays = computed(() => weekdayShort.value.map((label, index) => ({
+	value: index + 1,
+	label: `${I18N.value.weekdayPrefix}${label}`,
+})))
 
 // 新建/编辑草稿
 interface TaskDraft {
@@ -143,7 +146,7 @@ const formatEntry = (entry: ScheduleEntry): string => {
 		case "daily":
 			return `${I18N.value.daily} ${entry.time}`
 		case "weekly":
-			return `${I18N.value.weekly} ${entry.weekdays.map(w => `周${WEEKDAY_SHORT[w - 1] ?? "?"}`).join("/")} ${entry.time}`
+			return `${I18N.value.weekly} ${entry.weekdays.map(w => `${I18N.value.weekdayPrefix}${weekdayShort.value[w - 1] ?? "?"}`).join("/")} ${entry.time}`
 	}
 }
 
@@ -514,7 +517,7 @@ onBeforeUnmount(() => {
 								>
 									<div class="weekday-picker">
 										<button
-											v-for="weekday in WEEKDAYS"
+									v-for="weekday in weekdays"
 											:key="weekday.value"
 											type="button"
 											class="weekday-btn"
