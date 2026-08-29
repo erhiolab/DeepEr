@@ -158,8 +158,19 @@ class TtsEngine(private val appContext: Context) {
         }
     }
 
-    private fun session(file: String): OrtSession =
-        env.createSession(File(modelsDir(), file).absolutePath)
+    private fun session(file: String): OrtSession {
+        val so = OrtSession.SessionOptions()
+        val fp = android.os.Build.FINGERPRINT.lowercase()
+        val onEmulator = fp.contains("generic") || fp.contains("sdk_gphone") || fp.contains("emulator")
+        so.setIntraOpNumThreads(if (onEmulator) 1 else 2)
+        runCatching { so.addConfigEntry("session.intra_op.allow_spinning", "0") }
+        android.util.Log.d("TtsEngine", "creating session $file threads=${if (onEmulator) 1 else 2}")
+        val t = android.os.SystemClock.elapsedRealtime()
+        val s = env.createSession(File(modelsDir(), file).absolutePath, so)
+        so.close()
+        android.util.Log.d("TtsEngine", "session $file ready in ${android.os.SystemClock.elapsedRealtime() - t}ms outputs=${s.outputNames}")
+        return s
+    }
 
     private fun ensureSessions() {
         if (sessVits != null) return
@@ -197,32 +208,44 @@ class TtsEngine(private val appContext: Context) {
         return out
     }
 
+    private val punctMap = mapOf(
+        '，' to ",", '。' to ".", '！' to "!", '？' to "?", '；' to ",", '：' to ",",
+        '、' to ",", '…' to "…", '～' to "-", '·' to ",", '—' to "-", '－' to "-",
+        '“' to "'", '”' to "'", '‘' to "'", '’' to "'",
+    )
+
     fun phonesFor(text: String): Pair<List<Int>, IntArray> {
         val cleaned = text.filterNot { it.isWhitespace() }
         val phones = ArrayList<String>()
         val word2ph = IntArray(cleaned.length)
         for (i in cleaned.indices) {
             val ch = cleaned[i]
-            var ph = charPhones[ch.toString()]
+            var ph: List<String>? = charPhones[ch.toString()]
+            if (ph == null) {
+                val p = punctMap[ch]
+                if (p != null) ph = listOf(p)
+            }
             if (ph == null && symbolToId.containsKey(ch.toString())) ph = listOf(ch.toString())
-            if (ph != null) {
+            val base = ph
+            if (base != null) {
+                var cur = base
                 if (ch == '不' && i + 1 < cleaned.length) {
                     val next = charPhones[cleaned[i + 1].toString()]
-                    if (next != null && phoneTone(next) == 4) ph = retone(ph, 2)
+                    if (next != null && phoneTone(next) == 4) cur = retone(cur, 2)
                 }
                 if (ch == '一' && i + 1 < cleaned.length) {
                     val prevIsNum = i > 0 && (cleaned[i - 1] == '一' || cleaned[i - 1] in '0'..'9')
                     if (!prevIsNum) {
                         val t = charPhones[cleaned[i + 1].toString()]?.let { phoneTone(it) } ?: 0
-                        ph = when (t) {
-                            4 -> retone(ph, 2)
-                            in 1..3 -> retone(ph, 4)
-                            else -> ph
+                        cur = when (t) {
+                            4 -> retone(cur, 2)
+                            in 1..3 -> retone(cur, 4)
+                            else -> cur
                         }
                     }
                 }
-                phones.addAll(ph)
-                word2ph[i] = ph.size
+                phones.addAll(cur)
+                word2ph[i] = cur.size
             }
         }
         val ids = ArrayList<Int>(phones.size)
@@ -241,17 +264,24 @@ class TtsEngine(private val appContext: Context) {
         return ids
     }
 
-    private fun textBert(text: String, word2ph: IntArray): Pair<OnnxTensor, Int> {
+    private fun textBert(text: String, word2ph: IntArray): FloatArray {
         val cleaned = text.filterNot { it.isWhitespace() }
         val ids = tokenizePerChar(cleaned)
         val t = OnnxTensor.createTensor(env, LongBuffer.wrap(ids), longArrayOf(1, ids.size.toLong()))
-        val out = sessRoberta!!.run(mapOf("input_ids" to t))
+        val out = sessRoberta!!.run(mapOf("input_ids" to t), setOf("feat"))
         t.close()
-        val feat = out.get(0) as OnnxTensor
+        val feat = (out.get(0) as OnnxTensor).value as Array<Array<FloatArray>>
         out.close()
         val rows = word2ph.sum()
-        require(rows == ids.size - 2) { "BERT 对齐失败: $rows != ${ids.size - 2}" }
-        return Pair(feat, rows)
+        val flat = FloatArray(rows * BERT_DIM)
+        var p = 0
+        for (i in cleaned.indices) {
+            val row = feat[0].getOrNull(i + 1) ?: continue
+            repeat(word2ph[i]) {
+                System.arraycopy(row, 0, flat, p * BERT_DIM, BERT_DIM); p++
+            }
+        }
+        return flat
     }
 
 
@@ -347,16 +377,19 @@ class TtsEngine(private val appContext: Context) {
 
     fun synthesize(text: String, emotion: String): FloatArray {
         ensureSessions()
+        val t0 = android.os.SystemClock.elapsedRealtime()
         val (ids, word2ph) = phonesFor(text)
         require(ids.isNotEmpty()) { "文本没有可合成的音素" }
         val textSeq = ids.map { it.toLong() }.toLongArray()
-        val (bertTensor, bertRows) = textBert(text, word2ph)
+        val bertFlat = textBert(text, word2ph)
+        val bertRows = bertFlat.size / BERT_DIM
+        require(bertRows == textSeq.size) { "音素与BERT对齐失败: ${bertRows} vs ${textSeq.size}" }
         val ref = refAudio(emotion)
 
         val tRefSeq = lTensor(ref.seq, longArrayOf(1, ref.seq.size.toLong()))
         val tTextSeq = lTensor(textSeq, longArrayOf(1, textSeq.size.toLong()))
         val tRefBert = fTensor(ref.bert, longArrayOf(ref.bertRows.toLong(), BERT_DIM.toLong()))
-        val tTextBert = fTensor(FloatArray(bertRows * BERT_DIM), longArrayOf(bertRows.toLong(), BERT_DIM.toLong()))
+        val tTextBert = fTensor(bertFlat, longArrayOf(bertRows.toLong(), BERT_DIM.toLong()))
         val tSsl = fTensor(ref.ssl, longArrayOf(1, 768, ref.sslT.toLong()))
 
         var tX: OnnxTensor? = null
@@ -367,27 +400,16 @@ class TtsEngine(private val appContext: Context) {
         var tYEmb: OnnxTensor? = null
         var tXEx: OnnxTensor? = null
         try {
-            val featT = bertTensor
-            val feat = featT.value as Array<Array<FloatArray>>
-            val flat = FloatArray(bertRows * BERT_DIM)
-            var p = 0
-            val cleaned = text.filterNot { it.isWhitespace() }
-            for (i in cleaned.indices) {
-                val row = feat[0].getOrNull(i + 1) ?: continue
-                repeat(word2ph[i]) {
-                    System.arraycopy(row, 0, flat, p * BERT_DIM, BERT_DIM); p++
-                }
-            }
-            System.arraycopy(flat, 0, tTextBert.floatBuffer.array(), 0, flat.size)
-
             val encOut = sessEnc!!.run(mapOf(
                 "ref_seq" to tRefSeq, "text_seq" to tTextSeq,
-                "ref_bert" to tRefBert, "text_bert" to tTextBert, "ssl_content" to tSsl))
+                "ref_bert" to tRefBert, "text_bert" to tTextBert, "ssl_content" to tSsl),
+                setOf("x", "prompts"))
             tX = encOut.get(0) as OnnxTensor
             tPrompts = encOut.get(1) as OnnxTensor
             encOut.close()
 
-            val fsdOut = sessFsd!!.run(mapOf("x" to tX, "prompts" to tPrompts))
+            val fsdOut = sessFsd!!.run(mapOf("x" to tX, "prompts" to tPrompts),
+                setOf("y", "k", "v", "y_emb", "x_example"))
             tY = fsdOut.get(0) as OnnxTensor
             tK = fsdOut.get(1) as OnnxTensor
             tV = fsdOut.get(2) as OnnxTensor
@@ -398,8 +420,10 @@ class TtsEngine(private val appContext: Context) {
             var steps = 0
             var done = false
             while (steps < MAX_AR_STEPS && !done) {
+                if (steps % 50 == 0) android.util.Log.d("TtsEngine", "ar step=$steps/${MAX_AR_STEPS}")
                 val out = sessSdc!!.run(mapOf(
-                    "iy" to tY!!, "ik" to tK!!, "iv" to tV!!, "iy_emb" to tYEmb!!, "ix_example" to tXEx!!))
+                    "iy" to tY!!, "ik" to tK!!, "iv" to tV!!, "iy_emb" to tYEmb!!, "ix_example" to tXEx!!),
+                    setOf("y", "k", "v", "y_emb", "logits", "samples"))
                 tY?.close(); tK?.close(); tV?.close(); tYEmb?.close(); tXEx?.close()
                 tY = out.get(0) as OnnxTensor
                 tK = out.get(1) as OnnxTensor
@@ -420,10 +444,11 @@ class TtsEngine(private val appContext: Context) {
             val tPred = lTensor(yTokens, longArrayOf(1, 1, yTokens.size.toLong()))
             val vitsOut = sessVits!!.run(mapOf(
                 "text_seq" to tTextSeq, "pred_semantic" to tPred,
-                "ref_audio" to fTensor(ref.audio32k, longArrayOf(1, ref.audio32k.size.toLong()))))
+                "ref_audio" to fTensor(ref.audio32k, longArrayOf(1, ref.audio32k.size.toLong()))),
+                setOf("audio"))
             val audio = (vitsOut.get(0) as OnnxTensor).value as Array<FloatArray>
             vitsOut.close()
-            featT.close()
+            android.util.Log.d("TtsEngine", "synth done: steps=$steps audioSec=${audio[0].size / 32000.0} costMs=${android.os.SystemClock.elapsedRealtime() - t0} eosHit=$done")
             return audio[0]
         } finally {
             listOfNotNull(tX, tPrompts, tY, tK, tV, tYEmb, tXEx).forEach { runCatching { it.close() } }
@@ -442,6 +467,7 @@ class TtsEngine(private val appContext: Context) {
     private fun startWorker() {
         if (!workerActive.compareAndSet(false, true)) return
         thread(name = "tts-synth") {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
             while (true) {
                 val job = jobs.poll() ?: break
                 if (stopFlag.get()) continue
@@ -453,6 +479,7 @@ class TtsEngine(private val appContext: Context) {
                     }
                     onEvent?.invoke(ev)
                 } catch (e: Exception) {
+                    android.util.Log.e("TtsEngine", "synth failed id=${job.id}", e)
                     onEvent?.invoke("""{"event":"error","id":${job.id},"message":${JSONObject.quote(e.message ?: "合成失败")}}""")
                 }
             }
@@ -464,6 +491,7 @@ class TtsEngine(private val appContext: Context) {
 
     fun playBuffered(id: Int) {
         thread(name = "tts-play") {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
             val pcm = bufferLock.withLock { readyBuffers.remove(id) }
             if (pcm == null) {
                 onEvent?.invoke("""{"event":"error","id":$id,"message":"无音频"}""")

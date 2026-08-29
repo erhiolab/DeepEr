@@ -115,7 +115,7 @@
 				<div class="tts-status" :class="ttsStatusInfo.state">
 					<span class="dot"></span>
 					<span>{{ ttsStateLabel }}</span>
-					<span v-if="ttsStatusInfo.message" class="msg">{{ ttsStatusInfo.message }}</span>
+					<span v-if="ttsStatusInfo.message && ttsStatusInfo.message !== ttsStateLabel" class="msg">{{ ttsStatusInfo.message }}</span>
 					<button v-if="ttsStatusInfo.state !== 'ready' && ttsStatusInfo.state !== 'absent'" class="mini" @click="reinitTts">重新初始化</button>
 				</div>
 
@@ -144,39 +144,20 @@
 
 					<div class="settings-row">
 						<label>单句最长朗读字数 {{ cfg.tts.maxLen }}</label>
-						<input type="range" min="20" max="160" step="10" v-model.number="cfg.tts.maxLen" :disabled="!cfg.tts.enabled" />
+						<input type="range" min="20" max="160" step="10" v-model.number="cfg.tts.maxLen" :style="rangeFill(cfg.tts.maxLen, 20, 160)" :disabled="!cfg.tts.enabled" />
 						<div class="hint">超长回复会整句跳过不读，0 成本防止念经</div>
 					</div>
 
 					<div class="settings-row">
 						<label>默认音色</label>
-						<div class="voice-pick">
-							<select v-model="cfg.tts.voice" :disabled="!cfg.tts.enabled">
-								<option v-for="v in voiceOptions" :key="v.value" :value="v.value">{{ v.label }}</option>
-							</select>
-							<button class="mini ripple" :disabled="ttsStatusInfo.state !== 'ready' || !cfg.tts.enabled" @click="previewVoice">试听</button>
+						<div class="chip-row" :class="{off: !cfg.tts.enabled}">
+							<button v-for="v in voiceOptions" :key="v.value" class="vchip" :class="{on: cfg.tts.voice === v.value}" :disabled="!cfg.tts.enabled" @click="cfg.tts.voice = v.value">{{ v.label }}</button>
+						</div>
+						<div class="hint">AI 会结合上下文自动选择每句话的情绪，此处是默认音色</div>
+						<div class="voice-pick preview-row">
+							<button class="mini ripple" :disabled="ttsStatusInfo.state !== 'ready' || !cfg.tts.enabled" @click="previewVoice">试听当前音色</button>
 						</div>
 					</div>
-
-					<div class="tgl-row" :class="{off: !cfg.tts.enabled}">
-						<div>
-							<div class="tgl-label">情绪自动换声</div>
-							<div class="tgl-sub">根据回复内容自动切换音色</div>
-						</div>
-						<label class="tgl"><input type="checkbox" v-model="cfg.tts.follow" :disabled="!cfg.tts.enabled" /><span></span></label>
-					</div>
-
-					<template v-if="cfg.tts.follow && cfg.tts.enabled">
-						<div class="settings-row" v-for="c in VOICE_CATS" :key="c.key">
-							<label>{{ c.label }}</label>
-							<div class="voice-pick">
-								<select v-model="cfg.tts.voices[c.key]">
-									<option value="">自动（{{ catDef(c.key) }}）</option>
-									<option v-for="v in voiceOptions" :key="v.value" :value="v.value">{{ v.label }}</option>
-								</select>
-							</div>
-						</div>
-					</template>
 
 					<button class="btn ripple primary" @click="saveTtsNow">保存 TTS 设置</button>
 					<div class="tts-foot-hint">首次合成需要加载模型（约 1.2GB），第一次会慢一些</div>
@@ -248,11 +229,11 @@
 							</div>
 							<div class="settings-row">
 								<label>气泡大小 {{ bubbleScaleNum.toFixed(2) }}</label>
-								<input type="range" min="0.7" max="1.8" step="0.05" v-model.number="cfg.bubbleScale" />
+								<input type="range" min="0.7" max="1.8" step="0.05" v-model.number="cfg.bubbleScale" :style="rangeFill(cfg.bubbleScale, 0.7, 1.8)" />
 							</div>
 							<div class="settings-row">
 								<label>渲染分辨率 {{ renderScaleNum.toFixed(1) }}x（推荐用手机原生 {{ nativeDpr.toFixed(1) }}x）</label>
-								<input type="range" min="0.5" max="3.0" step="0.1" v-model.number="cfg.renderScale" @change="applyRenderScale" />
+								<input type="range" min="0.5" max="3.0" step="0.1" v-model.number="cfg.renderScale" :style="rangeFill(cfg.renderScale, 0.5, 3.0)" @change="applyRenderScale" />
 								<div class="hint">越接近手机原生分辨率越清晰，耗电和发热越高；卡顿时调低即可</div>
 							</div>
 							<div class="settings-row">
@@ -307,7 +288,7 @@ import {
 	DEFAULT_TTS_SETTINGS,
 	type ChatMsg,
 } from "./services/chat"
-import {ttsInit, ttsSynthesize, ttsPlay, ttsStop, ttsStatus, ttsEmotions, ttsReinit, type TtsStatus} from "./services/tts"
+import {ttsInit, ttsSynthesize, ttsPlay, ttsStop, ttsStatus, ttsEmotions, ttsReinit, ttsLastError, type TtsStatus} from "./services/tts"
 
 type P = "model" | "motion" | "expression" | "touch" | "settings" | "tts" | ""
 
@@ -877,6 +858,10 @@ const nativeDpr = computed(() => Math.max(1.5, Math.min(window.devicePixelRatio 
 
 const applyRenderScale = () => l2d.setRenderScale(renderScaleNum.value)
 
+const rangeFill = (v: number, min: number, max: number) => ({
+	"--fill": `${Math.round(((Number(v) - min) / (max - min)) * 100)}%`,
+})
+
 const curModelName = computed(() => cfg.model || "未配置模型")
 
 const storageReady = ref(false)
@@ -950,7 +935,7 @@ const reinitTts = async () => {
 
 const previewVoice = async () => {
 	const id = await ttsSynthesize("嗨，我是Nori，能听到我的声音吗", cfg.tts.voice || "gentleness")
-	if (!id) triggerBubble("TTS 未就绪，稍等初始化完成再试")
+	if (!id) triggerBubble(ttsLastError() ? `合成失败：${ttsLastError()}` : "TTS 尚未初始化完成，稍等再试")
 }
 
 const saveTtsNow = () => {
@@ -1323,7 +1308,7 @@ onBeforeUnmount(async () => {
 	position: fixed;
 	top: 0; right: 0; bottom: 0; left: 0;
 	z-index: 15;
-	background: rgba(2, 6, 23, 0.5);
+	background: #0f172a;
 	display: flex;
 	flex-direction: column;
 }
@@ -1704,6 +1689,59 @@ onBeforeUnmount(async () => {
 }
 .chip.w { background: rgba(127, 29, 29, 0.5); border-color: rgba(248, 113, 113, 0.3); color: #fecaca; }
 
+.chip-row {
+	display: flex; flex-wrap: wrap; gap: 6px;
+	&.off { opacity: 0.45; }
+}
+.vchip {
+	padding: 5px 12px;
+	border-radius: 999px;
+	border: 1px solid rgba(148, 163, 184, 0.28);
+	background: rgba(30, 41, 59, 0.65);
+	color: #cbd5e1;
+	font-size: 12px;
+	line-height: 1.5;
+	transition: all 0.15s ease;
+	&.on {
+		background: rgba(34, 211, 238, 0.16);
+		border-color: rgba(34, 211, 238, 0.65);
+		color: #67e8f9;
+		box-shadow: 0 0 10px rgba(34, 211, 238, 0.25);
+	}
+	&:active { transform: scale(0.95); }
+	&:disabled { opacity: 0.4; }
+}
+.chip-row.small .vchip { padding: 4px 10px; font-size: 11px; }
+.preview-row { margin-top: 8px; }
+
+input[type="range"] {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 100%;
+	height: 24px;
+	background: transparent;
+	margin: 4px 0 0;
+	&::-webkit-slider-runnable-track {
+		height: 6px;
+		border-radius: 999px;
+		background: linear-gradient(90deg, #22d3ee 0%, #38bdf8 var(--fill, 50%), rgba(148, 163, 184, 0.22) var(--fill, 50%));
+	}
+	&::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		width: 18px;
+		height: 18px;
+		margin-top: -6px;
+		border-radius: 50%;
+		background: #e2f6ff;
+		border: 2px solid #0ea5e9;
+		box-shadow: 0 0 12px rgba(56, 189, 248, 0.55);
+	}
+	&:disabled::-webkit-slider-thumb {
+		background: #64748b;
+		border-color: #334155;
+		box-shadow: none;
+	}
+}
 
 .settings-row {
 	padding: 10px 2px;

@@ -30,6 +30,7 @@ const bridge = (): NoriTTS => {
 const waiters = new Map<number, (ok: boolean) => void>()
 let engineReady = false
 let lastInitMessage = ""
+let lastSynthError = ""
 const engineWaiters: ((ok: boolean) => void)[] = []
 
 window.__noriTTSRes = (json) => {
@@ -46,15 +47,20 @@ window.__noriTTSRes = (json) => {
 		return
 	}
 	if (ev.event === "error" && typeof ev.id === "number") {
+		lastSynthError = ev.message ?? "合成失败"
+		console.error("TTS 合成失败:", lastSynthError)
 		const w = waiters.get(ev.id)
 		if (w) { waiters.delete(ev.id); w(false) }
 		return
 	}
 	if (typeof ev.id === "number" && (ev.event === "ready" || ev.event === "done")) {
+		lastSynthError = ""
 		const w = waiters.get(ev.id)
 		if (w) { waiters.delete(ev.id); w(true) }
 	}
 }
+
+export const ttsLastError = (): string => lastSynthError
 
 export const ttsInit = (): Promise<boolean> =>
 	new Promise((resolve) => {
@@ -91,11 +97,12 @@ export const ttsReinit = (): Promise<boolean> => {
 
 export const ttsSynthesize = (text: string, emotion = "gentleness"): Promise<number | null> =>
 	new Promise((resolve) => {
-		if (!window.NoriTTS || !engineReady) return resolve(null)
+		if (!window.NoriTTS) { lastSynthError = "未在 APP 内运行"; return resolve(null) }
+		if (!engineReady) { lastSynthError = "TTS 引擎尚未初始化完成"; return resolve(null) }
 		try {
 			const id = bridge().synthesize(text, emotion)
 			waiters.set(id, (ok) => { waiters.delete(id); resolve(ok ? id : null) })
-		} catch { resolve(null) }
+		} catch { lastSynthError = "桥接调用失败"; resolve(null) }
 	})
 
 export const ttsPlay = (id: number): Promise<void> =>

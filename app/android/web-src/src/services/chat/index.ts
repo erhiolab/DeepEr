@@ -198,3 +198,4 @@ export const sendChat = (
 		try { bridge().chat(baseUrl, apiKey, model, payload) } catch { resolve({ok: false, message: "请求失败"}) }
 	})
 }
+

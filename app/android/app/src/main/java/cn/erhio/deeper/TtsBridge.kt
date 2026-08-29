@@ -35,6 +35,7 @@ class TtsBridge(appContext: Context) {
         }
         initStarted = true
         thread {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
             engine.init { msg -> post("""{"event":"init","message":${JSONObject.quote(msg)}}""") }
             post("""{"event":"init-done","ok":${engine.state == TtsEngine.State.READY},"message":${JSONObject.quote(engine.initMessage)}}""")
         }
