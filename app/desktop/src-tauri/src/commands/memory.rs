@@ -25,7 +25,7 @@ pub fn memory_list(
 		.0
 		.lock()
 		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
-	repository::list(&conn, limit.unwrap_or(200).clamp(1, 1000) as usize)
+	repository::list(&conn, limit.unwrap_or(200).clamp(1, 1000) as usize, now())
 }
 
 /// 搜索记忆 (内容 / 标签命中, 按回忆打分排序; 命中记忆访问次数 +1 强化)

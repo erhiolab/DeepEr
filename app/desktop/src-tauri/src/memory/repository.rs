@@ -43,33 +43,30 @@ fn row_to_memory(row: &Row<'_>) -> rusqlite::Result<MemoryRecord> {
 	})
 }
 
-fn query_all(conn: &Connection, sql: &str, limit: usize) -> Result<Vec<MemoryRecord>, String> {
+/// 全部有效记忆 (按创建时间倒序; 过期的不返回)
+pub fn list(conn: &Connection, limit: usize, now: i64) -> Result<Vec<MemoryRecord>, String> {
 	let mut stmt = conn
-		.prepare(sql)
+		.prepare(&format!(
+			"{MEMORY_SELECT}
+			 WHERE m.status = 'active' AND (m.expires_at IS NULL OR m.expires_at > ?2)
+			 ORDER BY m.created_at DESC LIMIT ?1"
+		))
 		.map_err(|e| format!("查询记忆失败: {e}"))?;
 	let rows = stmt
-		.query_map(params![limit as i64], row_to_memory)
+		.query_map(params![limit as i64, now], row_to_memory)
 		.map_err(|e| format!("查询记忆失败: {e}"))?
 		.collect::<Result<Vec<_>, _>>()
 		.map_err(|e| format!("解析记忆失败: {e}"))?;
 	Ok(rows)
 }
 
-/// 全部有效记忆 (按创建时间倒序)
-pub fn list(conn: &Connection, limit: usize) -> Result<Vec<MemoryRecord>, String> {
-	query_all(
-		conn,
-		&format!("{MEMORY_SELECT} WHERE m.status = 'active' ORDER BY m.created_at DESC LIMIT ?1"),
-		limit,
-	)
-}
-
-/// 关键词搜索 (内容 / 标签命中, 按回忆打分排序)
-pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<MemoryRecord>, String> {
+/// 关键词搜索 (内容 / 标签命中, 按回忆打分排序; 过期的不返回)
+pub fn search(conn: &Connection, query: &str, limit: usize, now: i64) -> Result<Vec<MemoryRecord>, String> {
 	let mut stmt = conn
 		.prepare(&format!(
 			"{MEMORY_SELECT}
 			 WHERE m.status = 'active'
+			   AND (m.expires_at IS NULL OR m.expires_at > ?3)
 			   AND (instr(lower(m.content), lower(?1)) > 0
 			     OR EXISTS (SELECT 1 FROM memory_tags t2 WHERE t2.memory_id = m.id AND instr(lower(t2.tag), lower(?1)) > 0))
 			 ORDER BY m.updated_at DESC
@@ -77,7 +74,7 @@ pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Memory
 		))
 		.map_err(|e| format!("搜索记忆失败: {e}"))?;
 	let rows = stmt
-		.query_map(params![query, limit as i64], row_to_memory)
+		.query_map(params![query, limit as i64, now], row_to_memory)
 		.map_err(|e| format!("搜索记忆失败: {e}"))?
 		.collect::<Result<Vec<_>, _>>()
 		.map_err(|e| format!("解析记忆失败: {e}"))?;
@@ -178,7 +175,7 @@ pub fn search_scored(
 	limit: usize,
 	now: i64,
 ) -> Result<Vec<MemoryRecord>, String> {
-	let mut memories = search(conn, query, limit)?;
+	let mut memories = search(conn, query, limit, now)?;
 	let mut scored: Vec<(f64, MemoryRecord)> = memories
 		.drain(..)
 		.map(|memory| (recall::recall_score(query, &memory, now), memory))

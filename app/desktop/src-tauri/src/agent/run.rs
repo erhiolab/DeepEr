@@ -19,6 +19,7 @@ use crate::db;
 use crate::log::{self, LogSource};
 use crate::memory::model::MemoryInput;
 use crate::memory::repository as memory_repository;
+use crate::memory::summaries::{self, SummaryInput};
 use crate::tool::service::ToolService;
 
 /// 循环保护上限
@@ -33,6 +34,10 @@ const MEMORY_RECALL_LIMIT: usize = 5;
 const EXTRACT_THROTTLE_SECS: i64 = 120;
 /// 上次记忆提炼时间 (内存级节流)
 static LAST_EXTRACT_AT: AtomicI64 = AtomicI64::new(0);
+/// 对话超过该条数才自动生成摘要
+const SUMMARY_MIN_TALKS: usize = 80;
+/// 摘要保留的最近对话条数 (更早的才摘要)
+const SUMMARY_KEEP_RECENT: usize = 30;
 /// 工具调用事件名 (前端按 requestId 匹配)
 const TOOL_EVENT: &str = "agent-tool-call";
 
@@ -288,6 +293,78 @@ fn now_secs() -> i64 {
 /// 记忆提炼提示词: 只输出 JSON 数组
 const EXTRACT_SYSTEM_PROMPT: &str = "你是记忆提取器。从对话中提取值得长期记住的信息: 用户的姓名/生日/偏好/习惯/约定/重要事件/美好回忆等。\n只输出 JSON 数组, 不要输出其他任何文字, 格式: [{\"content\": \"记忆内容\", \"type\": \"fact|preference|project|event|relationship|core\", \"importance\": 0~1, \"confidence\": 0~1, \"tags\": [\"标签\"]}]\n没有值得记住的信息时输出 []";
 
+/// 摘要生成提示词
+const SUMMARY_SYSTEM_PROMPT: &str = "你是对话摘要器。用简洁的中文总结这段对话的要点 (发生了什么、用户的偏好/约定/关键信息), 300 字以内, 只输出摘要正文。";
+
+/// 摘要候选: 对话超过阈值时, 取最早一段未被摘要覆盖的范围
+struct SummaryCandidate {
+	start_id: i64,
+	end_id: i64,
+	transcript: String,
+}
+
+/// 读取摘要候选 (同步, 避免 DB 锁跨 await)
+fn read_summary_candidate(
+	conn: &Connection,
+	min_total: usize,
+	keep_recent: usize,
+) -> Result<Option<SummaryCandidate>, String> {
+	let mut stmt = conn
+		.prepare("SELECT id FROM contexts WHERE type = 'talk' ORDER BY id")
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let ids: Vec<i64> = stmt
+		.query_map([], |row| row.get::<_, i64>(0))
+		.map_err(|e| format!("读取对话失败: {e}"))?
+		.collect::<Result<_, _>>()
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	if ids.len() <= min_total {
+		return Ok(None);
+	}
+	let end_index = ids.len() - 1 - keep_recent;
+	let start_id = ids[0];
+	let end_id = ids[end_index];
+	// 已被摘要覆盖则跳过
+	let max_end: Option<i64> = conn
+		.query_row(
+			"SELECT MAX(end_context_id) FROM summaries WHERE status = 'active'",
+			[],
+			|row| row.get::<_, Option<i64>>(0),
+		)
+		.map_err(|e| format!("查询摘要失败: {e}"))?;
+	if max_end.is_some_and(|max| max >= end_id) {
+		return Ok(None);
+	}
+	// 拼接该段对话
+	let mut stmt = conn
+		.prepare(
+			"SELECT role, content FROM contexts WHERE id BETWEEN ?1 AND ?2 AND type = 'talk' ORDER BY id",
+		)
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let rows = stmt
+		.query_map(rusqlite::params![start_id, end_id], |row| {
+			Ok((
+				row.get::<_, Option<String>>(0)?,
+				row.get::<_, String>(1)?,
+			))
+		})
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let segment: Vec<(Option<String>, String)> = rows
+		.collect::<Result<_, _>>()
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let transcript = segment
+		.iter()
+		.map(|(role, content)| {
+			let label = if role.as_deref() == Some("assistant") { "助手" } else { "用户" };
+			format!("{label}: {content}")
+		})
+		.collect::<Vec<_>>()
+		.join("\n")
+		.chars()
+		.take(12000)
+		.collect();
+	Ok(Some(SummaryCandidate { start_id, end_id, transcript }))
+}
+
 /// 读取最近对话 (同步, 避免 DB 锁跨 await)
 fn read_recent_talk(conn: &Connection) -> Result<Vec<(i64, Option<String>, String)>, String> {
 	let mut stmt = conn
@@ -434,6 +511,46 @@ async fn extract_memories_from_conversation(app: &AppHandle) -> Result<(), Strin
 			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
 		save_extracted_memories(&conn, &items, timestamp)?
 	};
+
+	// 3. 摘要生成: 对话过长时压缩最早一段未被摘要覆盖的对话
+	let candidate = {
+		let conn = state
+			.0
+			.lock()
+			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+		read_summary_candidate(&conn, SUMMARY_MIN_TALKS, SUMMARY_KEEP_RECENT)?
+	};
+	if let Some(candidate) = candidate {
+		let messages = vec![
+			LlmMessage {
+				role: "system".to_string(),
+				content: SUMMARY_SYSTEM_PROMPT.to_string(),
+			},
+			LlmMessage {
+				role: "user".to_string(),
+				content: candidate.transcript,
+			},
+		];
+		let outcome = generate_round(platform, app.clone(), state.clone(), messages).await?;
+		if let Some(text) = outcome.text {
+			let content = truncate(text.trim(), 800);
+			if !content.is_empty() {
+				let input = SummaryInput {
+					start_context_id: candidate.start_id,
+					end_context_id: candidate.end_id,
+					level: 1,
+					content: content.to_string(),
+					token_count: estimate_tokens(&content) as i64,
+				};
+				let conn = state
+					.0
+					.lock()
+					.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+				let _ = summaries::create(&conn, &input, timestamp);
+			}
+		}
+	}
+
 	LAST_EXTRACT_AT.store(timestamp, Ordering::Relaxed);
 	let _ = log::write(app, &LogSource::Backend, "info", &format!("记忆提炼: 新增 {added} 条"));
 	Ok(())

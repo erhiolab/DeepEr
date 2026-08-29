@@ -888,7 +888,7 @@ impl ToolHandler for MemoryListHandler {
 			.and_then(|v| v.as_u64())
 			.unwrap_or(50)
 			.clamp(1, 200) as usize;
-		let memories = memory_repository::list(conn, limit)?;
+		let memories = memory_repository::list(conn, limit, now_secs())?;
 		Ok(json!({ "memories": memories }))
 	}
 }
