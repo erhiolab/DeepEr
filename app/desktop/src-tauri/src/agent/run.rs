@@ -1,6 +1,6 @@
 //! Agent 循环 (Rust 侧)
 //!
-//! 流程: 注入工具协议 → LLM 生成 → 解析 <tool_call> → ToolService 执行 →
+//! 流程: 记忆召回 + 注入工具协议 → LLM 生成 → 解析 <tool_call> → ToolService 执行 →
 //! 以 <tool_result> 回填再次生成, 直到 LLM 不再发起调用 (有最大轮数与结果长度保护).
 //! 每轮工具调用通过 `agent-tool-call` 事件推给前端展示, 并写入 contexts 表留痕.
 
@@ -16,6 +16,7 @@ use crate::commands::llm::{
 };
 use crate::db;
 use crate::log::{self, LogSource};
+use crate::memory::repository as memory_repository;
 use crate::tool::service::ToolService;
 
 /// 循环保护上限
@@ -24,6 +25,8 @@ const MAX_ROUNDS: usize = 6;
 const MAX_RESULT_CHARS: usize = 4000;
 /// 上下文里最多保留几轮工具调用往返
 const MAX_TOOL_PAIRS: usize = 2;
+/// 自动记忆召回条数上限
+const MEMORY_RECALL_LIMIT: usize = 5;
 /// 工具调用事件名 (前端按 requestId 匹配)
 const TOOL_EVENT: &str = "agent-tool-call";
 
@@ -268,6 +271,81 @@ fn prepare_context(
 	context::build(&conn, CONTEXT_TOKEN_BUDGET)
 }
 
+/// 当前时间戳 (秒)
+fn now_secs() -> i64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|d| d.as_secs() as i64)
+		.unwrap_or(0)
+}
+
+/// 记忆召回: 用最近一条用户消息检索长期记忆, 注入为 system 消息 (供 AI 参考)
+fn recall_memories(
+	app: &AppHandle,
+	state: &tauri::State<'_, db::Db>,
+	mut messages: Vec<LlmMessage>,
+) -> Result<Vec<LlmMessage>, String> {
+	// 取最近一条用户消息作为检索关键词 (无用户消息时按重要性/新鲜度召回)
+	let query: String = messages
+		.iter()
+		.rev()
+		.find(|message| message.role == "user")
+		.map(|message| message.content.chars().take(200).collect())
+		.unwrap_or_default();
+
+	let conn = state
+		.0
+		.lock()
+		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+	let memories = memory_repository::search_scored(&conn, &query, MEMORY_RECALL_LIMIT, now_secs())?;
+	drop(conn);
+	if memories.is_empty() {
+		return Ok(messages);
+	}
+
+	let recall_lines: Vec<String> = memories
+		.iter()
+		.map(|memory| {
+			format!(
+				"- [{}] {} (重要度 {}%, 置信度 {}%)",
+				memory.r#type,
+				truncate(&memory.content, 240),
+				(memory.importance * 100.0).round() as i64,
+				(memory.confidence * 100.0).round() as i64,
+			)
+		})
+		.collect();
+	let recall_text = format!(
+		"[长期记忆回忆] 以下是与当前对话相关的长期记忆, 回答时可以参考 (若与最新对话冲突, 以最新对话为准):\n{}",
+		recall_lines.join("\n")
+	);
+
+	// 插到所有人设 system 消息之后 (协议提示词随后注入到更靠后的位置)
+	let insert_at = messages
+		.iter()
+		.rposition(|message| message.role == "system")
+		.map(|index| index + 1)
+		.unwrap_or(0);
+	messages.insert(
+		insert_at,
+		LlmMessage {
+			role: "system".to_string(),
+			content: recall_text,
+		},
+	);
+	let _ = log::write(
+		app,
+		&LogSource::Backend,
+		"info",
+		&format!(
+			"[agent] 记忆召回: {} 条, 关键词长度={}",
+			memories.len(),
+			query.chars().count()
+		),
+	);
+	Ok(messages)
+}
+
 /// 运行 Agent 循环 (非流式: 内部多轮调用, 完成后返回最终回答)
 pub async fn run_agent(
 	app: AppHandle,
@@ -290,7 +368,9 @@ pub async fn run_agent(
 			calls: 0,
 		});
 	}
-	let mut messages = inject_protocol(&state, built)?;
+	// 2. 自动记忆召回 (注入长期记忆) + 注入工具协议
+	let messages = recall_memories(&app, &state, built)?;
+	let mut messages = inject_protocol(&state, messages)?;
 	let has_protocol = messages
 		.iter()
 		.any(|m| m.role == "system" && m.content.starts_with(prompt::AGENT_PROTOCOL_MARKER));
