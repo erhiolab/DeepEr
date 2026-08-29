@@ -37,7 +37,7 @@ const ROUTER = useRouter()
 
 // 侧边导航项键
 type NavKey =
-	"home" | "talk" | "characterDesign" |
+	"home" | "talk" | "memory" | "characterDesign" |
 	"model" | "touch" |
 	"llm" | "tts" | "scheduled" | "tool" |
 	"language" | "exception" | "about"
