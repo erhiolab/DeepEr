@@ -78,7 +78,8 @@ DeepEr monorepo
 
 从 [GitHub Releases](https://github.com/erhiolab/DeepEr/releases) 下载最新版安装包（Windows x64）。
 
-安装后第一次启动会进入**初始化引导**（首次运行向导）, 依次完成: 协议确认 → 连接 LLM → 欢迎页。
+安装后第一次启动会进入**初始化引导**（欢迎 → 关于 → 协议确认）, 完成后进入主界面;
+LLM 模型在「Agent → LLM」页配置, TTS 语音在「Agent → TTS」页配置。
 
 > 后续版本更新会自动通过应用内"关于 → 检查更新"完成, 无需手动下载。
 
