@@ -290,6 +290,19 @@ fn now_secs() -> i64 {
 		.unwrap_or(0)
 }
 
+/// 更新类工具 (需要 AppHandle + 异步, 由 agent 循环专用路径执行, 不占 DB 锁)
+fn is_update_tool(name: &str) -> bool {
+	matches!(name, "app-check-update" | "app-update-apply")
+}
+
+async fn execute_update_tool(app: &AppHandle, name: &str, _args: Value) -> Result<Value, String> {
+	match name {
+		"app-check-update" => crate::update::check_update(app).await,
+		"app-update-apply" => crate::update::apply_update(app).await,
+		_ => Err("未知更新工具".to_string()),
+	}
+}
+
 /// 记忆提炼提示词: 只输出 JSON 数组
 const EXTRACT_SYSTEM_PROMPT: &str = "你是记忆提取器。从对话中提取值得长期记住的信息: 用户的姓名/生日/偏好/习惯/约定/重要事件/美好回忆等。\n只输出 JSON 数组, 不要输出其他任何文字, 格式: [{\"content\": \"记忆内容\", \"type\": \"fact|preference|project|event|relationship|core\", \"importance\": 0~1, \"confidence\": 0~1, \"tags\": [\"标签\"]}]\n没有值得记住的信息时输出 []";
 
@@ -748,28 +761,45 @@ async fn run_loop(
 
 		total_calls += calls.len() as u32;
 
-		// 执行工具 + 事件推送 + contexts 留痕 (短持锁, 不跨 await)
-		let conn = state
-			.0
-			.lock()
-			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+		// 执行工具 + 事件推送 + contexts 留痕 (更新工具走专用异步路径, 不占 DB 锁)
 		let mut results: Vec<ExecResult> = Vec::new();
 		let current_signatures: Vec<String> = calls
 			.iter()
 			.map(|call| format!("{}::{}", call.name, call.args))
 			.collect();
 		for (index, call) in calls.iter().enumerate() {
-			let execution = match ToolService::global().execute(&conn, &call.name, call.args.clone()) {
-				Ok(value) => ExecResult {
-					name: call.name.clone(),
-					ok: true,
-					output: value.to_string(),
-				},
-				Err(err) => ExecResult {
-					name: call.name.clone(),
-					ok: false,
-					output: err,
-				},
+			let execution = if is_update_tool(&call.name) {
+				match execute_update_tool(&app, &call.name, call.args.clone()).await {
+					Ok(value) => ExecResult {
+						name: call.name.clone(),
+						ok: true,
+						output: value.to_string(),
+					},
+					Err(err) => ExecResult {
+						name: call.name.clone(),
+						ok: false,
+						output: err,
+					},
+				}
+			} else {
+				let conn = state
+					.0
+					.lock()
+					.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+				let result = match ToolService::global().execute(&conn, &call.name, call.args.clone()) {
+					Ok(value) => ExecResult {
+						name: call.name.clone(),
+						ok: true,
+						output: value.to_string(),
+					},
+					Err(err) => ExecResult {
+						name: call.name.clone(),
+						ok: false,
+						output: err,
+					},
+				};
+				drop(conn);
+				result
 			};
 			let mut execution = execution;
 			if !execution.ok && previous_calls.contains(&current_signatures[index]) {
@@ -808,20 +838,26 @@ async fn run_loop(
 			content: results_text.clone(),
 		});
 
-		insert_context(
-			&conn,
-			"tool",
-			"assistant",
-			&text,
-			outcome.output_tokens.unwrap_or_else(|| estimate_tokens(&text)),
-			outcome.input_tokens,
-			outcome.output_tokens,
-			None,
-		)
-		.map_err(|e| format!("记录工具上下文失败: {e}"))?;
-		insert_context(&conn, "tool", "user", &results_text, estimate_tokens(&results_text), None, None, None)
+		// 工具调用留痕 (独立短锁)
+		{
+			let conn = state
+				.0
+				.lock()
+				.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+			insert_context(
+				&conn,
+				"tool",
+				"assistant",
+				&text,
+				outcome.output_tokens.unwrap_or_else(|| estimate_tokens(&text)),
+				outcome.input_tokens,
+				outcome.output_tokens,
+				None,
+			)
 			.map_err(|e| format!("记录工具上下文失败: {e}"))?;
-		drop(conn);
+			insert_context(&conn, "tool", "user", &results_text, estimate_tokens(&results_text), None, None, None)
+				.map_err(|e| format!("记录工具上下文失败: {e}"))?;
+		}
 
 		// 只保留最近 MAX_TOOL_PAIRS 轮往返, 丢弃更早的, 控制上下文体积
 		let limit = base_len + MAX_TOOL_PAIRS * 2;

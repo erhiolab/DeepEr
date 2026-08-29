@@ -1,7 +1,7 @@
 import {computed, ref} from "vue"
 import {defineStore} from "pinia"
 import {getVersion} from "@tauri-apps/api/app"
-import {check, type DownloadEvent} from "@tauri-apps/plugin-updater"
+import {check, type DownloadEvent, type Update} from "@tauri-apps/plugin-updater"
 import {relaunch} from "@tauri-apps/plugin-process"
 import {openUrl} from "@tauri-apps/plugin-opener"
 import {logger} from "../logger"
@@ -13,6 +13,7 @@ import useLanguages from "../i18n/useLanguages.ts"
 export type UpdateStatus =
 	| "idle"        // 未检查
 	| "checking"    // 检查中
+	| "available"   // 发现新版本, 待用户确认更新
 	| "up-to-date"  // 已是最新
 	| "updating"    // 正在下载安装
 	| "updated"     // 更新完成, 等待重启
@@ -34,7 +35,8 @@ export type UpdateStatus =
  *
  * 对外方法:
  *   - init()            初始化, 拉取当前版本号 (应用启动时调用一次)
- *   - checkForUpdates() 检查更新, 有新版则自动下载安装
+ *   - checkForUpdates() 只检查更新, 有新版时状态变为 available (不自动下载)
+ *   - downloadAndInstall() 下载并安装已确认的新版本
  *   - restartToApply()  重启应用使更新生效
  *   - openManualUpdate() 跳转 GitHub Releases 手动下载
  *   - reset()           重置回未检查状态
@@ -64,6 +66,9 @@ export const useUpdaterStore = defineStore("updater", () => {
 	// 是否有可用更新 (发现新版本且尚未完成安装)
 	const hasUpdate = computed(() => !!availableVersion.value && status.value !== "up-to-date")
 
+	// 待下载安装的更新对象 (检查通过后暂存, 由用户点「更新」再下载)
+	let pendingUpdate: Update | null = null
+
 	// 是否正在忙碌 (检查中或下载安装中), 用于防重复点击 / 禁用按钮
 	const isBusy = computed(() => status.value === "checking" || status.value === "updating")
 
@@ -89,10 +94,9 @@ export const useUpdaterStore = defineStore("updater", () => {
 	}
 
 	/**
-	 * 检查更新. 发现新版本则自动下载并安装, 安装完成后需调用 `restartToApply` 重启生效.
+	 * 只检查更新 (不自动下载). 发现新版本时状态变为 available, 由用户点击「更新」触发下载.
 	 * - 无新版本 → status = "up-to-date"
 	 * - 检查阶段失败 → status = "error"
-	 * - 下载安装阶段失败 → status = "failed" (可走 `openManualUpdate` 手动更新)
 	 */
 	const checkForUpdates = async () => {
 		// 防止重复触发
@@ -102,6 +106,7 @@ export const useUpdaterStore = defineStore("updater", () => {
 		updateNotes.value = ""
 		availableVersion.value = ""
 		downloadProgress.value = null
+		pendingUpdate = null
 		try {
 			const update = await check()
 			if (!update) {
@@ -110,26 +115,46 @@ export const useUpdaterStore = defineStore("updater", () => {
 				return
 			}
 			// 发现新版本
+			pendingUpdate = update
 			availableVersion.value = update.version
 			updateNotes.value = update.body || ""
-			status.value = "updating"
-			// 自动下载并安装
-			await update.downloadAndInstall(onDownloadEvent)
-			// 安装完成, 需要重启生效
-			status.value = "updated"
+			status.value = "available"
 		} catch (error) {
-			// 检查或下载安装失败
+			// 检查失败
 			await logger.error("检查更新失败:", error)
 			updateError.value = error instanceof Error ? error.message : String(error)
-			// 区分阶段: 检查失败 vs 下载安装失败
-			status.value = status.value === "checking" ? "error" : "failed"
+			status.value = "error"
+		}
+	}
+
+	/**
+	 * 下载并安装已确认的新版本 (由「更新」按钮触发), 完成后需调用 `restartToApply` 重启生效.
+	 * 下载安装阶段失败 → status = "failed" (可走 `openManualUpdate` 手动更新)
+	 */
+	const downloadAndInstall = async () => {
+		if (isBusy.value) return
+		const UPDATE = pendingUpdate
+		if (!UPDATE) {
+			// 没有待更新对象, 重新检查
+			await checkForUpdates()
+			return
+		}
+		status.value = "updating"
+		downloadProgress.value = null
+		try {
+			await UPDATE.downloadAndInstall(onDownloadEvent)
+			status.value = "updated"
+		} catch (error) {
+			await logger.error("下载安装更新失败:", error)
+			updateError.value = error instanceof Error ? error.message : String(error)
+			status.value = "failed"
 		}
 	}
 
 	/**
 	 * 静默检查更新 (应用启动时调用): 只检查是否有新版本, 不自动下载安装.
 	 * - 无新版本 → status = "up-to-date"
-	 * - 有新版本 → status = "idle" (保持等用户点按钮触发下载), 仅填充 availableVersion 供 UI 展示
+	 * - 有新版本 → status = "available" (等待用户点「更新」触发下载), 填充 availableVersion 供 UI 展示
 	 * - 检查失败 → status = "idle" (不打扰用户, 仅记日志)
 	 */
 	const checkSilently = async () => {
@@ -141,9 +166,10 @@ export const useUpdaterStore = defineStore("updater", () => {
 				return
 			}
 			// 发现新版本: 只记录版本信息, 不自动下载, 由用户点击按钮触发
+			pendingUpdate = update
 			availableVersion.value = update.version
 			updateNotes.value = update.body || ""
-			status.value = "idle"
+			status.value = "available"
 			await logger.info(`发现新版本 v${update.version}, 待用户确认更新`)
 		} catch (error) {
 			await logger.error("静默检查更新失败:", error)
@@ -217,6 +243,7 @@ export const useUpdaterStore = defineStore("updater", () => {
 		// 方法
 		init,
 		checkForUpdates,
+		downloadAndInstall,
 		checkSilently,
 		restartToApply,
 		openManualUpdate,

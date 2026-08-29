@@ -323,6 +323,14 @@ export const icon = {
 			"M3 5v14a9 3 0 0 0 18 0V5",
 			"M3 12a9 3 0 0 0 18 0"
 		]
+	},
+	// 下载
+	download: {
+		stroke: [
+			"M12 3v12",
+			"m7 10 5 5 5-5",
+			"M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+		]
 	}
 } satisfies Record<string, IconData>
 

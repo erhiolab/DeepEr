@@ -115,6 +115,11 @@ const openLink = async (url: string) => {
 						<Icon name="loading" :size="14"/>
 						{{ I18N.update.checkingText }}
 					</span>
+					<!-- 发现新版本, 待用户确认更新 -->
+					<span v-else-if="updater.status === 'available'" class="status-text ok">
+						<Icon name="info" :size="14"/>
+						{{ updater.summary }}
+					</span>
 					<!-- 已是最新 -->
 					<span v-else-if="updater.status === 'up-to-date'" class="status-text ok">
 						<Icon name="check" :size="14"/>
@@ -145,7 +150,7 @@ const openLink = async (url: string) => {
 					</span>
 				</div>
 				<!-- 更新备注 -->
-				<div v-if="updater.updateNotes && (updater.status === 'updated' || updater.status === 'failed')" class="update-notes">
+				<div v-if="updater.updateNotes && (updater.status === 'available' || updater.status === 'updated' || updater.status === 'failed')" class="update-notes">
 					{{ updater.updateNotes }}
 				</div>
 				<!-- 错误详情 -->
@@ -166,6 +171,15 @@ const openLink = async (url: string) => {
 					>
 						<Icon name="refresh" :size="13"/>
 						{{ updater.status === 'error' ? I18N.update.retry : I18N.update.check }}
+					</button>
+					<!-- 发现新版本 → 更新 (需用户点击确认, 不会自动下载) -->
+					<button
+						v-if="updater.status === 'available'"
+						class="update-btn primary"
+						@click="updater.downloadAndInstall"
+					>
+						<Icon name="download" :size="13"/>
+						{{ I18N.update.update }}
 					</button>
 					<!-- 检查中 / 下载中 (禁用) -->
 					<button

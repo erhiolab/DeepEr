@@ -11,6 +11,7 @@ mod task;
 mod tool;
 mod tray;
 mod api;
+mod update;
 
 use tauri::Manager;
 

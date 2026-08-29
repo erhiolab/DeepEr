@@ -24,6 +24,8 @@ const IMPORTANT_TOOLS: &[&str] = &[
 	"memory-list",
 	"memory-update",
 	"memory-delete",
+	"app-check-update",
+	"app-update-apply",
 ];
 
 /// 从 tools 表取指定工具的一行描述 (缺失跳过)
@@ -66,6 +68,10 @@ pub fn build_system_prompt(conn: &Connection) -> Result<String, String> {
 - 用户的重要信息 (姓名、生日、偏好、约定、重要事件、美好回忆等) 应该用 memory-add 保存为长期记忆, 不要只停留在对话里。\n\
 - 回答涉及用户个人情况时, 先用 memory-search 回忆相关记忆; 不确定就先搜索。\n\
 - 如果用户提到了记忆里没有的重要信息, 主动用 memory-add 补充保存。\n\
+\n\
+更新规则:\n\
+- 用户询问版本 / 更新 / 新功能时, 用 app-check-update 检查是否有新版本, 如实汇报。\n\
+- 发现新版本时可以主动提醒用户更新, 但执行 app-update-apply 前必须先取得用户明确同意 (该操作会重启应用)。\n\
 \n\
 使用其他工具 (计算 / JSON / 文本 / 定时等) 的流程:\n\
 1. 先用 <tool_call name=\"tool-search\" args='{{\"query\": \"关键词\"}}'></tool_call> 搜索所需能力。\n\

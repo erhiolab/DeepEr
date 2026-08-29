@@ -145,6 +145,7 @@ export default {
 					title: "检查更新",
 					hint: "发现新版本时可自动更新或前往 GitHub 手动下载",
 					check: "检查更新",
+					update: "更新",
 					checking: "检查中...",
 					updating: "正在下载安装...",
 					upToDate: "已是最新版本",

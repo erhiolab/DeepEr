@@ -111,6 +111,7 @@ const buildSnapshot = () => {
 						title: t("components.firstRun.about.update.title"),
 						hint: t("components.firstRun.about.update.hint"),
 						check: t("components.firstRun.about.update.check"),
+						update: t("components.firstRun.about.update.update"),
 						checking: t("components.firstRun.about.update.checking"),
 						updating: t("components.firstRun.about.update.updating"),
 						upToDate: t("components.firstRun.about.update.upToDate"),

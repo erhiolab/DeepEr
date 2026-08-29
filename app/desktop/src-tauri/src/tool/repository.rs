@@ -193,6 +193,22 @@ const BUILTIN_TOOLS: &[(&str, &str, &str, &str, &str, &str)] = &[
 		r#"{"type":"object","properties":{"id":{"type":"integer","description":"记忆 id"}},"required":["id"]}"#,
 		"{}",
 	),
+	(
+		"app-check-update",
+		"应用-检查更新",
+		"检查应用是否有新版本. 无参数. 返回当前版本 / 最新版本 / 是否有更新 / 更新说明",
+		"app-check-update",
+		r#"{"type":"object","properties":{},"required":[]}"#,
+		"{}",
+	),
+	(
+		"app-update-apply",
+		"应用-更新应用",
+		"下载并安装最新版本, 然后重启应用生效. 无参数. 注意: 此操作会重启应用, 调用前必须先询问并取得用户同意",
+		"app-update-apply",
+		r#"{"type":"object","properties":{},"required":[]}"#,
+		"{}",
+	),
 ];
 
 /// 初始化: 内置工具 upsert (幂等, 定义以代码为准)
