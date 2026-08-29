@@ -13,6 +13,7 @@ import Live2D from "../components/Live2D.vue"
 
 import Home from "../components/main/Home.vue"
 import Talk from "../components/main/Talk.vue"
+import CharacterDesign from "../components/main/CharacterDesign.vue"
 
 import ModelSelect from "../components/main/ModelSelect.vue"
 import ModelConfig from "../components/main/ModelConfig.vue"
@@ -20,7 +21,6 @@ import Touch from "../components/main/Touch.vue"
 
 import LLMAdapter from "../components/main/LLMAdapter.vue"
 import TTSAdapter from "../components/main/TTSAdapter.vue"
-import CharacterDesign from "../components/main/CharacterDesign.vue"
 import ToolList from "../components/main/ToolList.vue"
 import Scheduled from "../components/main/Scheduled.vue"
 
@@ -36,9 +36,9 @@ const ROUTER = useRouter()
 
 // 侧边导航项键
 type NavKey =
-	"home" | "talk" |
+	"home" | "talk" | "characterDesign" |
 	"model" | "touch" |
-	"llm" | "tts" | "characterDesign" | "tool" | "scheduled" |
+	"llm" | "tts" | "tool" | "scheduled" |
 	"language" | "exception" | "about"
 
 // 侧边导航项
@@ -60,6 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
 		items: [
 			{key: "home", icon: "page"},
 			{key: "talk", icon: "send"},
+			{key: "characterDesign", icon: "book-user"},
 		],
 	},
 	{
@@ -74,7 +75,6 @@ const NAV_GROUPS: NavGroup[] = [
 		items: [
 			{key: "llm", icon: "robot"},
 			{key: "tts", icon: "volume"},
-			{key: "characterDesign", icon: "book-user"},
 			{key: "tool", icon: "tool-case"},
 			{key: "scheduled", icon: "alarm-clock"},
 		],
@@ -189,6 +189,7 @@ const toggleMaximize = () => {
 				<Transition :name="direction > 0 ? 'page-next' : 'page-prev'" mode="out-in">
 					<Home v-if="activeNav === 'home'"/>
 					<Talk v-else-if="activeNav === 'talk'"/>
+					<CharacterDesign v-else-if="activeNav === 'characterDesign'"/>
 
 					<ModelSelect v-else-if="activeNav === 'model' && !configModelId" @configure="openModelConfig"/>
 					<ModelConfig
@@ -200,7 +201,6 @@ const toggleMaximize = () => {
 
 					<LLMAdapter v-else-if="activeNav === 'llm'"/>
 					<TTSAdapter v-else-if="activeNav === 'tts'"/>
-					<CharacterDesign v-else-if="activeNav === 'characterDesign'"/>
 					<ToolList v-else-if="activeNav === 'tool'"/>
 					<Scheduled v-else-if="activeNav === 'scheduled'"/>
 
