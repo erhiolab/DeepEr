@@ -25,6 +25,7 @@ pub mod language;
 pub mod live2d;
 pub mod llm;
 pub mod log;
+pub mod memory;
 pub mod persona;
 pub mod resource;
 pub mod task_manager;

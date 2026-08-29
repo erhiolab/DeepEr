@@ -1,0 +1,43 @@
+//! 记忆定义
+
+use serde::{Deserialize, Serialize};
+
+/// 一条长期记忆
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryRecord {
+	pub id: i64,
+	/// 记忆内容
+	pub content: String,
+	/// 类型: fact / preference / project / event / relationship / core
+	pub r#type: String,
+	/// 重要性 0~1
+	pub importance: f64,
+	/// 置信度 0~1
+	pub confidence: f64,
+	/// 标签
+	pub tags: Vec<String>,
+	/// 被回忆次数 (强化)
+	pub access_count: i64,
+	pub last_accessed_at: Option<i64>,
+	pub expires_at: Option<i64>,
+	/// active / archived
+	pub status: String,
+	pub created_at: i64,
+	pub updated_at: i64,
+	/// 回忆打分 (仅搜索/召回时返回)
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub recall_score: Option<f64>,
+}
+
+/// 记忆写入参数 (创建 / 更新共用)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryInput {
+	pub content: String,
+	pub r#type: String,
+	pub importance: f64,
+	pub confidence: f64,
+	pub tags: Vec<String>,
+	pub expires_at: Option<i64>,
+}

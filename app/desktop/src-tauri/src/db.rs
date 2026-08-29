@@ -79,6 +79,23 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS memories (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    content          TEXT NOT NULL,
+    type             TEXT NOT NULL DEFAULT 'fact',
+    importance       REAL NOT NULL DEFAULT 0.5,
+    confidence       REAL NOT NULL DEFAULT 1.0,
+    access_count     INTEGER NOT NULL DEFAULT 0,
+    last_accessed_at INTEGER,
+    expires_at       INTEGER,
+    status           TEXT NOT NULL DEFAULT 'active',
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_tags (
+    memory_id INTEGER NOT NULL,
+    tag       TEXT NOT NULL
+);
 ";
 
 /// 数据库文件名
