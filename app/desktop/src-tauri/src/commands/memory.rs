@@ -2,14 +2,9 @@
 //!
 //! memories + memory_tags 表, 提供列表 / 搜索(回忆打分) / 创建 / 更新 / 删除.
 
-use std::collections::HashSet;
-
 use crate::db;
 use crate::memory::model::{MemoryInput, MemoryRecord};
-use crate::memory::{recall, repository};
-
-/// 记忆类型白名单
-const MEMORY_TYPES: &[&str] = &["fact", "preference", "project", "event", "relationship", "core"];
+use crate::memory::repository;
 
 fn now() -> i64 {
 	std::time::SystemTime::now()
@@ -18,41 +13,6 @@ fn now() -> i64 {
 		.unwrap_or(0)
 }
 
-/// 归一化写入参数 (裁剪重要性/置信度、去重标签)
-fn normalize(input: &MemoryInput) -> Result<MemoryInput, String> {
-	let content = input.content.trim();
-	if content.is_empty() {
-		return Err("记忆内容不能为空".to_string());
-	}
-	let r#type = if input.r#type.trim().is_empty() {
-		"fact".to_string()
-	} else if MEMORY_TYPES.contains(&input.r#type.trim()) {
-		input.r#type.trim().to_string()
-	} else {
-		return Err(format!(
-			"记忆类型无效: {}, 可选 {}",
-			input.r#type,
-			MEMORY_TYPES.join(" / ")
-		));
-	};
-	let tags: Vec<String> = {
-		let mut seen = HashSet::new();
-		input
-			.tags
-			.iter()
-			.map(|tag| tag.trim().to_string())
-			.filter(|tag| !tag.is_empty() && seen.insert(tag.clone()))
-			.collect()
-	};
-	Ok(MemoryInput {
-		content: content.to_string(),
-		r#type,
-		importance: input.importance.clamp(0.0, 1.0),
-		confidence: input.confidence.clamp(0.0, 1.0),
-		tags,
-		expires_at: input.expires_at,
-	})
-}
 
 /// 全部记忆 (按创建时间倒序)
 /// invoke("memory_list", { args: { limit: 200 } })
@@ -81,27 +41,7 @@ pub fn memory_search(
 		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
 	let limit = args.limit.unwrap_or(20).clamp(1, 200) as usize;
 	let query = args.query.trim();
-	let mut memories = repository::search(&conn, query, limit)?;
-	let timestamp = now();
-	let mut scored: Vec<(f64, MemoryRecord)> = memories
-		.drain(..)
-		.map(|memory| {
-			let score = recall::recall_score(query, &memory, timestamp);
-			(score, memory)
-		})
-		.collect();
-	scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-	// 命中记忆强化 (访问次数 +1)
-	for (_, memory) in &scored {
-		let _ = repository::touch(&conn, memory.id, timestamp);
-	}
-	Ok(scored
-		.into_iter()
-		.map(|(score, mut memory)| {
-			memory.recall_score = Some(score);
-			memory
-		})
-		.collect())
+	repository::search_scored(&conn, query, limit, now())
 }
 
 /// 新建记忆
@@ -111,7 +51,7 @@ pub fn memory_create(
 	state: tauri::State<'_, db::Db>,
 	args: MemoryInput,
 ) -> Result<MemoryRecord, String> {
-	let input = normalize(&args)?;
+	let input = args.normalize()?;
 	let conn = state
 		.0
 		.lock()
@@ -128,7 +68,7 @@ pub fn memory_update(
 	id: i64,
 	args: MemoryInput,
 ) -> Result<MemoryRecord, String> {
-	let input = normalize(&args)?;
+	let input = args.normalize()?;
 	let conn = state
 		.0
 		.lock()

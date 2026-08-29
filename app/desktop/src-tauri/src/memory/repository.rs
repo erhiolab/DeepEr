@@ -3,6 +3,7 @@
 use rusqlite::{params, Connection, Row};
 
 use crate::memory::model::{MemoryInput, MemoryRecord};
+use crate::memory::recall;
 
 /// 记忆查询 (含标签聚合)
 const MEMORY_SELECT: &str = "
@@ -168,4 +169,29 @@ pub fn touch(conn: &Connection, id: i64, now: i64) -> Result<(), String> {
 	)
 	.map_err(|e| format!("更新记忆访问失败: {e}"))?;
 	Ok(())
+}
+
+/// 搜索 + 回忆打分排序 (命中记忆访问次数 +1 强化)
+pub fn search_scored(
+	conn: &Connection,
+	query: &str,
+	limit: usize,
+	now: i64,
+) -> Result<Vec<MemoryRecord>, String> {
+	let mut memories = search(conn, query, limit)?;
+	let mut scored: Vec<(f64, MemoryRecord)> = memories
+		.drain(..)
+		.map(|memory| (recall::recall_score(query, &memory, now), memory))
+		.collect();
+	scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+	for (_, memory) in &scored {
+		let _ = touch(conn, memory.id, now);
+	}
+	Ok(scored
+		.into_iter()
+		.map(|(score, mut memory)| {
+			memory.recall_score = Some(score);
+			memory
+		})
+		.collect())
 }

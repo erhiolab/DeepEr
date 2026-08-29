@@ -11,6 +11,8 @@ use serde_json::{json, Value};
 
 use crate::tool::handler::ToolHandler;
 use crate::tool::repository;
+use crate::memory::model::MemoryInput;
+use crate::memory::repository as memory_repository;
 use crate::task::next as task_next;
 use crate::task::repository as task_repository;
 
@@ -76,6 +78,11 @@ pub fn builtin_handlers() -> Vec<Arc<dyn ToolHandler>> {
 		Arc::new(ScheduleUpdateHandler),
 		Arc::new(ScheduleListHandler),
 		Arc::new(ScheduleDeleteHandler),
+		Arc::new(MemoryAddHandler),
+		Arc::new(MemorySearchHandler),
+		Arc::new(MemoryListHandler),
+		Arc::new(MemoryUpdateHandler),
+		Arc::new(MemoryDeleteHandler),
 	]
 }
 
@@ -793,6 +800,133 @@ impl ToolHandler for ScheduleDeleteHandler {
 			.and_then(|v| v.as_i64())
 			.ok_or_else(|| "参数缺失: id(任务 id) 为必填参数".to_string())?;
 		task_repository::delete(conn, id)?;
+		Ok(json!({ "ok": true, "id": id }))
+	}
+}
+
+/// 从参数构造记忆输入 (缺省类型 fact / 重要性 0.5 / 置信度 1.0)
+fn memory_input_from_args(args: &Value) -> Result<MemoryInput, String> {
+	let content = string_arg(args, &["content", "内容"]);
+	if content.is_empty() {
+		return Err("参数缺失: content(记忆内容) 为必填参数".to_string());
+	}
+	let r#type = string_arg(args, &["type", "类型"]);
+	let importance = args.get("importance").and_then(|v| v.as_f64()).unwrap_or(0.5);
+	let confidence = args.get("confidence").and_then(|v| v.as_f64()).unwrap_or(1.0);
+	let tags: Vec<String> = args
+		.get("tags")
+		.and_then(|v| v.as_array())
+		.map(|array| {
+			array
+				.iter()
+				.filter_map(|v| v.as_str())
+				.map(String::from)
+				.collect()
+		})
+		.unwrap_or_default();
+	MemoryInput {
+		content,
+		r#type,
+		importance,
+		confidence,
+		tags,
+		expires_at: args.get("expiresAt").and_then(|v| v.as_i64()),
+	}
+	.normalize()
+}
+
+/// 记忆-添加记忆: 保存一条长期记忆
+pub struct MemoryAddHandler;
+
+impl ToolHandler for MemoryAddHandler {
+	fn name(&self) -> &str {
+		"memory-add"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let input = memory_input_from_args(&args)?;
+		let id = memory_repository::create(conn, &input, now_secs())?;
+		let memory = memory_repository::get(conn, id)?.ok_or_else(|| "记忆创建失败".to_string())?;
+		Ok(json!({ "ok": true, "memory": memory }))
+	}
+}
+
+/// 记忆-搜索记忆: 按关键词回忆, 打分排序并强化
+pub struct MemorySearchHandler;
+
+impl ToolHandler for MemorySearchHandler {
+	fn name(&self) -> &str {
+		"memory-search"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let query = string_arg(&args, &["query", "关键词"]);
+		if query.is_empty() {
+			return Err("参数缺失: query(搜索关键词) 为必填参数".to_string());
+		}
+		let limit = args
+			.get("limit")
+			.and_then(|v| v.as_u64())
+			.unwrap_or(5)
+			.clamp(1, 50) as usize;
+		let memories = memory_repository::search_scored(conn, &query, limit, now_secs())?;
+		Ok(json!({ "query": query, "memories": memories }))
+	}
+}
+
+/// 记忆-获取全部记忆
+pub struct MemoryListHandler;
+
+impl ToolHandler for MemoryListHandler {
+	fn name(&self) -> &str {
+		"memory-list"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let limit = args
+			.get("limit")
+			.and_then(|v| v.as_u64())
+			.unwrap_or(50)
+			.clamp(1, 200) as usize;
+		let memories = memory_repository::list(conn, limit)?;
+		Ok(json!({ "memories": memories }))
+	}
+}
+
+/// 记忆-更新记忆: 整体更新一条记忆
+pub struct MemoryUpdateHandler;
+
+impl ToolHandler for MemoryUpdateHandler {
+	fn name(&self) -> &str {
+		"memory-update"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let id = args
+			.get("id")
+			.and_then(|v| v.as_i64())
+			.ok_or_else(|| "参数缺失: id(记忆 id) 为必填参数".to_string())?;
+		let input = memory_input_from_args(&args)?;
+		memory_repository::update(conn, id, &input, now_secs())?;
+		let memory = memory_repository::get(conn, id)?.ok_or_else(|| "记忆不存在".to_string())?;
+		Ok(json!({ "ok": true, "memory": memory }))
+	}
+}
+
+/// 记忆-删除记忆
+pub struct MemoryDeleteHandler;
+
+impl ToolHandler for MemoryDeleteHandler {
+	fn name(&self) -> &str {
+		"memory-delete"
+	}
+
+	fn execute(&self, conn: &Connection, args: Value) -> Result<Value, String> {
+		let id = args
+			.get("id")
+			.and_then(|v| v.as_i64())
+			.ok_or_else(|| "参数缺失: id(记忆 id) 为必填参数".to_string())?;
+		memory_repository::delete(conn, id)?;
 		Ok(json!({ "ok": true, "id": id }))
 	}
 }

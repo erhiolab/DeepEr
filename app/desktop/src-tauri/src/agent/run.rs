@@ -101,14 +101,23 @@ fn active_platform(state: &tauri::State<'_, db::Db>) -> Result<Platform, String>
 	}
 }
 
-/// 注入工具协议系统消息 (幂等; 插到所有人设 system 消息之后)
-fn inject_protocol(mut messages: Vec<LlmMessage>) -> Vec<LlmMessage> {
+/// 注入工具协议系统消息 (幂等; 插到所有人设 system 消息之后; 重要工具清单来自 tools 表)
+fn inject_protocol(
+	state: &tauri::State<'_, db::Db>,
+	mut messages: Vec<LlmMessage>,
+) -> Result<Vec<LlmMessage>, String> {
 	if messages
 		.iter()
 		.any(|m| m.role == "system" && m.content.starts_with(prompt::AGENT_PROTOCOL_MARKER))
 	{
-		return messages;
+		return Ok(messages);
 	}
+	let conn = state
+		.0
+		.lock()
+		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+	let system_prompt = prompt::build_system_prompt(&conn)?;
+	drop(conn);
 	let insert_at = messages
 		.iter()
 		.rposition(|m| m.role == "system")
@@ -118,10 +127,10 @@ fn inject_protocol(mut messages: Vec<LlmMessage>) -> Vec<LlmMessage> {
 		insert_at,
 		LlmMessage {
 			role: "system".to_string(),
-			content: prompt::build_system_prompt(),
+			content: system_prompt,
 		},
 	);
-	messages
+	Ok(messages)
 }
 
 /// 调一次 LLM 生成 (按平台路由到对应后端命令)
@@ -281,7 +290,7 @@ pub async fn run_agent(
 			calls: 0,
 		});
 	}
-	let mut messages = inject_protocol(built);
+	let mut messages = inject_protocol(&state, built)?;
 	let has_protocol = messages
 		.iter()
 		.any(|m| m.role == "system" && m.content.starts_with(prompt::AGENT_PROTOCOL_MARKER));
