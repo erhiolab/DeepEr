@@ -15,6 +15,7 @@ use crate::commands::llm::{
 	self, anthropic_messages, google_genai, openai_responses, LlmGenerateArgs, LlmGenerateOutcome, LlmMessage,
 };
 use crate::db;
+use crate::log::{self, LogSource};
 use crate::tool::service::ToolService;
 
 /// 循环保护上限
@@ -101,19 +102,13 @@ fn active_platform(state: &tauri::State<'_, db::Db>) -> Result<Platform, String>
 }
 
 /// 注入工具协议系统消息 (幂等; 插到所有人设 system 消息之后)
-fn inject_protocol(state: &tauri::State<'_, db::Db>, mut messages: Vec<LlmMessage>) -> Result<Vec<LlmMessage>, String> {
+fn inject_protocol(mut messages: Vec<LlmMessage>) -> Vec<LlmMessage> {
 	if messages
 		.iter()
 		.any(|m| m.role == "system" && m.content.starts_with(prompt::AGENT_PROTOCOL_MARKER))
 	{
-		return Ok(messages);
+		return messages;
 	}
-	let conn = state
-		.0
-		.lock()
-		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
-	let system_prompt = prompt::build_system_prompt(&conn)?;
-	drop(conn);
 	let insert_at = messages
 		.iter()
 		.rposition(|m| m.role == "system")
@@ -123,10 +118,10 @@ fn inject_protocol(state: &tauri::State<'_, db::Db>, mut messages: Vec<LlmMessag
 		insert_at,
 		LlmMessage {
 			role: "system".to_string(),
-			content: system_prompt,
+			content: prompt::build_system_prompt(),
 		},
 	);
-	Ok(messages)
+	messages
 }
 
 /// 调一次 LLM 生成 (按平台路由到对应后端命令)
@@ -164,7 +159,7 @@ fn truncate(text: &str, max_chars: usize) -> String {
 
 /// 把工具执行结果包装成 <tool_result> 文本
 fn format_results(results: &[ExecResult]) -> String {
-	results
+	let body = results
 		.iter()
 		.map(|result| {
 			format!(
@@ -175,7 +170,16 @@ fn format_results(results: &[ExecResult]) -> String {
 			)
 		})
 		.collect::<Vec<_>>()
-		.join("\n")
+		.join("\n");
+	let failed = results.iter().filter(|result| !result.ok).count();
+	if failed > 0 {
+		// 失败时在最前面加醒目系统警告, 防止模型无视失败结果编造成功
+		format!(
+			"[系统提示] 本轮有 {failed} 个工具调用失败 (ok=false)。你的最终回答必须以工具返回结果为准, 不得声称失败的操作已成功, 请如实告知用户失败原因。\n\n{body}"
+		)
+	} else {
+		body
+	}
 }
 
 /// 写一条 context 记录 (留痕)
@@ -277,7 +281,16 @@ pub async fn run_agent(
 			calls: 0,
 		});
 	}
-	let mut messages = inject_protocol(&state, built)?;
+	let mut messages = inject_protocol(built);
+	let has_protocol = messages
+		.iter()
+		.any(|m| m.role == "system" && m.content.starts_with(prompt::AGENT_PROTOCOL_MARKER));
+	let _ = log::write(
+		&app,
+		&LogSource::Backend,
+		"info",
+		&format!("[agent] 上下文: 消息数={}, 含工具协议={}", messages.len(), has_protocol),
+	);
 	let base_len = messages.len();
 	run_loop(app, state, platform, &mut messages, base_len, hit_rate, &request_id).await
 }
@@ -295,6 +308,7 @@ async fn run_loop(
 	let mut total_input: u64 = 0;
 	let mut total_output: u64 = 0;
 	let mut total_calls: u32 = 0;
+	let mut previous_calls: Vec<String> = Vec::new();
 
 	for round in 1..=MAX_ROUNDS {
 		let outcome = generate_round(platform, app.clone(), state.clone(), messages.clone()).await?;
@@ -316,6 +330,18 @@ async fn run_loop(
 		}
 
 		let text = outcome.text.unwrap_or_default();
+		let output_preview: String = text.chars().take(300).collect();
+		let _ = log::write(
+			&app,
+			&LogSource::Backend,
+			"info",
+			&format!(
+				"[agent] 第 {round} 轮: 输出长度={}, 含tool_call={}, 预览={}",
+				text.chars().count(),
+				text.contains("<tool_call"),
+				output_preview
+			),
+		);
 		let calls = parser::parse_tool_calls(&text);
 		if calls.is_empty() {
 			record_assistant(&state, &text, Some(total_input), Some(total_output), hit_rate)?;
@@ -338,7 +364,11 @@ async fn run_loop(
 			.lock()
 			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
 		let mut results: Vec<ExecResult> = Vec::new();
-		for call in &calls {
+		let current_signatures: Vec<String> = calls
+			.iter()
+			.map(|call| format!("{}::{}", call.name, call.args))
+			.collect();
+		for (index, call) in calls.iter().enumerate() {
 			let execution = match ToolService::global().execute(&conn, &call.name, call.args.clone()) {
 				Ok(value) => ExecResult {
 					name: call.name.clone(),
@@ -351,12 +381,33 @@ async fn run_loop(
 					output: err,
 				},
 			};
+			let mut execution = execution;
+			if !execution.ok && previous_calls.contains(&current_signatures[index]) {
+				execution.output = format!(
+					"{}\n[注意: 该参数组合上一次已失败, 请勿重复同样的调用; 检查参数后重试, 或直接告知用户失败原因]",
+					execution.output
+				);
+			}
 			results.push(execution.clone());
 			let _ = app.emit(
 				TOOL_EVENT,
-				json!({ "requestId": request_id, "name": execution.name, "ok": execution.ok }),
+				json!({
+					"requestId": request_id,
+					"name": execution.name,
+					"ok": execution.ok,
+					"output": truncate(&execution.output, 200),
+				}),
 			);
+			if !execution.ok {
+				let _ = log::write(
+					&app,
+					&LogSource::Backend,
+					"error",
+					&format!("工具调用失败 {}: {}\n参数: {}", execution.name, execution.output, call.args),
+				);
+			}
 		}
+		previous_calls.extend(current_signatures);
 		let results_text = format_results(&results);
 		messages.push(LlmMessage {
 			role: "assistant".to_string(),

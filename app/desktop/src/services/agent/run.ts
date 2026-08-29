@@ -26,7 +26,7 @@ export interface AgentRunResult {
  */
 export interface AgentUserMessage {
 	content: string
-	kind?: "talk" | "touch"
+	kind?: "talk" | "touch" | "schedule"
 }
 
 /**
@@ -37,14 +37,16 @@ export interface AgentUserMessage {
  */
 export const runAgent = async (
 	options: {messages: AgentUserMessage[]},
-	onToolCall?: (name: string, ok: boolean) => void,
+	onToolCall?: (name: string, ok: boolean, output?: string) => void,
 ): Promise<AgentRunResult> => {
 	const REQUEST_ID =
 		(typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
 			? crypto.randomUUID()
 			: `req_${Date.now()}_${Math.floor(Math.random() * 1e9)}`
-	const UNSUB = await listen<{requestId: string, name: string, ok: boolean}>("agent-tool-call", event => {
-		if (event.payload.requestId === REQUEST_ID) onToolCall?.(event.payload.name, event.payload.ok)
+	const UNSUB = await listen<{requestId: string, name: string, ok: boolean, output?: string}>("agent-tool-call", event => {
+		if (event.payload.requestId === REQUEST_ID) {
+			onToolCall?.(event.payload.name, event.payload.ok, event.payload.output)
+		}
 	})
 	try {
 		return await invoke<AgentRunResult>("agent_run", {

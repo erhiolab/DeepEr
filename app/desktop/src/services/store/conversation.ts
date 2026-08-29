@@ -39,7 +39,7 @@ export interface ChatMessage {
 // 排队中的一条用户消息 (AI 回复期间用户发来的消息, 下次一次性批量发送)
 interface PendingMessage {
 	content: string
-	kind: "talk" | "touch"
+	kind: "talk" | "touch" | "schedule"
 	onDone?: () => void
 }
 
@@ -187,7 +187,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	 * @param messages 本批用户消息 (空数组时只构建上下文, 用于人设首轮问候)
 	 * @param onDone   回复流程结束后回调 (成功/失败都会触发)
 	 */
-	const requestLLM = (messages: {content: string, kind: "talk" | "touch"}[], onDone?: () => void) => {
+	const requestLLM = (messages: {content: string, kind: "talk" | "touch" | "schedule"}[], onDone?: () => void) => {
 		const MSG = push("left", "")
 		MSG.isStreaming = true
 		setTyping(true)
@@ -195,9 +195,10 @@ export const useConversationStore = defineStore("conversation", () => {
 			try {
 				// 动态导入避免循环依赖
 				const {runAgent} = await import("../agent/run")
-				const RESULT = await runAgent({messages}, (name, ok) => {
+				const RESULT = await runAgent({messages}, (name, ok, output) => {
 					// 工具执行过程可见: 插到当前回复气泡上方, 避免被挤到回答后面
-					pushCenterBefore(MSG.id, `🔧 调用工具 ${name} → ${ok ? "执行成功" : "执行失败"}`)
+					const REASON = ok ? "" : `: ${(output ?? "未知原因").slice(0, 80)}`
+					pushCenterBefore(MSG.id, `🔧 调用工具 ${name} → ${ok ? "执行成功" : `执行失败${REASON}`}`)
 				})
 			MSG.isStreaming = false
 			setTyping(false)
@@ -266,6 +267,19 @@ export const useConversationStore = defineStore("conversation", () => {
 	}
 
 	/**
+	 * 定时任务到点触发: 作为中间状态 (不显示在用户气泡), 以独立 type=schedule 发给 AI
+	 *
+	 * @param title   任务名称
+	 * @param content 任务内容 (到点发给 AI)
+	 */
+	const sendScheduled = (title: string, content: string, onDone?: () => void): void => {
+		const TEXT = `⏰ 定时任务「${title}」\n${content}`
+		pushCenter(TEXT)
+		pendingQueue.push({content: TEXT, kind: "schedule", onDone})
+		drainQueue()
+	}
+
+	/**
 	 * 设置人设后触发首轮互动:
 	 * - 有开场白: 直接作为 AI 首条消息 (不消耗 LLM)
 	 * - 无开场白: 发起一次 LLM 请求生成问候
@@ -303,7 +317,7 @@ export const useConversationStore = defineStore("conversation", () => {
 	 *
 	 * 回显内容:
 	 * - type=talk: 左右气泡 (user 右 / assistant 左)
-	 * - type=touch: 中间信息 (触摸动作)
+	 * - type=touch / schedule: 中间信息 (触摸动作 / 定时任务触发, 状态类不显示在用户气泡)
 	 * - type=tool: 重建「🔧 调用工具 …」中间提示 (调用名 + 成功/失败, 按记录顺序)
 	 */
 	const loadHistory = async (limit = HISTORY_RELOAD_LIMIT): Promise<void> => {
@@ -316,10 +330,10 @@ export const useConversationStore = defineStore("conversation", () => {
 		let pendingCalls: {name: string, createdAt: number}[] = []
 
 		for (const record of ORDERED) {
-			if (record.type === "talk" || record.type === "touch") {
+			if (record.type === "talk" || record.type === "touch" || record.type === "schedule") {
 				if (!record.role || !record.content.trim()) continue
 				ITEMS.push({
-					side: record.type === "touch" ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
+					side: (record.type === "touch" || record.type === "schedule") ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
 					text: record.content,
 					createdAt: record.createdAt * 1000,
 				})
@@ -367,6 +381,7 @@ export const useConversationStore = defineStore("conversation", () => {
 		// 方法
 		sendMessage,
 		sendTouch,
+		sendScheduled,
 		startPersona,
 		loadHistory,
 		setTyping,
