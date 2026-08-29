@@ -104,6 +104,10 @@ pub fn run() {
             commands::memory::memory_update,
             commands::memory::memory_delete,
 
+            commands::summary::summary_list,
+            commands::summary::summary_create,
+            commands::summary::summary_delete,
+
             commands::tools::tool_list,
             commands::tools::tool_search,
             commands::tool::tool_execute,

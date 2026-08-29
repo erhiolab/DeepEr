@@ -96,6 +96,16 @@ CREATE TABLE IF NOT EXISTS memory_tags (
     memory_id INTEGER NOT NULL,
     tag       TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS summaries (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_context_id INTEGER NOT NULL,
+    end_context_id   INTEGER NOT NULL,
+    level            INTEGER NOT NULL DEFAULT 1,
+    content          TEXT NOT NULL,
+    token_count      INTEGER NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'active',
+    created_at       INTEGER NOT NULL
+);
 ";
 
 /// 数据库文件名

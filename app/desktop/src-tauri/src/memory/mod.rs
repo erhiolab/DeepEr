@@ -8,3 +8,4 @@
 pub mod model;
 pub mod recall;
 pub mod repository;
+pub mod summaries;

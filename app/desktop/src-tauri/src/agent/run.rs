@@ -5,8 +5,9 @@
 //! 每轮工具调用通过 `agent-tool-call` 事件推给前端展示, 并写入 contexts 表留痕.
 
 use rusqlite::Connection;
-use serde_json::json;
-use tauri::{AppHandle, Emitter};
+use serde_json::{json, Value};
+use std::sync::atomic::{AtomicI64, Ordering};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agent::context::{self, estimate_tokens, CONTEXT_TOKEN_BUDGET};
 use crate::agent::parser;
@@ -16,6 +17,7 @@ use crate::commands::llm::{
 };
 use crate::db;
 use crate::log::{self, LogSource};
+use crate::memory::model::MemoryInput;
 use crate::memory::repository as memory_repository;
 use crate::tool::service::ToolService;
 
@@ -27,6 +29,10 @@ const MAX_RESULT_CHARS: usize = 4000;
 const MAX_TOOL_PAIRS: usize = 2;
 /// 自动记忆召回条数上限
 const MEMORY_RECALL_LIMIT: usize = 5;
+/// 记忆提炼节流 (秒): 距上次提炼不足该值则跳过
+const EXTRACT_THROTTLE_SECS: i64 = 120;
+/// 上次记忆提炼时间 (内存级节流)
+static LAST_EXTRACT_AT: AtomicI64 = AtomicI64::new(0);
 /// 工具调用事件名 (前端按 requestId 匹配)
 const TOOL_EVENT: &str = "agent-tool-call";
 
@@ -279,6 +285,160 @@ fn now_secs() -> i64 {
 		.unwrap_or(0)
 }
 
+/// 记忆提炼提示词: 只输出 JSON 数组
+const EXTRACT_SYSTEM_PROMPT: &str = "你是记忆提取器。从对话中提取值得长期记住的信息: 用户的姓名/生日/偏好/习惯/约定/重要事件/美好回忆等。\n只输出 JSON 数组, 不要输出其他任何文字, 格式: [{\"content\": \"记忆内容\", \"type\": \"fact|preference|project|event|relationship|core\", \"importance\": 0~1, \"confidence\": 0~1, \"tags\": [\"标签\"]}]\n没有值得记住的信息时输出 []";
+
+/// 读取最近对话 (同步, 避免 DB 锁跨 await)
+fn read_recent_talk(conn: &Connection) -> Result<Vec<(i64, Option<String>, String)>, String> {
+	let mut stmt = conn
+		.prepare(
+			"SELECT id, role, content FROM contexts
+			 WHERE type = 'talk' AND role IS NOT NULL AND content != ''
+			 ORDER BY id DESC LIMIT 20",
+		)
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let rows = stmt
+		.query_map([], |row| {
+			Ok((
+				row.get::<_, i64>(0)?,
+				row.get::<_, Option<String>>(1)?,
+				row.get::<_, String>(2)?,
+			))
+		})
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	let talk: Vec<(i64, Option<String>, String)> = rows
+		.collect::<Result<_, _>>()
+		.map_err(|e| format!("读取对话失败: {e}"))?;
+	Ok(talk)
+}
+
+/// 提炼结果去重入库 (同步), 返回新增条数
+fn save_extracted_memories(conn: &Connection, items: &[Value], now: i64) -> Result<i64, String> {
+	let mut stmt = conn
+		.prepare("SELECT content FROM memories")
+		.map_err(|e| format!("查询记忆失败: {e}"))?;
+	let existing: Vec<String> = stmt
+		.query_map([], |row| row.get::<_, String>(0))
+		.map_err(|e| format!("查询记忆失败: {e}"))?
+		.collect::<Result<_, _>>()
+		.map_err(|e| format!("查询记忆失败: {e}"))?;
+	let mut added = 0;
+	for item in items {
+		let Some(content) = item
+			.get("content")
+			.and_then(|v| v.as_str())
+			.map(str::trim)
+			.filter(|s| !s.is_empty())
+		else {
+			continue;
+		};
+		if existing.iter().any(|old| old == content) {
+			continue;
+		}
+		let input = MemoryInput {
+			content: content.to_string(),
+			r#type: item.get("type").and_then(|v| v.as_str()).unwrap_or("fact").to_string(),
+			importance: item.get("importance").and_then(|v| v.as_f64()).unwrap_or(0.5),
+			confidence: item.get("confidence").and_then(|v| v.as_f64()).unwrap_or(1.0),
+			tags: item
+				.get("tags")
+				.and_then(|v| v.as_array())
+				.map(|array| {
+					array
+						.iter()
+						.filter_map(|v| v.as_str())
+						.map(String::from)
+						.collect()
+				})
+				.unwrap_or_default(),
+			expires_at: None,
+		};
+		if let Ok(normalized) = input.normalize() {
+			if memory_repository::create(conn, &normalized, now).is_ok() {
+				added += 1;
+			}
+		}
+	}
+	Ok(added)
+}
+
+/// 对话结束后的记忆提炼 (后台任务, 不阻塞回复)
+async fn extract_memories_from_conversation(app: &AppHandle) -> Result<(), String> {
+	let timestamp = now_secs();
+	if timestamp - LAST_EXTRACT_AT.load(Ordering::Relaxed) < EXTRACT_THROTTLE_SECS {
+		return Ok(());
+	}
+
+	let state = app.state::<db::Db>();
+	// 1. 读最近对话 (同步, 不跨 await)
+	let talk = {
+		let conn = state
+			.0
+			.lock()
+			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+		read_recent_talk(&conn)?
+	};
+	if talk.is_empty() {
+		return Ok(());
+	}
+
+	let transcript = talk
+		.iter()
+		.rev()
+		.map(|(_, role, content)| {
+			let label = if role.as_deref() == Some("assistant") { "助手" } else { "用户" };
+			format!("{label}: {content}")
+		})
+		.collect::<Vec<_>>()
+		.join("\n");
+
+	// 调 LLM 提炼
+	let platform = active_platform(&state)?;
+	let messages = vec![
+		LlmMessage {
+			role: "system".to_string(),
+			content: EXTRACT_SYSTEM_PROMPT.to_string(),
+		},
+		LlmMessage {
+			role: "user".to_string(),
+			content: transcript,
+		},
+	];
+	let outcome = generate_round(platform, app.clone(), state.clone(), messages).await?;
+	let Some(text) = outcome.text else {
+		return Err(outcome.error.unwrap_or_else(|| "提炼无输出".to_string()));
+	};
+
+	// 解析 JSON 数组 (容忍 ```json 代码块包裹)
+	let cleaned = text
+		.trim()
+		.trim_start_matches("```json")
+		.trim_start_matches("```")
+		.trim_end_matches("```")
+		.trim();
+	let items: Vec<Value> = serde_json::from_str(cleaned)
+		.or_else(|_| match cleaned.find('[').zip(cleaned.rfind(']')) {
+			Some((start, end)) => serde_json::from_str::<Vec<Value>>(&cleaned[start..=end]),
+			None => Err(serde_json::Error::io(std::io::Error::new(
+				std::io::ErrorKind::InvalidData,
+				"未找到 JSON 数组",
+			))),
+		})
+		.map_err(|e| format!("提炼结果解析失败: {e}"))?;
+
+	// 2. 去重 + 入库 (同步, 不跨 await)
+	let added = {
+		let conn = state
+			.0
+			.lock()
+			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+		save_extracted_memories(&conn, &items, timestamp)?
+	};
+	LAST_EXTRACT_AT.store(timestamp, Ordering::Relaxed);
+	let _ = log::write(app, &LogSource::Backend, "info", &format!("记忆提炼: 新增 {added} 条"));
+	Ok(())
+}
+
 /// 记忆召回: 用最近一条用户消息检索长期记忆, 注入为 system 消息 (供 AI 参考)
 fn recall_memories(
 	app: &AppHandle,
@@ -434,6 +594,18 @@ async fn run_loop(
 		let calls = parser::parse_tool_calls(&text);
 		if calls.is_empty() {
 			record_assistant(&state, &text, Some(total_input), Some(total_output), hit_rate)?;
+			// 回复完成 → 后台自动提炼记忆 (不阻塞回复)
+			let extract_app = app.clone();
+			tauri::async_runtime::spawn(async move {
+				if let Err(error) = extract_memories_from_conversation(&extract_app).await {
+					let _ = log::write(
+						&extract_app,
+						&LogSource::Backend,
+						"error",
+						&format!("记忆提炼失败: {error}"),
+					);
+				}
+			});
 			return Ok(AgentRunOutcome {
 				ok: true,
 				text: Some(text),
