@@ -216,7 +216,7 @@ class TtsEngine(private val appContext: Context) {
         '“' to "'", '”' to "'", '‘' to "'", '’' to "'",
     )
 
-    // 常见英文词的读法映射（符号集为拼音+ARPABET 混合，直接写拼音音节）
+    
     private val latinLexicon = mapOf(
         "nori" to listOf("n", "uo4", "l", "i3"),
         "ai" to listOf("ei1", "i1"),
@@ -233,12 +233,12 @@ class TtsEngine(private val appContext: Context) {
         while (i < cleaned.length) {
             val ch = cleaned[i]
             if (ch.isLetter() && ch.code < 128) {
-                // 连续英文按词典整词发音，避免被拆成单个字母音素导致读错
+                
                 var j = i
                 while (j < cleaned.length && cleaned[j].isLetter() && cleaned[j].code < 128) j++
                 val ph = latinLexicon[cleaned.substring(i, j).lowercase()]
                 if (ph != null) { phones.addAll(ph); word2ph[i] = ph.size; i = j; continue }
-                if (j - i > 1) { i = j; continue } // 未收录整词丢弃，单字母退回逐字符
+                if (j - i > 1) { i = j; continue } 
             }
             var ph: List<String>? = charPhones[ch.toString()]
             if (ph == null) {
@@ -466,6 +466,7 @@ class TtsEngine(private val appContext: Context) {
 
     fun synthesize(text: String, emotion: String): FloatArray {
         ensureSessions()
+        android.util.Log.d("TtsEngine", "synth >>> emo=$emotion text=[$text]")
         val t0 = android.os.SystemClock.elapsedRealtime()
         val (ids, word2ph) = phonesFor(text)
         require(ids.isNotEmpty()) { "文本没有可合成的音素" }
@@ -563,7 +564,7 @@ class TtsEngine(private val appContext: Context) {
     }
 
     private fun startWorker() {
-        // 允许多个 worker 并发合成，提高排队时的吞吐
+        
         while (true) {
             val cur = activeWorkers.get()
             if (cur >= MAX_WORKERS) return
@@ -612,12 +613,18 @@ class TtsEngine(private val appContext: Context) {
     }
 
     private fun playPcm(pcm: FloatArray) {
-        // 裁掉开头常见的小段噪声/气息（BOS 产物），让音频"照着文本开场"
-        val leadTrim = OUT_SR / 20
-        val trimmed = if (pcm.size > leadTrim + OUT_SR / 4) pcm.copyOfRange(leadTrim, pcm.size) else pcm
+        
+        
+        val peakAll = pcm.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
+        val th = peakAll * 0.015f
+        val maxTrim = OUT_SR * 12 / 10
+        var start = 0
+        while (start < maxTrim && start < pcm.size && kotlin.math.abs(pcm[start]) < th) start++
+        if (start < OUT_SR / 25) start = 0
+        val trimmed = pcm.copyOfRange(start, pcm.size)
         val peak = trimmed.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
         val gain = if (peak > 0.001f) (0.85f / peak).coerceIn(1f, 20f) else 1f
-        android.util.Log.d("TtsEngine", "playback peak=$peak gain=$gain trim=$leadTrim")
+        android.util.Log.d("TtsEngine", "playback trim=${start} peak=$peak gain=$gain")
         val buf = ShortArray(trimmed.size)
         for (i in trimmed.indices) buf[i] = ((trimmed[i] * gain).coerceIn(-1f, 1f) * 32767f).toInt().toShort()
         val t = AudioTrack.Builder()

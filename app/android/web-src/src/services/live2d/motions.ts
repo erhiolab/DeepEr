@@ -1,7 +1,7 @@
 import {live2dUrl} from "./config"
 import type {MotionGroup} from "./index"
 
-// entryBase 为入口文件基础名 (如 "Haru"), 对应 <entryBase>.model3.json
+
 const readModel3 = async (modelId: string, entryBase: string): Promise<any | null> => {
 	try {
 		const resp = await fetch(`${live2dUrl(`${modelId}/${entryBase}/${entryBase}.model3.json`)}`)

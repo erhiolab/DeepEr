@@ -60,13 +60,13 @@ const defaultConfig = (): ModelTouchConfig => ({
 
 const uid = () => `t-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
-// 每个模型的触摸配置独立存为一个 json 文件（与桌面端"随模型配置保存"一致，卸载重装不丢）
+
 const touchFile = (modelId: string): string =>
 	`touch_${String(modelId).replace(/[^A-Za-z0-9._-]/g, "_") || "model"}.json`
 
 export const loadTouchConfig = (modelId: string): ModelTouchConfig => {
 	try {
-		// 优先读模型独立文件；首次使用时把旧 localStorage 数据迁移到文件
+		
 		const rawFile = readFile(touchFile(modelId))
 		const raw = rawFile || localStorage.getItem(`l2d_touch_${modelId}`)
 		if (!raw) return defaultConfig()

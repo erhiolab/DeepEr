@@ -495,7 +495,7 @@ const surface = (content: string) => {
 		if (scene === "touch" && !cfg.tts.touch) return
 		const clean = text.replace(/^⚠/, "").trim()
 		if (!clean || clean.length > cfg.tts.maxLen) return
-		// 引擎未就绪时等待初始化完成再合成，保证"触摸也有配音"
+		
 		try { await ttsInit() } catch { }
 		if (!ttsReady()) return
 		const id = await ttsSynthesize(clean, emo ? voiceForTag(emo) : voiceForText(clean))
@@ -508,7 +508,7 @@ const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
 	const verb = pool[Math.floor(Math.random() * pool.length)]
 	const text = `用户 ${verb} Nori的 ${desc}`
 	if (!modelReady.value) { surface("请先在「设置」里配置 API Key 和模型"); return }
-	if (!chatOpen.value) showAiBubble("…") // 等待气泡：让用户知道已触发
+	if (!chatOpen.value) showAiBubble("…") 
 	const memory = readMemory()
 	const context: ChatMsg[] = [
 		{role: "system", content: PERSONA_PROMPT} as ChatMsg,
@@ -524,7 +524,7 @@ const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
 			const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
 			if (res.ok) {
 				console.log("[RAW]", res.content ?? "")
-				// 与聊天一致的分体式输出；每句"先合成、完成后文字与语音同步出现"
+				
 				const parts = splitReplies(res.content ?? "")
 				for (let i = 0; i < parts.length; i++) {
 					const {emo, text: rawPart} = parts[i]
@@ -772,9 +772,9 @@ const importModelZip = async () => {
 			window.__noriModelRes = (json) => {
 				try { finish(JSON.parse(json)) } catch { finish({ok: false, message: "返回解析失败"}) }
 			}
-			// 打开系统文件选择器（选择结果由原生侧回调 importPicked 后再回复 __noriModelRes）
+			
 			;(window.NoriBridge as unknown as {pickModel: () => void}).pickModel()
-			// 用户取消或长时间不选择时解除等待
+			
 			setTimeout(() => finish({ok: false, message: "已取消"}), 120000)
 		})
 		if (r.ok && r.entryBase) {
@@ -939,9 +939,9 @@ const storageReady = ref(false)
 
 const modelReady = computed(() => !!cfg.apiKey.trim() && !!cfg.model)
 
-// ===================== TTS 设置页 =====================
 
-// TTS 情绪类别 → 默认参考音色（与 assets/ref/refs.json 中的情绪对应）
+
+
 const VOICE_CATS: {key: string; label: string; def: string}[] = [
 	{key: "happy", label: "开心时用", def: "happy"},
 	{key: "angry", label: "生气时用", def: "angry"},
@@ -1080,7 +1080,7 @@ const extractCmds = (text: string): {text: string; cmds: string[]} => {
 	return {text: t, cmds}
 }
 
-// 从用户消息识别"设闹钟 X:XX"意图，供 AI 未输出 [cmd:alarm] 时兜底
+
 const detectAlarmFromUser = (t: string): string | null => {
 	if (!/闹钟|闹铃|定时|叫我/.test(t)) return null
 	const m = t.match(/(\d{1,2})[:：点](\d{1,2})?/)
@@ -1094,7 +1094,7 @@ const runAction = async (action: string): Promise<string | null> => {
 	const op = (sp[0] ?? "").toLowerCase()
 	const arg = sp.slice(1).join(" ")
 	if (op === "alarm") {
-		// 手机操作只弹确认气泡，不额外朗读/发消息
+		
 		const m = arg.match(/(\d{1,2})[:：点](\d{1,2})?/)
 		if (!m) { triggerBubble("闹钟时间没听懂"); return null }
 		const r = setAlarm(+m[1], +(m[2] ?? 0), arg.replace(m[0], "").trim())
@@ -1118,7 +1118,7 @@ const runAction = async (action: string): Promise<string | null> => {
 		} catch { triggerBubble("天气查询失败"); return null }
 	}
 	if (op === "search") {
-		// 上网查询：先试 DuckDuckGo 即时答案，没结果就交给模型回答
+		
 		const q = arg.trim()
 		if (!q) { triggerBubble("想查什么？"); return null }
 		try {
@@ -1197,7 +1197,7 @@ const send = async () => {
 				}
 			}
 
-			// 兜底：AI 忘了带 [cmd:alarm] 时，直接从用户消息里识别闹钟并设置
+			
 			const alarmCmd = detectAlarmFromUser(text)
 			if (alarmCmd && !alarmHandled) {
 				const extra = await runAction(alarmCmd)
@@ -1247,19 +1247,19 @@ for (const [k, label] of Object.entries(VOICE_LABELS)) REVERSE_LABELS[label] = k
 
 const escRe = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
-// 情绪别名：模型可能输出精简的情绪词（shy/surprised/sad/...），映射到实际音色 key
+
 const EMO_ALIAS: Record<string, string> = {
 	shy: "tsundere", surprised: "playful", sad: "wronged", speechless: "spitting",
 	serious: "thinking", happy: "happy", angry: "angry",
 }
 
-// 任意词 → 音色 key；识别不了返回 null
+
 const emoKey = (w: string): string | null => {
 	const k = w.toLowerCase()
 	return VOICE_KEYS.includes(k) ? k : (REVERSE_LABELS[w] ?? EMO_ALIAS[k] ?? null)
 }
 
-// 情绪词集合（长词优先，用于粘连识别）
+
 const EMO_WORDS = Object.keys(REVERSE_LABELS)
 	.concat(VOICE_KEYS)
 	.concat(Object.keys(EMO_ALIAS))
@@ -1267,7 +1267,7 @@ const EMO_WORDS = Object.keys(REVERSE_LABELS)
 
 const isSep = (c: string) => /[\s：:，,]/.test(c)
 
-// 在 s[i] 处探测"情绪词+分隔符"，命中返回 {key, 跳过长度}
+
 const peekEmo = (s: string, i: number): {key: string; len: number} | null => {
 	for (const w of EMO_WORDS) {
 		if (s.startsWith(w, i) && isSep(s[i + w.length] ?? "")) {
@@ -1278,12 +1278,12 @@ const peekEmo = (s: string, i: number): {key: string; len: number} | null => {
 	return null
 }
 
-// 把 AI 输出解析成 [{emo, text}]。
-// 规则：
-// 1. 换行即分段；行内粘连的多个情绪标签也分段（如 "回来啦care 设好了"）
-// 2. [xxx]/【xxx】：已知→记 emo 并剥除；未知→剥除不回显；[cmd:...] 原样保留
-// 3. 行首无括号情绪词（"happy 好哦" / "happy：好哦"）识别并剥除
-// 4. 其余文字原样保留（连空格都不改），确保 TTS 照输出版本读
+
+
+
+
+
+
 const parseReply = (reply: string): ReplyPart[] => {
 	const out: ReplyPart[] = []
 	let buf = ""
@@ -1300,7 +1300,7 @@ const parseReply = (reply: string): ReplyPart[] => {
 		let i = 0
 		while (i < s.length) {
 			const ch = s[i]
-			// 方括号/全角方括号标签
+			
 			if (ch === "[" || ch === "【" || ch === "(" || ch === "（") {
 				const close = ch === "[" ? "]" : ch === "【" ? "】" : ch === "(" ? ")" : "）"
 				const j = s.indexOf(close, i + 1)
@@ -1319,12 +1319,12 @@ const parseReply = (reply: string): ReplyPart[] => {
 							continue
 						}
 					}
-					// 方括号内的未知内容剥除；圆括号内的未知内容(如 (轻笑)) 保留为正文
+					
 					if (ch === "[" || ch === "【") { i = j + 1; continue }
 				}
 				buf += ch; i++; continue
 			}
-			// 段首无括号情绪词
+			
 			if (!buf.trim()) {
 				const pe = peekEmo(s, i)
 				if (pe && i === 0) {
@@ -1333,7 +1333,7 @@ const parseReply = (reply: string): ReplyPart[] => {
 					continue
 				}
 				if (pe !== null && i > 0) {
-					// 粘连在上一段之后（前段末尾为中文）
+					
 					flush()
 					emo = pe.key
 					i += pe.len
@@ -1507,7 +1507,7 @@ onMounted(async () => {
 	}
 	messages.value = loadChat()
 	if (window.NoriTTS) { void ttsInit() }
-	// 清洗旧聊天里残留的无括号情绪词（如 "happy 早上好"）
+	
 	let dirty = false
 	messages.value = messages.value.map((m) => {
 		if (m.role !== "assistant") return m
@@ -1523,7 +1523,7 @@ onMounted(async () => {
 		listError.value = ""
 		localStorage.setItem(MODEL_LIST_CACHE, JSON.stringify(modelList.value))
 	} catch (e: any) {
-		// 离线时回退到缓存/已装模型，仅封面图加载失败被隐藏，不阻断流程
+		
 		const cached = localStorage.getItem(MODEL_LIST_CACHE)
 		if (cached) {
 			try { modelList.value = JSON.parse(cached) } catch { }
