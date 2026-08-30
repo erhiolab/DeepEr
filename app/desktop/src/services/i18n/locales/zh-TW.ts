@@ -23,6 +23,7 @@ export default {
 			memory: "記憶",
 			scheduled: "定時",
 			tool: "工具",
+			mcp: "MCP",
 			exception: "異常",
 			about: "關於",
 			installed: "已安裝",

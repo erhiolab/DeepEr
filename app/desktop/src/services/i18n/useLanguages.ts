@@ -597,6 +597,7 @@ const buildSnapshot = () => {
 				scheduled: t("common.label.scheduled"),
 				memory: t("common.label.memory"),
 				tool: t("common.label.tool"),
+				mcp: t("common.label.mcp"),
 				exception: t("common.label.exception"),
 				about: t("common.label.about"),
 			},
