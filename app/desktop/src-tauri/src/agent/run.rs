@@ -340,6 +340,38 @@ fn interrupted_outcome(input: u64, output: u64, calls: u32, rounds: u32) -> Agen
 	}
 }
 
+/// 去掉文本里的 <tool_call>/<tool_result> 标签 (兜底: 最终回答不应残留协议标签)
+fn strip_tool_tags(text: &str) -> String {
+	let mut out = String::with_capacity(text.len());
+	let mut rest = text;
+	while let Some(start) = rest.find("<tool_call").or_else(|| rest.find("<tool_result")) {
+		out.push_str(&rest[..start]);
+		let tail = &rest[start..];
+		let Some(gt) = tail.find('>') else {
+			out.push_str(tail);
+			break;
+		};
+		let open = &tail[..=gt];
+		if open.trim_end().ends_with("/>") {
+			rest = &tail[gt + 1..];
+			continue;
+		}
+		let close_marker = if tail.starts_with("<tool_call") {
+			"</tool_call>"
+		} else {
+			"</tool_result>"
+		};
+		let after_open = &tail[gt + 1..];
+		if let Some(end_rel) = after_open.find(close_marker) {
+			rest = &after_open[end_rel + close_marker.len()..];
+		} else {
+			rest = after_open;
+		}
+	}
+	out.push_str(rest);
+	out.trim().to_string()
+}
+
 /// 更新类工具 (需要 AppHandle + 异步, 由 agent 循环专用路径执行, 不占 DB 锁)
 fn is_update_tool(name: &str) -> bool {
 	matches!(name, "app-check-update" | "app-update-apply")
@@ -828,7 +860,9 @@ async fn run_loop(
 			);
 		}
 		if calls.is_empty() {
-			record_assistant(&state, &text, Some(total_input), Some(total_output), hit_rate)?;
+			// 兜底: 最终回答不残留 <tool_call>/<tool_result> 标签
+			let final_text = strip_tool_tags(&text);
+			record_assistant(&state, &final_text, Some(total_input), Some(total_output), hit_rate)?;
 			// 回复完成 → 后台自动提炼记忆 (不阻塞回复)
 			let extract_app = app.clone();
 			tauri::async_runtime::spawn(async move {
@@ -843,7 +877,7 @@ async fn run_loop(
 			});
 			return Ok(AgentRunOutcome {
 				ok: true,
-				text: Some(text),
+				text: Some(final_text),
 				error: None,
 				input_tokens: Some(total_input),
 				output_tokens: Some(total_output),
