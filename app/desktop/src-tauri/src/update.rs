@@ -3,7 +3,7 @@
 //! 与前端 updater store 同一套 tauri-plugin-updater, 供 Agent 检查 / 更新应用.
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;
 
 /// 检查更新: 返回当前版本 / 最新版本 / 是否有更新 / 更新说明

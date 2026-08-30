@@ -106,6 +106,20 @@ CREATE TABLE IF NOT EXISTS summaries (
     status           TEXT NOT NULL DEFAULT 'active',
     created_at       INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    transport   TEXT NOT NULL DEFAULT 'sse',
+    command     TEXT NOT NULL DEFAULT '',
+    args        TEXT NOT NULL DEFAULT '[]',
+    url         TEXT NOT NULL DEFAULT '',
+    headers     TEXT NOT NULL DEFAULT '{}',
+    env         TEXT NOT NULL DEFAULT '{}',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
 ";
 
 /// 数据库文件名

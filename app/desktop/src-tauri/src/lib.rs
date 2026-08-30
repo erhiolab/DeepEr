@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod db;
 mod log;
+mod mcp;
 mod memory;
 mod resource;
 mod secret;
@@ -104,6 +105,12 @@ pub fn run() {
             commands::memory::memory_create,
             commands::memory::memory_update,
             commands::memory::memory_delete,
+
+            commands::mcp::mcp_list,
+            commands::mcp::mcp_create,
+            commands::mcp::mcp_update,
+            commands::mcp::mcp_delete,
+            commands::mcp::mcp_set_enabled,
 
             commands::summary::summary_list,
             commands::summary::summary_create,
