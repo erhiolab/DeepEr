@@ -56,6 +56,15 @@ const parseToolCallNames = (text: string): string[] => {
 	return NAMES
 }
 
+// 去掉 <tool_call ...> / <tool_result ...> 标签, 还原 AI 的中间思考文本
+const stripToolTags = (text: string): string => {
+	return text
+		.replace(/<tool_call\b[^>]*>[\s\S]*?<\/tool_call>/g, "")
+		.replace(/<tool_result\b[^>]*>[\s\S]*?<\/tool_result>/g, "")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim()
+}
+
 // 从工具结果留痕 (type=tool, role=user) 中解析 调用名 → 是否成功
 const parseToolResultStatus = (text: string): Record<string, boolean> => {
 	const STATUS: Record<string, boolean> = {}
@@ -182,6 +191,22 @@ export const useConversationStore = defineStore("conversation", () => {
 		return MSG
 	}
 
+	/**
+	 * 在指定消息之前插入左侧 (AI) 消息 (用于多轮循环中的中间思考文本)
+	 */
+	const pushLeftBefore = (anchorId: number, text: string): ChatMessage => {
+		const MSG = reactive<ChatMessage>({id: nextId++, side: "left", text, createdAt: Date.now()}) as ChatMessage
+		const INDEX = HISTORY.value.findIndex(item => item.id === anchorId)
+		if (INDEX === -1) {
+			HISTORY.value = [...HISTORY.value, MSG]
+		} else {
+			const NEXT = [...HISTORY.value]
+			NEXT.splice(INDEX, 0, MSG)
+			HISTORY.value = NEXT
+		}
+		return MSG
+	}
+
 	// 播放一段已合成的音频
 	const playAudioAsset = (audioAssetPath: string): Promise<void> =>
 		new Promise<void>((resolve) => {
@@ -230,6 +255,9 @@ export const useConversationStore = defineStore("conversation", () => {
 						? CHAT.toolResultSuccess
 						: `${CHAT.toolResultFailed}${REASON}`
 					pushCenterBefore(MSG.id, CHAT.toolCall(name, RESULT_LABEL))
+				}, (text) => {
+					// 中间思考文本: 以独立 AI 气泡显示在最终回答气泡上方
+					if (text.trim()) pushLeftBefore(MSG.id, text.trim())
 				})
 			MSG.isStreaming = false
 			setTyping(false)
@@ -372,6 +400,15 @@ export const useConversationStore = defineStore("conversation", () => {
 				})
 			} else if (record.type === "tool") {
 				if (record.role === "assistant") {
+					// 中间思考文本还原成左侧气泡 (去掉 <tool_call>/<tool_result> 标签)
+					const THOUGHT = stripToolTags(record.content)
+					if (THOUGHT) {
+						ITEMS.push({
+							side: "left" as ChatSide,
+							text: THOUGHT,
+							createdAt: record.createdAt * 1000,
+						})
+					}
 					// 本轮调用列表 (结果行紧随其后)
 					pendingCalls = parseToolCallNames(record.content).map(name => ({
 						name,

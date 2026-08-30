@@ -40,6 +40,10 @@ const SUMMARY_MIN_TALKS: usize = 80;
 const SUMMARY_KEEP_RECENT: usize = 30;
 /// 工具调用事件名 (前端按 requestId 匹配)
 const TOOL_EVENT: &str = "agent-tool-call";
+/// 中间思考文本事件名 (多轮循环中每轮助手文本, 前端插到回复气泡上方)
+const ASSISTANT_TEXT_EVENT: &str = "agent-assistant-text";
+/// 单轮 LLM 生成超时 (秒): 防止网络卡死导致 Agent 无限等待
+const ROUND_TIMEOUT_SECS: u64 = 180;
 
 /// 当前启用的 LLM 平台
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -702,7 +706,27 @@ async fn run_loop(
 	let mut previous_calls: Vec<String> = Vec::new();
 
 	for round in 1..=MAX_ROUNDS {
-		let outcome = generate_round(platform, app.clone(), state.clone(), messages.clone()).await?;
+		let outcome = match tokio::time::timeout(
+			std::time::Duration::from_secs(ROUND_TIMEOUT_SECS),
+			generate_round(platform, app.clone(), state.clone(), messages.clone()),
+		)
+		.await
+		{
+			Ok(result) => result?,
+			Err(_) => {
+				let error_text = format!("第 {round} 轮生成超时 ({ROUND_TIMEOUT_SECS} 秒), 已停止");
+				record_assistant(&state, &error_text, Some(total_input), Some(total_output), hit_rate)?;
+				return Ok(AgentRunOutcome {
+					ok: false,
+					text: None,
+					error: Some(error_text),
+					input_tokens: Some(total_input),
+					output_tokens: Some(total_output),
+					rounds: round as u32,
+					calls: total_calls,
+				});
+			}
+		};
 		total_input += outcome.input_tokens.unwrap_or(0);
 		total_output += outcome.output_tokens.unwrap_or(0);
 
@@ -734,6 +758,16 @@ async fn run_loop(
 			),
 		);
 		let calls = parser::parse_tool_calls(&text);
+		// 中间思考文本推给前端展示 (最终回答由返回值填充, 不重复推送)
+		if !calls.is_empty() {
+			let _ = app.emit(
+				ASSISTANT_TEXT_EVENT,
+				json!({
+					"requestId": request_id,
+					"text": text,
+				}),
+			);
+		}
 		if calls.is_empty() {
 			record_assistant(&state, &text, Some(total_input), Some(total_output), hit_rate)?;
 			// 回复完成 → 后台自动提炼记忆 (不阻塞回复)

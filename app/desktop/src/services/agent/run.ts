@@ -34,10 +34,12 @@ export interface AgentUserMessage {
  *
  * @param options    用户消息列表; 上下文由 Rust 侧从 contexts 表构造
  * @param onToolCall 每次工具调用完成后回调 (供 UI 展示执行过程)
+ * @param onAssistantText 每轮中间思考文本回调 (供 UI 展示 AI 找到工具前的思考过程)
  */
 export const runAgent = async (
 	options: {messages: AgentUserMessage[]},
 	onToolCall?: (name: string, ok: boolean, output?: string) => void,
+	onAssistantText?: (text: string) => void,
 ): Promise<AgentRunResult> => {
 	const REQUEST_ID =
 		(typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
@@ -46,6 +48,11 @@ export const runAgent = async (
 	const UNSUB = await listen<{requestId: string, name: string, ok: boolean, output?: string}>("agent-tool-call", event => {
 		if (event.payload.requestId === REQUEST_ID) {
 			onToolCall?.(event.payload.name, event.payload.ok, event.payload.output)
+		}
+	})
+	const TEXT_UNSUB = await listen<{requestId: string, text: string}>("agent-assistant-text", event => {
+		if (event.payload.requestId === REQUEST_ID) {
+			onAssistantText?.(event.payload.text)
 		}
 	})
 	try {
@@ -61,5 +68,6 @@ export const runAgent = async (
 		return {ok: false, error: REASON, rounds: 0, calls: 0}
 	} finally {
 		UNSUB()
+		TEXT_UNSUB()
 	}
 }
