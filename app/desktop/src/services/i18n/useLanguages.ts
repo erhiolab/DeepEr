@@ -416,6 +416,7 @@ const buildSnapshot = () => {
 					online: t("components.main.talk.online"),
 					typing: t("components.main.talk.typing"),
 					interrupt: t("components.main.talk.interrupt"),
+					reinsertAgentPrompt: t("components.main.talk.reinsertAgentPrompt"),
 					inputPlaceholder: t("components.main.talk.inputPlaceholder"),
 					more: t("components.main.talk.more"),
 				},
@@ -561,6 +562,8 @@ const buildSnapshot = () => {
 					toolResultSuccess: t("components.main.chat.toolResultSuccess"),
 					toolResultFailed: t("components.main.chat.toolResultFailed"),
 					toolResultRunning: t("components.main.chat.toolResultRunning"),
+					agentPromptReinserted: t("components.main.chat.agentPromptReinserted"),
+					agentPromptReminder: t("components.main.chat.agentPromptReminder"),
 					scheduleTrigger: (title: string, content: string) => t("components.main.chat.scheduleTrigger", {
 						title,
 						content

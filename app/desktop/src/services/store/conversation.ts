@@ -361,6 +361,24 @@ export const useConversationStore = defineStore("conversation", () => {
 	}
 
 	/**
+	 * 重新插入 Agent 系统提示词 (强制提醒 Agent): 写入 contexts (type=agent_prompt),
+	 * 后端构建上下文时把它展开为完整的 Agent 提示词 (工具协议/规则) 并注入;
+	 * 聊天里显示一条中间状态, 并立即提醒 AI 重新阅读遵守.
+	 */
+	const reinsertAgentPrompt = async (): Promise<void> => {
+		const CHAT = useLanguages().components.main.chat
+		await contextInsert({
+			type: "agent_prompt",
+			role: "system",
+			content: "",
+			tokenCount: 1,
+		})
+		pushCenter(CHAT.agentPromptReinserted)
+		pendingQueue.push({content: CHAT.agentPromptReminder, kind: "touch"})
+		drainQueue()
+	}
+
+	/**
 	 * 设置人设后触发首轮互动:
 	 * - 有开场白: 直接作为 AI 首条消息 (不消耗 LLM)
 	 * - 无开场白: 发起一次 LLM 请求生成问候
@@ -411,11 +429,14 @@ export const useConversationStore = defineStore("conversation", () => {
 		let pendingCalls: {name: string, createdAt: number}[] = []
 
 		for (const record of ORDERED) {
-			if (record.type === "talk" || record.type === "touch" || record.type === "schedule") {
-				if (!record.role || !record.content.trim()) continue
+			if (record.type === "talk" || record.type === "touch" || record.type === "schedule" || record.type === "agent_prompt") {
+				// agent_prompt 记录内容为空 (仅作标记), 其余类型要求有内容
+				if (record.type !== "agent_prompt" && (!record.role || !record.content.trim())) continue
+				const IS_STATE = record.type === "touch" || record.type === "schedule" || record.type === "agent_prompt"
+				const CHAT = useLanguages().components.main.chat
 				ITEMS.push({
-					side: (record.type === "touch" || record.type === "schedule") ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
-					text: record.content,
+					side: IS_STATE ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
+					text: record.type === "agent_prompt" ? CHAT.agentPromptReinserted : record.content,
 					createdAt: record.createdAt * 1000,
 				})
 			} else if (record.type === "tool") {
@@ -495,6 +516,7 @@ export const useConversationStore = defineStore("conversation", () => {
 		sendMessage,
 		sendTouch,
 		sendScheduled,
+		reinsertAgentPrompt,
 		startPersona,
 		loadHistory,
 		setTyping,

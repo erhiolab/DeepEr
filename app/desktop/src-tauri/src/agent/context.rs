@@ -118,6 +118,23 @@ pub fn build(conn: &Connection, budget: u64) -> Result<(Vec<LlmMessage>, f64), S
 		);
 	}
 
+	// 用户手动重新插入的 Agent 系统提示词 (type=agent_prompt): 只取最新一条,
+	// 在构建时展开为后端当前的完整提示词 (工具协议/规则), 放在人设之后、对话之前.
+	// 展开内容以 AGENT_PROTOCOL_MARKER 开头, 后续协议注入会幂等跳过, 不会重复.
+	if rows.iter().any(|row| row.kind == "agent_prompt") {
+		let content = crate::agent::prompt::build_system_prompt(conn)?;
+		let prompt_cost = estimate_tokens(&content);
+		used += prompt_cost;
+		total += prompt_cost;
+		messages.insert(
+			persons.len(),
+			LlmMessage {
+				role: "system".to_string(),
+				content,
+			},
+		);
+	}
+
 	// 历史摘要注入: 预算截断丢掉了更早的历史, 且存在覆盖更早范围的摘要时,
 	// 在人设之后注入一段压缩摘要 (替代被截断的原始历史)
 	if truncated {
