@@ -25,10 +25,10 @@ const onDocClick = (event: MouseEvent) => {
 	if (EL && !EL.contains(event.target as Node)) moreOpen.value = false
 }
 
-// 重新插入 Agent 系统提示词 (后端展开为完整提示词注入)
-const reinsertAgentPrompt = (): void => {
+// 重新应用人设: 重写入设 + 重插系统提示词 + 重发开场白
+const reapplyPersona = (): void => {
 	moreOpen.value = false
-	void CONV.reinsertAgentPrompt()
+	void CONV.reapplyPersona()
 }
 
 // 当前启用的人设 (有选中人设时, 对话对象显示为人设)
@@ -199,7 +199,7 @@ watch(() => L2D.currentModel, (model) => {
 				</button>
 				<Transition name="dropdown">
 					<div v-if="moreOpen" class="more-menu">
-						<button class="more-item" @click="reinsertAgentPrompt">
+						<button class="more-item" @click="reapplyPersona">
 							<Icon name="page" :size="14"/>
 							{{ I18N.reinsertAgentPrompt }}
 						</button>

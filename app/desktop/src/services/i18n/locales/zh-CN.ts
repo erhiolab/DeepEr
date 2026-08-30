@@ -539,6 +539,8 @@ export default {
 				scheduleTrigger: "⏰ 定时任务「{title}」\n{content}",
 				agentPromptReinserted: "已重新插入系统提示词",
 				agentPromptReminder: "（用户重新插入了 Agent 系统提示词，请重新阅读并严格遵守）",
+				personaReapplied: "已重新应用人设（人设 + 系统提示词）",
+				personaReapplyFailed: "重新应用人设失败",
 				generateFailed: "生成失败",
 				unknownReason: "未知原因",
 			},

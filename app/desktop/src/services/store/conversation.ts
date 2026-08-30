@@ -18,7 +18,7 @@ import {contextInsert, contextList, estimateTokens} from "../context"
 import {logger} from "../logger"
 import {maybeNotifyAiReply} from "../chatNotify"
 import useLanguages from "../i18n/useLanguages"
-import type {Persona} from "../persona"
+import {getPersona, getSelectedPersonaId, selectPersona, type Persona} from "../persona"
 
 /**
  * 对话消息方向
@@ -361,21 +361,37 @@ export const useConversationStore = defineStore("conversation", () => {
 	}
 
 	/**
-	 * 重新插入 Agent 系统提示词 (强制提醒 Agent): 写入 contexts (type=agent_prompt),
-	 * 后端构建上下文时把它展开为完整的 Agent 提示词 (工具协议/规则) 并注入;
-	 * 聊天里显示一条中间状态, 并立即提醒 AI 重新阅读遵守.
+	 * 重新应用人设 (等同切换/应用人设): 重写入设上下文 (type=person) + 重新插入
+	 * Agent 系统提示词标记 (type=agent_prompt, 后端构建时展开为完整提示词),
+	 * 然后重发开场白 (有开场白直接显示, 无则让 AI 生成问候).
 	 */
-	const reinsertAgentPrompt = async (): Promise<void> => {
+	const reapplyPersona = async (): Promise<void> => {
 		const CHAT = useLanguages().components.main.chat
+		const ID = await getSelectedPersonaId()
+		const PERSONA = ID === null ? null : await getPersona(ID)
+		// 1. 重写入设上下文 (后端 persona_select 会清掉旧人设再写当前人设)
+		if (PERSONA) {
+			const OK = await selectPersona(PERSONA.id)
+			if (!OK) {
+				pushCenter(CHAT.personaReapplyFailed)
+				return
+			}
+		}
+		// 2. 重新插入 Agent 系统提示词标记 (content 区分来源, 历史回显用)
 		await contextInsert({
 			type: "agent_prompt",
 			role: "system",
-			content: "",
+			content: PERSONA ? "persona" : "agent",
 			tokenCount: 1,
 		})
-		pushCenter(CHAT.agentPromptReinserted)
-		pendingQueue.push({content: CHAT.agentPromptReminder, kind: "touch"})
-		drainQueue()
+		pushCenter(PERSONA ? CHAT.personaReapplied : CHAT.agentPromptReinserted)
+		// 3. 重发开场白 (无人设时退回为提醒 AI 确认遵守)
+		if (PERSONA) {
+			await startPersona(PERSONA)
+		} else {
+			pendingQueue.push({content: CHAT.agentPromptReminder, kind: "touch"})
+			drainQueue()
+		}
 	}
 
 	/**
@@ -436,7 +452,9 @@ export const useConversationStore = defineStore("conversation", () => {
 				const CHAT = useLanguages().components.main.chat
 				ITEMS.push({
 					side: IS_STATE ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
-					text: record.type === "agent_prompt" ? CHAT.agentPromptReinserted : record.content,
+					text: record.type === "agent_prompt"
+						? (record.content === "persona" ? CHAT.personaReapplied : CHAT.agentPromptReinserted)
+						: record.content,
 					createdAt: record.createdAt * 1000,
 				})
 			} else if (record.type === "tool") {
@@ -516,7 +534,7 @@ export const useConversationStore = defineStore("conversation", () => {
 		sendMessage,
 		sendTouch,
 		sendScheduled,
-		reinsertAgentPrompt,
+		reapplyPersona,
 		startPersona,
 		loadHistory,
 		setTyping,

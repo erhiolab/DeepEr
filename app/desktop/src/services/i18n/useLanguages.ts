@@ -564,6 +564,8 @@ const buildSnapshot = () => {
 					toolResultRunning: t("components.main.chat.toolResultRunning"),
 					agentPromptReinserted: t("components.main.chat.agentPromptReinserted"),
 					agentPromptReminder: t("components.main.chat.agentPromptReminder"),
+					personaReapplied: t("components.main.chat.personaReapplied"),
+					personaReapplyFailed: t("components.main.chat.personaReapplyFailed"),
 					scheduleTrigger: (title: string, content: string) => t("components.main.chat.scheduleTrigger", {
 						title,
 						content
