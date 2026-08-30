@@ -433,6 +433,7 @@ export default {
 				once: "一次性",
 				enabled: "已启用",
 				disabled: "已停用",
+				toolCount: "{count} 个工具",
 				edit: "编辑",
 				delete: "删除",
 				deleteConfirmTitle: "删除定时任务",

@@ -21,6 +21,7 @@ export interface McpServerRecord {
 	headers: Record<string, string>
 	env: Record<string, string>
 	enabled: boolean
+	toolCount: number
 	createdAt: number
 	updatedAt: number
 }

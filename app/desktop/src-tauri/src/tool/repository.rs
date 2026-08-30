@@ -289,6 +289,17 @@ pub fn delete_mcp_tools_by_server(conn: &Connection, server_id: i64) -> Result<u
 	.map_err(|e| format!("清理 MCP 工具失败: {e}"))
 }
 
+/// 统计某 MCP 服务器已同步的工具数量
+pub fn count_mcp_tools_by_server(conn: &Connection, server_id: i64) -> Result<usize, String> {
+	conn.query_row(
+		"SELECT COUNT(*) FROM tools WHERE provider = 'mcp' AND json_extract(config, '$.serverId') = ?1",
+		params![server_id],
+		|row| row.get::<_, i64>(0),
+	)
+	.map(|count| count as usize)
+	.map_err(|e| format!("统计 MCP 工具数量失败: {e}"))
+}
+
 /// 获取全部工具 (按调用名排序)
 pub fn list(conn: &Connection) -> Result<Vec<ToolDefinition>, String> {
 	query_all(conn, &format!("SELECT {TOOL_COLUMNS} FROM tools ORDER BY name ASC"))

@@ -377,6 +377,7 @@ onBeforeUnmount(() => {
 								{{ server.command }} {{server.args.join(" ") }}
 							</span>
 							<span v-else>{{ server.url }}</span>
+							<span class="mcp-tool-count">{{ I18N.toolCount(server.toolCount) }}</span>
 						</div>
 					</div>
 				</div>
@@ -678,12 +679,27 @@ onBeforeUnmount(() => {
 	}
 
 	.mcp-endpoint {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
 		font-size: 1rem;
 		color: var(--text-faint);
 		font-family: "Fira Code", "Cascadia Code", monospace;
 		overflow: hidden;
+	}
+
+	.mcp-endpoint > span:first-child {
+		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		min-width: 0;
+	}
+
+	.mcp-tool-count {
+		margin-left: auto;
+		flex-shrink: 0;
+		font-family: var(--font-family, inherit);
+		color: var(--text-body);
 	}
 }
 

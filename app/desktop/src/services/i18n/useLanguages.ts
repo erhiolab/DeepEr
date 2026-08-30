@@ -592,6 +592,7 @@ const buildSnapshot = () => {
 					env: t("components.main.mcp.env"),
 					enabled: t("components.main.mcp.enabled"),
 					disabled: t("components.main.mcp.disabled"),
+					toolCount: (count: number) => t("components.main.mcp.toolCount", {count}),
 					edit: t("components.main.mcp.edit"),
 					delete: t("components.main.mcp.delete"),
 					deleteConfirmTitle: t("components.main.mcp.deleteConfirmTitle"),

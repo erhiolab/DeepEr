@@ -7,6 +7,16 @@ use crate::db;
 use crate::log::{self, LogSource};
 use crate::mcp::model::{McpServerInput, McpServerRecord};
 use crate::mcp::repository;
+use crate::tool::repository as tool_repository;
+
+/// MCP 服务器 + 已同步工具数量 (前端列表展示用)
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerWithTools {
+	#[serde(flatten)]
+	pub server: McpServerRecord,
+	pub tool_count: usize,
+}
 
 fn now() -> i64 {
 	std::time::SystemTime::now()
@@ -69,12 +79,19 @@ fn schedule_disable(app: &AppHandle, id: i64) {
 /// 全部 MCP 服务器
 /// invoke("mcp_list")
 #[tauri::command]
-pub fn mcp_list(state: tauri::State<'_, db::Db>) -> Result<Vec<McpServerRecord>, String> {
+pub fn mcp_list(state: tauri::State<'_, db::Db>) -> Result<Vec<McpServerWithTools>, String> {
 	let conn = state
 		.0
 		.lock()
 		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
-	repository::list(&conn)
+	let servers = repository::list(&conn)?;
+	servers
+		.into_iter()
+		.map(|server| {
+			let tool_count = tool_repository::count_mcp_tools_by_server(&conn, server.id)?;
+			Ok(McpServerWithTools { server, tool_count })
+		})
+		.collect()
 }
 
 /// 添加 MCP 服务器 (创建后自动同步工具)
@@ -84,7 +101,7 @@ pub fn mcp_create(
 	app: AppHandle,
 	state: tauri::State<'_, db::Db>,
 	args: McpServerInput,
-) -> Result<McpServerRecord, String> {
+) -> Result<McpServerWithTools, String> {
 	let input = normalize(&args)?;
 	let server = {
 		let conn = state
@@ -97,7 +114,7 @@ pub fn mcp_create(
 	if server.enabled {
 		schedule_sync(&app, server.id);
 	}
-	Ok(server)
+	Ok(McpServerWithTools { server, tool_count: 0 })
 }
 
 /// 配置 MCP 服务器 (更新后自动重新同步)
@@ -108,7 +125,7 @@ pub fn mcp_update(
 	state: tauri::State<'_, db::Db>,
 	id: i64,
 	args: McpServerInput,
-) -> Result<McpServerRecord, String> {
+) -> Result<McpServerWithTools, String> {
 	let input = normalize(&args)?;
 	let server = {
 		let conn = state
@@ -123,7 +140,12 @@ pub fn mcp_update(
 	} else {
 		schedule_disable(&app, id);
 	}
-	Ok(server)
+	let conn = state
+		.0
+		.lock()
+		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+	let tool_count = tool_repository::count_mcp_tools_by_server(&conn, id)?;
+	Ok(McpServerWithTools { server, tool_count })
 }
 
 /// 删除 MCP 服务器 (清理其同步工具并断开连接)
