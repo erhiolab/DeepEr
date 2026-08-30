@@ -391,6 +391,7 @@ export default {
 			talk: {
 				online: "在線",
 				typing: "對方正在輸入...",
+				interrupt: "中斷執行",
 				inputPlaceholder: "輸入訊息…",
 				more: "更多",
 			},

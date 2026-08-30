@@ -12,6 +12,7 @@
  */
 import {computed, reactive, ref} from "vue"
 import {defineStore} from "pinia"
+import {invoke} from "@tauri-apps/api/core"
 import {assetUrl} from "../asset"
 import {contextInsert, contextList, estimateTokens} from "../context"
 import {logger} from "../logger"
@@ -243,6 +244,13 @@ export const useConversationStore = defineStore("conversation", () => {
 		const MSG = push("left", "")
 		MSG.isStreaming = true
 		setTyping(true)
+		// onDone 只允许触发一次 (防止异常路径重复放行队列导致并发请求)
+		let finished = false
+		const finish = () => {
+			if (finished) return
+			finished = true
+			onDone?.()
+		}
 		void (async () => {
 			try {
 				// 动态导入避免循环依赖
@@ -257,7 +265,8 @@ export const useConversationStore = defineStore("conversation", () => {
 					pushCenterBefore(MSG.id, CHAT.toolCall(name, RESULT_LABEL))
 				}, (text) => {
 					// 中间思考文本: 以独立 AI 气泡显示在最终回答气泡上方
-					if (text.trim()) pushLeftBefore(MSG.id, text.trim())
+					const CLEAN = stripToolTags(text)
+					if (CLEAN) pushLeftBefore(MSG.id, CLEAN)
 				})
 			MSG.isStreaming = false
 			setTyping(false)
@@ -270,15 +279,26 @@ export const useConversationStore = defineStore("conversation", () => {
 			} else {
 				MSG.text = RESULT.error || useLanguages().components.main.chat.generateFailed
 			}
-			onDone?.()
+			finish()
 			} catch (err) {
 				await logger.error("conversation LLM 请求异常", err)
 				MSG.isStreaming = false
 				setTyping(false)
 				MSG.text = String(err)
-				onDone?.()
+				finish()
 			}
 		})()
+	}
+
+	/**
+	 * 中断当前 AI 执行 (兜底: Agent 卡死时由聊天界面「中断执行」按钮调用)
+	 */
+	const interrupt = async (): Promise<void> => {
+		try {
+			await invoke("agent_cancel")
+		} catch (error) {
+			await logger.error("[conversation] 中断 Agent 执行失败", error)
+		}
 	}
 
 	// 排队消息 (AI 忙时先入队, 回复结束后一次性批量发送)
@@ -467,6 +487,8 @@ export const useConversationStore = defineStore("conversation", () => {
 		history: HISTORY,
 		// 对方是否正在输入/加载
 		isTyping,
+		// 中断当前 AI 执行
+		interrupt,
 		// 聊天界面消息
 		chatItems,
 		// 方法

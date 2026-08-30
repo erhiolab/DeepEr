@@ -415,6 +415,7 @@ const buildSnapshot = () => {
 				talk: {
 					online: t("components.main.talk.online"),
 					typing: t("components.main.talk.typing"),
+					interrupt: t("components.main.talk.interrupt"),
 					inputPlaceholder: t("components.main.talk.inputPlaceholder"),
 					more: t("components.main.talk.more"),
 				},

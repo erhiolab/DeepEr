@@ -128,6 +128,7 @@ pub fn run() {
             commands::tools::tool_search,
             commands::tool::tool_execute,
             commands::agent::agent_run,
+            commands::agent::agent_cancel,
 
             commands::tasks::task_list,
             commands::tasks::task_create,

@@ -169,6 +169,9 @@ watch(() => L2D.currentModel, (model) => {
 					<h2 class="peer-name">{{ peerName }}</h2>
 					<p class="peer-state" :class="{typing: CONV.isTyping}">
 						{{ CONV.isTyping ? I18N.typing : I18N.online }}
+						<button v-if="CONV.isTyping" class="interrupt-btn" @click="CONV.interrupt()">
+							{{ I18N.interrupt }}
+						</button>
 					</p>
 				</div>
 			</div>
@@ -286,9 +289,27 @@ watch(() => L2D.currentModel, (model) => {
 		font-size: 1.05rem;
 		color: var(--text-muted);
 		transition: color 0.2s ease;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
 
 		&.typing {
 			color: var(--deep-teal-bright);
+		}
+
+		.interrupt-btn {
+			padding: 0.15rem 0.7rem;
+			border: 0.1rem solid rgba(255, 107, 107, 0.45);
+			border-radius: 99rem;
+			background: rgba(255, 107, 107, 0.08);
+			color: var(--danger, #ff6b6b);
+			font-size: 1rem;
+			cursor: pointer;
+			transition: all 0.2s ease;
+
+			&:hover {
+				background: rgba(255, 107, 107, 0.18);
+			}
 		}
 	}
 

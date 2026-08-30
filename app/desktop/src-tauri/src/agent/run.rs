@@ -7,6 +7,7 @@
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agent::context::{self, estimate_tokens, CONTEXT_TOKEN_BUDGET};
@@ -44,6 +45,38 @@ const TOOL_EVENT: &str = "agent-tool-call";
 const ASSISTANT_TEXT_EVENT: &str = "agent-assistant-text";
 /// 单轮 LLM 生成超时 (秒): 防止网络卡死导致 Agent 无限等待
 const ROUND_TIMEOUT_SECS: u64 = 180;
+/// 中断时返回给前端的文案
+const INTERRUPT_TEXT: &str = "执行已中断";
+
+/// Agent 取消信号 (watch channel): 前端点「中断执行」时置 true, run_agent 开始时复位
+fn agent_cancel_tx() -> &'static tokio::sync::watch::Sender<bool> {
+	static CANCEL: OnceLock<tokio::sync::watch::Sender<bool>> = OnceLock::new();
+	CANCEL.get_or_init(|| tokio::sync::watch::channel(false).0)
+}
+
+/// 是否已请求中断 (同步检查, 用于工具执行前/轮次间)
+fn is_agent_cancelled() -> bool {
+	*agent_cancel_tx().subscribe().borrow()
+}
+
+/// 等待中断信号 (返回 true 表示已请求中断; 用于与 LLM/工具异步执行赛跑)
+async fn wait_agent_cancel() -> bool {
+	let mut rx = agent_cancel_tx().subscribe();
+	if *rx.borrow() {
+		return true;
+	}
+	while rx.changed().await.is_ok() {
+		if *rx.borrow() {
+			return true;
+		}
+	}
+	false
+}
+
+/// 请求中断当前 Agent 执行 (由 agent_cancel 命令调用)
+pub fn request_cancel() {
+	let _ = agent_cancel_tx().send(true);
+}
 
 /// 当前启用的 LLM 平台
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -292,6 +325,19 @@ fn now_secs() -> i64 {
 		.duration_since(std::time::UNIX_EPOCH)
 		.map(|d| d.as_secs() as i64)
 		.unwrap_or(0)
+}
+
+/// 中断结果 (统一文案与字段)
+fn interrupted_outcome(input: u64, output: u64, calls: u32, rounds: u32) -> AgentRunOutcome {
+	AgentRunOutcome {
+		ok: false,
+		text: None,
+		error: Some(INTERRUPT_TEXT.to_string()),
+		input_tokens: Some(input),
+		output_tokens: Some(output),
+		rounds,
+		calls,
+	}
 }
 
 /// 更新类工具 (需要 AppHandle + 异步, 由 agent 循环专用路径执行, 不占 DB 锁)
@@ -649,6 +695,8 @@ pub async fn run_agent(
 	state: tauri::State<'_, db::Db>,
 	args: AgentRunArgs,
 ) -> Result<AgentRunOutcome, String> {
+	// 新一次执行开始时复位取消信号
+	let _ = agent_cancel_tx().send(false);
 	let platform = active_platform(&state)?;
 	let request_id = args.request_id.clone().unwrap_or_default();
 
@@ -706,25 +754,36 @@ async fn run_loop(
 	let mut previous_calls: Vec<String> = Vec::new();
 
 	for round in 1..=MAX_ROUNDS {
-		let outcome = match tokio::time::timeout(
-			std::time::Duration::from_secs(ROUND_TIMEOUT_SECS),
-			generate_round(platform, app.clone(), state.clone(), messages.clone()),
-		)
-		.await
-		{
-			Ok(result) => result?,
-			Err(_) => {
-				let error_text = format!("第 {round} 轮生成超时 ({ROUND_TIMEOUT_SECS} 秒), 已停止");
-				record_assistant(&state, &error_text, Some(total_input), Some(total_output), hit_rate)?;
-				return Ok(AgentRunOutcome {
-					ok: false,
-					text: None,
-					error: Some(error_text),
-					input_tokens: Some(total_input),
-					output_tokens: Some(total_output),
-					rounds: round as u32,
-					calls: total_calls,
-				});
+		// 轮次开始前检查是否被中断
+		if is_agent_cancelled() {
+			record_assistant(&state, INTERRUPT_TEXT, Some(total_input), Some(total_output), hit_rate)?;
+			return Ok(interrupted_outcome(total_input, total_output, total_calls, round as u32));
+		}
+		let outcome = tokio::select! {
+			_ = wait_agent_cancel() => {
+				record_assistant(&state, INTERRUPT_TEXT, Some(total_input), Some(total_output), hit_rate)?;
+				return Ok(interrupted_outcome(total_input, total_output, total_calls, round as u32));
+			}
+			result = tokio::time::timeout(
+				std::time::Duration::from_secs(ROUND_TIMEOUT_SECS),
+				generate_round(platform, app.clone(), state.clone(), messages.clone()),
+			) => {
+				match result {
+					Ok(result) => result?,
+					Err(_) => {
+						let error_text = format!("第 {round} 轮生成超时 ({ROUND_TIMEOUT_SECS} 秒), 已停止");
+						record_assistant(&state, &error_text, Some(total_input), Some(total_output), hit_rate)?;
+						return Ok(AgentRunOutcome {
+							ok: false,
+							text: None,
+							error: Some(error_text),
+							input_tokens: Some(total_input),
+							output_tokens: Some(total_output),
+							rounds: round as u32,
+							calls: total_calls,
+						});
+					}
+				}
 			}
 		};
 		total_input += outcome.input_tokens.unwrap_or(0);
@@ -801,19 +860,33 @@ async fn run_loop(
 			.iter()
 			.map(|call| format!("{}::{}", call.name, call.args))
 			.collect();
+		let mut interrupted = false;
 		for (index, call) in calls.iter().enumerate() {
+			// 中断检查: 已请求中断则不再执行剩余工具
+			if is_agent_cancelled() {
+				interrupted = true;
+				break;
+			}
 			let execution = if is_update_tool(&call.name) {
-				match execute_update_tool(&app, &call.name, call.args.clone()).await {
-					Ok(value) => ExecResult {
-						name: call.name.clone(),
-						ok: true,
-						output: value.to_string(),
-					},
-					Err(err) => ExecResult {
-						name: call.name.clone(),
-						ok: false,
-						output: err,
-					},
+				tokio::select! {
+					_ = wait_agent_cancel() => {
+						interrupted = true;
+						ExecResult { name: call.name.clone(), ok: false, output: INTERRUPT_TEXT.to_string() }
+					}
+					result = execute_update_tool(&app, &call.name, call.args.clone()) => {
+						match result {
+							Ok(value) => ExecResult {
+								name: call.name.clone(),
+								ok: true,
+								output: value.to_string(),
+							},
+							Err(err) => ExecResult {
+								name: call.name.clone(),
+								ok: false,
+								output: err,
+							},
+						}
+					}
 				}
 			} else {
 				// MCP 工具走异步专用路径 (连接外部服务器, 不占 DB 锁)
@@ -827,17 +900,25 @@ async fn run_loop(
 						.unwrap_or(None)
 				};
 				if provider.as_deref() == Some("mcp") {
-					match crate::mcp::runtime::execute_tool(&app, &call.name, call.args.clone()).await {
-						Ok(value) => ExecResult {
-							name: call.name.clone(),
-							ok: true,
-							output: value.to_string(),
-						},
-						Err(err) => ExecResult {
-							name: call.name.clone(),
-							ok: false,
-							output: err,
-						},
+					tokio::select! {
+						_ = wait_agent_cancel() => {
+							interrupted = true;
+							ExecResult { name: call.name.clone(), ok: false, output: INTERRUPT_TEXT.to_string() }
+						}
+						result = crate::mcp::runtime::execute_tool(&app, &call.name, call.args.clone()) => {
+							match result {
+								Ok(value) => ExecResult {
+									name: call.name.clone(),
+									ok: true,
+									output: value.to_string(),
+								},
+								Err(err) => ExecResult {
+									name: call.name.clone(),
+									ok: false,
+									output: err,
+								},
+							}
+						}
 					}
 				} else {
 					let conn = state
@@ -918,10 +999,20 @@ async fn run_loop(
 				.map_err(|e| format!("记录工具上下文失败: {e}"))?;
 		}
 
+		// 执行被中断: 已执行部分已留痕, 直接返回中断结果
+		if interrupted {
+			record_assistant(&state, INTERRUPT_TEXT, Some(total_input), Some(total_output), hit_rate)?;
+			return Ok(interrupted_outcome(total_input, total_output, total_calls, round as u32));
+		}
+
 		// 只保留最近 MAX_TOOL_PAIRS 轮往返, 丢弃更早的, 控制上下文体积
 		let limit = base_len + MAX_TOOL_PAIRS * 2;
 		if messages.len() > limit {
-			messages.drain(base_len..messages.len() - limit);
+			// 中间段 [base_len, len-limit) 可能为空 (轮数不多时), 空则跳过, 避免 drain 越界 panic
+			let end = messages.len() - limit;
+			if end > base_len {
+				messages.drain(base_len..end);
+			}
 		}
 	}
 
