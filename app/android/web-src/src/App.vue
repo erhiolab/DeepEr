@@ -933,7 +933,8 @@ const reinitTts = async () => {
 
 const previewVoice = async () => {
 	const id = await ttsSynthesize("嗨，我是Nori，能听到我的声音吗", cfg.tts.voice || "gentleness")
-	if (!id) triggerBubble(ttsLastError() ? `合成失败：${ttsLastError()}` : "TTS 尚未初始化完成，稍等再试")
+	if (!id) { triggerBubble(ttsLastError() ? `合成失败：${ttsLastError()}` : "TTS 尚未初始化完成，稍等再试"); return }
+	await ttsPlay(id)
 }
 
 const saveTtsNow = () => {

@@ -310,12 +310,14 @@ class TtsEngine(private val appContext: Context) {
         var pos = 12
         var sampleRate = 16000
         var channels = 1
+        var format = 1
         var dataStart = -1
         var dataLen = 0
         while (pos + 8 <= bytes.size) {
             val id = String(bytes, pos, 4, Charsets.US_ASCII)
             val size = leInt(bytes, pos + 4)
             if (id == "fmt ") {
+                format = leShort(bytes, pos + 8)
                 channels = leShort(bytes, pos + 10)
                 sampleRate = leInt(bytes, pos + 12)
             } else if (id == "data") {
@@ -326,14 +328,16 @@ class TtsEngine(private val appContext: Context) {
             pos += 8 + size + (size and 1)
         }
         require(dataStart > 0) { "wav data chunk missing" }
-        val samples = dataLen / 2
-        val out = FloatArray(samples)
-        var p = dataStart
-        for (i in 0 until samples) {
-            out[i] = leShort(bytes, p).toShort().toInt() / 32768f
-            p += 2
+        val out: FloatArray = if (format == 3) {
+            val n = dataLen / 4
+            val fb = java.nio.ByteBuffer.wrap(bytes, dataStart, n * 4)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+            FloatArray(n) { fb.get(it) }
+        } else {
+            val samples = dataLen / 2
+            FloatArray(samples) { i -> leShort(bytes, dataStart + i * 2).toShort().toInt() / 32768f }
         }
-        val mono = if (channels > 1) FloatArray(samples / channels) { i -> out[i * channels] } else out
+        val mono = if (channels > 1) FloatArray(out.size / channels) { i -> out[i * channels] } else out
         return Pair(mono, sampleRate)
     }
 
@@ -541,6 +545,7 @@ class TtsEngine(private val appContext: Context) {
                     val pcm = synthesize(job.text, job.emotion)
                     val ev = if (stopFlag.get()) continue else {
                         bufferLock.withLock { readyBuffers[job.id] = pcm }
+                        android.util.Log.d("TtsEngine", "ready stored id=${job.id} samples=${pcm.size}")
                         """{"event":"ready","id":${job.id}}"""
                     }
                     onEvent?.invoke(ev)
@@ -559,6 +564,7 @@ class TtsEngine(private val appContext: Context) {
         thread(name = "tts-play") {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
             val pcm = bufferLock.withLock { readyBuffers.remove(id) }
+            android.util.Log.d("TtsEngine", "play id=$id found=${pcm != null} buffers=${bufferLock.withLock { readyBuffers.keys }}")
             if (pcm == null) {
                 onEvent?.invoke("""{"event":"error","id":$id,"message":"无音频"}""")
                 return@thread
@@ -570,8 +576,11 @@ class TtsEngine(private val appContext: Context) {
     }
 
     private fun playPcm(pcm: FloatArray) {
+        val peak = pcm.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
+        val gain = if (peak > 0.001f) (0.85f / peak).coerceIn(1f, 20f) else 1f
+        android.util.Log.d("TtsEngine", "playback peak=$peak gain=$gain")
         val buf = ShortArray(pcm.size)
-        for (i in pcm.indices) buf[i] = (pcm[i].coerceIn(-1f, 1f) * 32767f).toInt().toShort()
+        for (i in pcm.indices) buf[i] = ((pcm[i] * gain).coerceIn(-1f, 1f) * 32767f).toInt().toShort()
         val t = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
