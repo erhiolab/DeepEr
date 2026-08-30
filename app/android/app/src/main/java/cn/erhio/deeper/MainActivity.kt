@@ -21,6 +21,11 @@ import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
+    private val filePicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
+        modelBridge.setPickedUri(uri)
+        modelBridge.importPicked()
+    }
+
     private lateinit var webView: WebView
     private lateinit var errorView: TextView
     private lateinit var assetLoader: WebViewAssetLoader
@@ -48,6 +53,7 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(chatBridge, "NoriChat")
         webView.addJavascriptInterface(ttsBridge, "NoriTTS")
         chatBridge.attach(webView)
+        modelBridge.onPickFile = { filePicker.launch("*/*") }
         modelBridge.attach(webView)
         ttsBridge.attach(webView)
 

@@ -14,6 +14,7 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
@@ -29,6 +30,7 @@ class TtsEngine(private val appContext: Context) {
         private const val MAX_AR_STEPS = 600
         private const val BERT_DIM = 1024
         private const val OUT_SR = 32000
+        private const val MAX_WORKERS = 2
     }
 
     var state = State.UNAVAILABLE
@@ -67,7 +69,7 @@ class TtsEngine(private val appContext: Context) {
     )
 
     private val jobs = LinkedBlockingQueue<Job>()
-    private val workerActive = AtomicBoolean(false)
+    private val activeWorkers = AtomicInteger(0)
     private val stopFlag = AtomicBoolean(false)
     private var track: AudioTrack? = null
     private val readyBuffers = HashMap<Int, FloatArray>()
@@ -214,12 +216,30 @@ class TtsEngine(private val appContext: Context) {
         '“' to "'", '”' to "'", '‘' to "'", '’' to "'",
     )
 
+    // 常见英文词的读法映射（符号集为拼音+ARPABET 混合，直接写拼音音节）
+    private val latinLexicon = mapOf(
+        "nori" to listOf("n", "uo4", "l", "i3"),
+        "ai" to listOf("ei1", "i1"),
+        "ok" to listOf("ou1", "k"),
+        "wifi" to listOf("w", "ei1", "f", "ai1"),
+        "app" to listOf("ei1", "p"),
+    )
+
     fun phonesFor(text: String): Pair<List<Int>, IntArray> {
         val cleaned = text.filterNot { it.isWhitespace() }
         val phones = ArrayList<String>()
         val word2ph = IntArray(cleaned.length)
-        for (i in cleaned.indices) {
+        var i = 0
+        while (i < cleaned.length) {
             val ch = cleaned[i]
+            if (ch.isLetter() && ch.code < 128) {
+                // 连续英文按词典整词发音，避免被拆成单个字母音素导致读错
+                var j = i
+                while (j < cleaned.length && cleaned[j].isLetter() && cleaned[j].code < 128) j++
+                val ph = latinLexicon[cleaned.substring(i, j).lowercase()]
+                if (ph != null) { phones.addAll(ph); word2ph[i] = ph.size; i = j; continue }
+                if (j - i > 1) { i = j; continue } // 未收录整词丢弃，单字母退回逐字符
+            }
             var ph: List<String>? = charPhones[ch.toString()]
             if (ph == null) {
                 val p = punctMap[ch]
@@ -247,6 +267,7 @@ class TtsEngine(private val appContext: Context) {
                 phones.addAll(cur)
                 word2ph[i] = cur.size
             }
+            i++
         }
         val ids = ArrayList<Int>(phones.size)
         for (p in phones) symbolToId[p]?.let { ids.add(it) }
@@ -289,6 +310,13 @@ class TtsEngine(private val appContext: Context) {
         synchronized(refLock) {
             refCache[emotion]?.let { return it }
             val r = refs[emotion] ?: refs["gentleness"] ?: refs.values.first()
+            return bundledRefAudio(emotion, r)
+        }
+    }
+
+    private fun bundledRefAudio(emotion: String, r: JSONObject): RefAudio {
+        synchronized(refLock) {
+            refCache[emotion]?.let { return it }
             val wav = decodeWav(appContext.assets.open("ref/" + r.getString("audio")))
             val a32 = resample(wav.first, wav.second, OUT_SR)
             val sslT = r.getInt("refSslT")
@@ -535,26 +563,34 @@ class TtsEngine(private val appContext: Context) {
     }
 
     private fun startWorker() {
-        if (!workerActive.compareAndSet(false, true)) return
+        // 允许多个 worker 并发合成，提高排队时的吞吐
+        while (true) {
+            val cur = activeWorkers.get()
+            if (cur >= MAX_WORKERS) return
+            if (activeWorkers.compareAndSet(cur, cur + 1)) break
+        }
         thread(name = "tts-synth") {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
-            while (true) {
-                val job = jobs.poll() ?: break
-                if (stopFlag.get()) continue
-                try {
-                    val pcm = synthesize(job.text, job.emotion)
-                    val ev = if (stopFlag.get()) continue else {
-                        bufferLock.withLock { readyBuffers[job.id] = pcm }
-                        android.util.Log.d("TtsEngine", "ready stored id=${job.id} samples=${pcm.size}")
-                        """{"event":"ready","id":${job.id}}"""
+            try {
+                while (!stopFlag.get()) {
+                    val job = jobs.poll() ?: break
+                    if (stopFlag.get()) continue
+                    try {
+                        val pcm = synthesize(job.text, job.emotion)
+                        val ev = if (stopFlag.get()) continue else {
+                            bufferLock.withLock { readyBuffers[job.id] = pcm }
+                            android.util.Log.d("TtsEngine", "ready stored id=${job.id} samples=${pcm.size}")
+                            """{"event":"ready","id":${job.id}}"""
+                        }
+                        onEvent?.invoke(ev)
+                    } catch (e: Exception) {
+                        android.util.Log.e("TtsEngine", "synth failed id=${job.id}", e)
+                        onEvent?.invoke("""{"event":"error","id":${job.id},"message":${JSONObject.quote(e.message ?: "合成失败")}}""")
                     }
-                    onEvent?.invoke(ev)
-                } catch (e: Exception) {
-                    android.util.Log.e("TtsEngine", "synth failed id=${job.id}", e)
-                    onEvent?.invoke("""{"event":"error","id":${job.id},"message":${JSONObject.quote(e.message ?: "合成失败")}}""")
                 }
+            } finally {
+                activeWorkers.decrementAndGet()
             }
-            workerActive.set(false)
         }
     }
 
@@ -576,11 +612,14 @@ class TtsEngine(private val appContext: Context) {
     }
 
     private fun playPcm(pcm: FloatArray) {
-        val peak = pcm.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
+        // 裁掉开头常见的小段噪声/气息（BOS 产物），让音频"照着文本开场"
+        val leadTrim = OUT_SR / 20
+        val trimmed = if (pcm.size > leadTrim + OUT_SR / 4) pcm.copyOfRange(leadTrim, pcm.size) else pcm
+        val peak = trimmed.maxOfOrNull { kotlin.math.abs(it) } ?: 0f
         val gain = if (peak > 0.001f) (0.85f / peak).coerceIn(1f, 20f) else 1f
-        android.util.Log.d("TtsEngine", "playback peak=$peak gain=$gain")
-        val buf = ShortArray(pcm.size)
-        for (i in pcm.indices) buf[i] = ((pcm[i] * gain).coerceIn(-1f, 1f) * 32767f).toInt().toShort()
+        android.util.Log.d("TtsEngine", "playback peak=$peak gain=$gain trim=$leadTrim")
+        val buf = ShortArray(trimmed.size)
+        for (i in trimmed.indices) buf[i] = ((trimmed[i] * gain).coerceIn(-1f, 1f) * 32767f).toInt().toShort()
         val t = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()

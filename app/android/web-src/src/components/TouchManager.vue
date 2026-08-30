@@ -87,7 +87,7 @@ watch(() => props.hasDraft, (has) => {
 			<button class="tm-me-btn" @click="emit('cfgExport')">导出配置</button>
 			<button class="tm-me-btn" @click="emit('cfgImport')">导入配置</button>
 		</div>
-		<div class="tm-io-hint">导出到 Download/DeepEr/touch_config.json，两台手机间可互拷分享</div>
+		<div class="tm-io-hint">按模型独立保存：导出/导入 touch_{模型名}.json，可互拷分享</div>
 
 		<div v-if="drawing" class="tm-hint">在模型上按住拖动画新矩形，松手填写名称</div>
 		<div v-else-if="adjusting" class="tm-hint warn">点住已有区域可拖动调整位置</div>

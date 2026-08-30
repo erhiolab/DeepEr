@@ -158,7 +158,7 @@
 					</div>
 
 					<button class="btn ripple primary" @click="saveTtsNow">保存 TTS 设置</button>
-					<div class="tts-foot-hint">首次合成需要加载模型（约 1.2GB），第一次会慢一些</div>
+					<div class="tts-foot-hint">首次合成需加载模型（约 800MB），第一次会慢一些</div>
 				</div>
 			</div>
 		</div>
@@ -182,6 +182,9 @@
 									<div class="mname">{{ m.name }}</div>
 								</div>
 							</div>
+							<div class="settings-row">
+								<button class="btn ripple" :disabled="importing" @click="importModelZip">{{ importing ? "导入中…" : "导入模型 (选择 zip)" }}</button>
+								</div>
 						</template>
 
 						
@@ -234,10 +237,6 @@
 								<input type="range" min="0.5" max="3.0" step="0.1" v-model.number="cfg.renderScale" :style="rangeFill(cfg.renderScale, 0.5, 3.0)" @change="applyRenderScale" />
 								<div class="hint">越接近手机原生分辨率越清晰，耗电和发热越高；卡顿时调低即可</div>
 							</div>
-							<div class="settings-row">
-								<label>聊天记录存储位置</label>
-								<div class="hint ok">公共下载目录：{{ storagePath }}（卸载重装也不丢）</div>
-							</div>
 							<button class="btn ripple" @click="openPanel('tts')">语音合成（TTS）</button>
 							<button class="btn ripple" @click="saveSettingsNow">保存设置</button>
 						</template>
@@ -281,12 +280,14 @@ import {
 	writeFile,
 	isStorageReady,
 	requestStoragePermission,
+	setAlarm,
+	getBattery,
 	PERSONA_PROMPT,
 	getStorageDir,
 	DEFAULT_TTS_SETTINGS,
 	type ChatMsg,
 } from "./services/chat"
-import {ttsInit, ttsSynthesize, ttsPlay, ttsStop, ttsStatus, ttsEmotions, ttsReinit, ttsLastError, type TtsStatus} from "./services/tts"
+import {ttsInit, ttsReady, ttsSynthesize, ttsPlay, ttsStop, ttsStatus, ttsEmotions, ttsReinit, ttsLastError, type TtsStatus} from "./services/tts"
 
 type P = "model" | "motion" | "expression" | "touch" | "settings" | "tts" | ""
 
@@ -476,7 +477,8 @@ const TOUCH_DIRECTIVE = [
 	"1. 你已经是一个感觉灵敏的人, 完全按自己的方式来反应, 不许复读之前说过的话, 不许每次都说同一句类似的话。",
 	"2. 被摸到什么地方不重要, 重点是营造当下真实、鲜活、有戏的氛围——害羞、舒服、痒、逗趣、傲娇、躲开……随你发挥, 越有趣越好。",
 	"3. AI 不要把「什么被摸」这件事机械地复述成一成不变的固定台词, 当作一次自然发生的互动来回应。",
-	"4. 仍然遵守上面的句式和标点规则。",
+	"4. 不要用「Nori 就知道你会这样说」「我早就猜到」这类自述开场白, 直接对触摸行为本身给出反应。",
+	"5. 仍然遵守上面的句式和标点规则。",
 ].join("\n")
 
 
@@ -493,6 +495,9 @@ const surface = (content: string) => {
 		if (scene === "touch" && !cfg.tts.touch) return
 		const clean = text.replace(/^⚠/, "").trim()
 		if (!clean || clean.length > cfg.tts.maxLen) return
+		// 引擎未就绪时等待初始化完成再合成，保证"触摸也有配音"
+		try { await ttsInit() } catch { }
+		if (!ttsReady()) return
 		const id = await ttsSynthesize(clean, emo ? voiceForTag(emo) : voiceForText(clean))
 		if (id) ttsPlay(id)
 	}
@@ -503,12 +508,13 @@ const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
 	const verb = pool[Math.floor(Math.random() * pool.length)]
 	const text = `用户 ${verb} Nori的 ${desc}`
 	if (!modelReady.value) { surface("请先在「设置」里配置 API Key 和模型"); return }
-	if (!chatOpen.value) showAiBubble("…")
+	if (!chatOpen.value) showAiBubble("…") // 等待气泡：让用户知道已触发
 	const memory = readMemory()
 	const context: ChatMsg[] = [
 		{role: "system", content: PERSONA_PROMPT} as ChatMsg,
 		{role: "system", content: DIRECTIVE} as ChatMsg,
 		{role: "system", content: TOUCH_DIRECTIVE} as ChatMsg,
+		{role: "system", content: `(${nowStr()})`} as ChatMsg,
 	]
 	if (memory.trim()) context.push({role: "system", content: `(长期记忆，按需参考)\n${memory.trim()}`} as ChatMsg)
 	const hist = messages.value.slice(-14).map(({role, content}) => ({role, content}) as ChatMsg)
@@ -517,10 +523,33 @@ const handleTouchTrigger = async (area: TouchArea, type: "tap" | "swipe") => {
 		try {
 			const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
 			if (res.ok) {
-				const parsed = stripTags(res.content ?? "")
-				surface(parsed.text)
-				triggerEmotion(parsed.text)
-				void speakText(parsed.text, "touch", parsed.emo)
+				console.log("[RAW]", res.content ?? "")
+				// 与聊天一致的分体式输出；每句"先合成、完成后文字与语音同步出现"
+				const parts = splitReplies(res.content ?? "")
+				for (let i = 0; i < parts.length; i++) {
+					const {emo, text: rawPart} = parts[i]
+					const {text: part, cmds} = extractCmds(rawPart)
+					if (!part && !cmds.length) continue
+					if (part) {
+						let id: number | null = null
+						if (cfg.tts.enabled && cfg.tts.touch && part.length <= cfg.tts.maxLen) {
+							id = await ttsSynthesize(part, emo ? voiceForTag(emo) : voiceForText(part))
+						}
+						surface(part)
+						if (id) ttsPlay(id)
+						applyPartExpression(emo, part)
+					}
+					for (const c of cmds) {
+						const extra = await runAction(c)
+						if (extra) {
+							const eid = await ttsSynthesize(extra, voiceForText(extra))
+							messages.value.push({role: "assistant", content: extra, ts: Date.now()})
+							persistChat(messages.value)
+							scrollChatBottom()
+							if (eid) ttsPlay(eid)
+						}
+					}
+				}
 			} else {
 				surface(`⚠ ${res.message ?? "请求失败"}`)
 			}
@@ -724,6 +753,50 @@ const pick = (id: string) => {
 	loadModel()
 }
 
+const importing = ref(false)
+
+const MODEL_LIST_CACHE = "model_list_cache"
+
+const importModelZip = async () => {
+	if (!window.NoriBridge || importing.value) return
+	importing.value = true
+	try {
+		const r = await new Promise<{ok: boolean; entryBase?: string; message?: string}>((resolve) => {
+			let settled = false
+			const finish = (v: {ok: boolean; entryBase?: string; message?: string}) => {
+				if (settled) return
+				settled = true
+				delete window.__noriModelRes
+				resolve(v)
+			}
+			window.__noriModelRes = (json) => {
+				try { finish(JSON.parse(json)) } catch { finish({ok: false, message: "返回解析失败"}) }
+			}
+			// 打开系统文件选择器（选择结果由原生侧回调 importPicked 后再回复 __noriModelRes）
+			;(window.NoriBridge as unknown as {pickModel: () => void}).pickModel()
+			// 用户取消或长时间不选择时解除等待
+			setTimeout(() => finish({ok: false, message: "已取消"}), 120000)
+		})
+		if (r.ok && r.entryBase) {
+			const installed = await listInstalled()
+			for (const i of installed) {
+				if (!modelList.value.some((m) => m.id === i.id)) {
+					modelList.value = [...modelList.value, {id: i.id, name: i.id}]
+				}
+			}
+			localStorage.setItem(MODEL_LIST_CACHE, JSON.stringify(modelList.value))
+			const added = installed.find((i) => i.entryBase === r.entryBase) ?? installed.find((i) => i.id === r.entryBase)
+			currentModelId.value = added?.id ?? r.entryBase
+			await loadModel()
+			triggerBubble("导入成功")
+		} else {
+			triggerBubble("导入失败: " + (r.message ?? "未知原因"))
+		}
+	} finally {
+		importing.value = false
+	}
+}
+
 const doMotion = (group: string, i: number) => l2d.playMotionByIndex(group, i)
 
 const playRand = () => {
@@ -863,7 +936,6 @@ const rangeFill = (v: number, min: number, max: number) => ({
 const curModelName = computed(() => cfg.model || "未配置模型")
 
 const storageReady = ref(false)
-const storagePath = ref("Download/DeepEr")
 
 const modelReady = computed(() => !!cfg.apiKey.trim() && !!cfg.model)
 
@@ -942,24 +1014,27 @@ const saveTtsNow = () => {
 	triggerBubble("TTS 设置已保存")
 }
 
-const TOUCH_EXPORT_FILE = "touch_config.json"
+const touchCfgFile = () => `touch_${String(currentModelId.value).replace(/[^A-Za-z0-9._-]/g, "_") || "model"}.json`
 
 const exportTouchCfg = () => {
 	if (!currentModelId.value) { triggerBubble("请先在「模型」里加载一个模型"); return }
+	const f = touchCfgFile()
 	const t = loadTouchConfig(currentModelId.value)
 	t.touches = touchAreas.value
-	const r = writeFile(TOUCH_EXPORT_FILE, JSON.stringify(t))
-	if (r === "ok") triggerBubble(`已导出到 ${getStorageDir()}/${TOUCH_EXPORT_FILE}`)
+	const r = writeFile(f, JSON.stringify(t))
+	if (r === "ok") triggerBubble(`已导出到 ${getStorageDir()}/${f}`)
 	else triggerBubble("导出失败：请先授予存储权限")
 }
 
 const importTouchCfg = () => {
 	if (!currentModelId.value) { triggerBubble("请先在「模型」里加载一个模型"); return }
-	const raw = readFile(TOUCH_EXPORT_FILE)
-	if (!raw) { triggerBubble(`未找到 ${TOUCH_EXPORT_FILE}，请先导出或拷入该文件`); return }
+	const f = touchCfgFile()
+	const raw = readFile(f)
+	if (!raw) { triggerBubble(`未找到 ${f}，请先导出或拷入该文件`); return }
 	try {
 		const data = JSON.parse(raw)
-		const touches = Array.isArray(data?.touches) ? data.touches : []
+		const touches = Array.isArray(data?.touches) ? data.touches
+			: (Array.isArray(data) ? data : [])
 		if (!touches.length) { triggerBubble("文件里没有触摸区域"); return }
 		touchAreas.value = touches
 		saveTouch()
@@ -990,6 +1065,79 @@ const refreshModels = async () => {
 	modelLoadMsg.value = `找到 ${modelOptions.value.length} 个模型`
 }
 
+const nowStr = () => {
+	const d = new Date()
+	const w = "日一二三四五六"[d.getDay()]
+	const p2 = (n: number) => String(n).padStart(2, "0")
+	return `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())} 星期${w}`
+}
+
+const WMO: Record<number, string> = {0:"晴",1:"大致晴",2:"多云",3:"阴",45:"雾",48:"雾",51:"毛毛雨",53:"毛毛雨",55:"毛毛雨",61:"小雨",63:"中雨",65:"大雨",71:"小雪",73:"中雪",75:"大雪",80:"阵雨",81:"阵雨",82:"强阵雨",95:"雷雨",96:"雷雨伴冰雹",99:"雷雨伴冰雹"}
+
+const extractCmds = (text: string): {text: string; cmds: string[]} => {
+	const cmds: string[] = []
+	const t = text.replace(/\[cmd[:：]([^\]]+)\]/gi, (_, a) => { cmds.push(a.trim()); return "" }).trim()
+	return {text: t, cmds}
+}
+
+// 从用户消息识别"设闹钟 X:XX"意图，供 AI 未输出 [cmd:alarm] 时兜底
+const detectAlarmFromUser = (t: string): string | null => {
+	if (!/闹钟|闹铃|定时|叫我/.test(t)) return null
+	const m = t.match(/(\d{1,2})[:：点](\d{1,2})?/)
+	if (!m) return null
+	const rest = t.replace(m[0], "").replace(/[设订安排帮我给个，。！？!?,～~]+/g, " ").replace(/\s+/g, " ").trim()
+	return `alarm ${m[1]}:${m[2] ?? "00"} ${rest}`
+}
+
+const runAction = async (action: string): Promise<string | null> => {
+	const sp = action.trim().split(/\s+/)
+	const op = (sp[0] ?? "").toLowerCase()
+	const arg = sp.slice(1).join(" ")
+	if (op === "alarm") {
+		// 手机操作只弹确认气泡，不额外朗读/发消息
+		const m = arg.match(/(\d{1,2})[:：点](\d{1,2})?/)
+		if (!m) { triggerBubble("闹钟时间没听懂"); return null }
+		const r = setAlarm(+m[1], +(m[2] ?? 0), arg.replace(m[0], "").trim())
+		triggerBubble(r === "ok" ? `已设置 ${m[1]}:${m[2] ?? "00"} 的闹钟` : "闹钟设置失败")
+		return null
+	}
+	if (op === "battery") {
+		const b = getBattery()
+		triggerBubble(b ? `当前电量 ${b.level}%${b.plugged ? "（充电中）" : ""}` : "电量获取失败")
+		return null
+	}
+	if (op === "weather") {
+		const city = arg.trim() || "北京"
+		try {
+			const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh`).then(r => r.json())
+			const g = geo.results?.[0]
+			if (!g) { triggerBubble(`没找到城市: ${city}`); return null }
+			const w = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}&current=temperature_2m,weather_code&timezone=auto`).then(r => r.json())
+			const desc = WMO[w.current?.weather_code] ?? "未知"
+			return `${g.name} ${desc} ${Math.round(w.current?.temperature_2m)}度`
+		} catch { triggerBubble("天气查询失败"); return null }
+	}
+	if (op === "search") {
+		// 上网查询：先试 DuckDuckGo 即时答案，没结果就交给模型回答
+		const q = arg.trim()
+		if (!q) { triggerBubble("想查什么？"); return null }
+		try {
+			const d = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1`).then(r => r.json())
+			const abs = d?.AbstractText
+				|| (Array.isArray(d?.RelatedTopics) ? d.RelatedTopics.map((t: any) => t.Text).filter(Boolean).slice(0, 3).join(" ") : "")
+			if (abs) return abs.slice(0, 80)
+		} catch { }
+		try {
+			const r2 = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, [
+				{role: "system", content: `当前时间(${nowStr()})。你在回答用户的实时查询，用一句话直接给出最可能准确的答案，不要标点不要换行不要解释：`} as ChatMsg,
+				{role: "user", content: q} as ChatMsg,
+			])
+			return r2.ok ? (r2.content ?? q).trim() : q
+		} catch { return null }
+	}
+	return null
+}
+
 const send = async () => {
 	const text = draft.value.trim()
 	if (!text || typing.value) return
@@ -1009,6 +1157,7 @@ const send = async () => {
 		const memory = readMemory()
 		const context: ChatMsg[] = [
 			{role: "system", content: PERSONA_PROMPT} as ChatMsg,
+			{role: "system", content: `(${nowStr()})`} as ChatMsg,
 			{role: "system", content: DIRECTIVE} as ChatMsg,
 		]
 		if (memory.trim()) context.push({role: "system", content: `(长期记忆，按需参考)\n${memory.trim()}`} as ChatMsg)
@@ -1016,19 +1165,49 @@ const send = async () => {
 		const payload = [...context, ...hist]
 		const res = await sendChat(cfg.baseUrl, cfg.apiKey, cfg.model, payload)
 		if (res.ok) {
+			console.log("[RAW]", res.content ?? "")
 			const reply = res.content ?? ""
+			let alarmHandled = false
 
 			const parts = splitReplies(reply)
 			for (let i = 0; i < parts.length; i++) {
-				const {emo, text: part} = parts[i]
+				const {emo, text: rawPart} = parts[i]
+				const {text: part, cmds} = extractCmds(rawPart)
+				if (!part && !cmds.length) continue
 				const readable = cfg.tts.enabled && cfg.tts.chat && part.length <= cfg.tts.maxLen
-				const id = readable ? await ttsSynthesize(part, emo ? voiceForTag(emo) : voiceForText(part)) : null
+				const id = readable && part ? await ttsSynthesize(part, emo ? voiceForTag(emo) : voiceForText(part)) : null
 				if (i > 0) await sleep(300 + Math.random() * 500)
-				messages.value.push({role: "assistant", content: part, ts: Date.now()})
-				persistChat(messages.value)
-				scrollChatBottom()
+				if (part) {
+					messages.value.push({role: "assistant", content: part, ts: Date.now()})
+					persistChat(messages.value)
+					scrollChatBottom()
+				}
 				if (id) ttsPlay(id)
 				applyPartExpression(emo, part)
+				for (const c of cmds) {
+					if (c.trim().toLowerCase().startsWith("alarm")) alarmHandled = true
+					const extra = await runAction(c)
+					if (extra) {
+						const eid = await ttsSynthesize(extra, voiceForText(extra))
+						messages.value.push({role: "assistant", content: extra, ts: Date.now()})
+						persistChat(messages.value)
+						scrollChatBottom()
+						if (eid) ttsPlay(eid)
+					}
+				}
+			}
+
+			// 兜底：AI 忘了带 [cmd:alarm] 时，直接从用户消息里识别闹钟并设置
+			const alarmCmd = detectAlarmFromUser(text)
+			if (alarmCmd && !alarmHandled) {
+				const extra = await runAction(alarmCmd)
+				if (extra) {
+					const eid = await ttsSynthesize(extra, voiceForText(extra))
+					messages.value.push({role: "assistant", content: extra, ts: Date.now()})
+					persistChat(messages.value)
+					scrollChatBottom()
+					if (eid) ttsPlay(eid)
+				}
 			}
 
 			playIdleMotionOnce()
@@ -1051,6 +1230,9 @@ const DIRECTIVE = [
 	"3. 每行开头必须带一个情绪标签，格式为 [情绪]，从下面列表选一个：",
 	"gentleness(温柔) happy(开心) angry(生气) care(关心) confession(告白) invitation(邀请) missingYou(想念) pampering(宠溺) playful(俏皮) retain(挽留) spitting(怼人) thank(感谢) thinking(沉思) tsundere(傲娇) wronged(委屈)",
 	"4. 标签要结合对话上下文和这句话应有的语气神情来选，接下来这句话用什么情绪说就选什么；标签后跟一个空格再写正文。",
+	"5. 当前日期时间已经以(2026-xx-xx xx:xx 星期x)形式注入，用户问时间/日期/星期直接回答，不要编造。",
+	"6. 需要操作手机或查询时单独写一行命令（该行不朗读），格式为 [cmd:命令]，支持：设置闹钟 [cmd:alarm 7:30 起床]，查询天气 [cmd:weather 上海]，查询电量 [cmd:battery]，上网查询 [cmd:search 2025年春节是几号]。",
+	"7. 当你发出 [cmd:] 命令时，用一句简短的话先答应（如 好的/没问题/我看看），不要长篇解释，命令执行后的结果由系统播报。",
 ].join("\n")
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -1063,34 +1245,133 @@ const VOICE_KEYS = Object.keys(VOICE_LABELS)
 const REVERSE_LABELS: Record<string, string> = {}
 for (const [k, label] of Object.entries(VOICE_LABELS)) REVERSE_LABELS[label] = k
 
-const parseTaggedLine = (line: string): ReplyPart => {
+const escRe = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+// 情绪别名：模型可能输出精简的情绪词（shy/surprised/sad/...），映射到实际音色 key
+const EMO_ALIAS: Record<string, string> = {
+	shy: "tsundere", surprised: "playful", sad: "wronged", speechless: "spitting",
+	serious: "thinking", happy: "happy", angry: "angry",
+}
+
+// 任意词 → 音色 key；识别不了返回 null
+const emoKey = (w: string): string | null => {
+	const k = w.toLowerCase()
+	return VOICE_KEYS.includes(k) ? k : (REVERSE_LABELS[w] ?? EMO_ALIAS[k] ?? null)
+}
+
+// 情绪词集合（长词优先，用于粘连识别）
+const EMO_WORDS = Object.keys(REVERSE_LABELS)
+	.concat(VOICE_KEYS)
+	.concat(Object.keys(EMO_ALIAS))
+	.sort((a, b) => b.length - a.length)
+
+const isSep = (c: string) => /[\s：:，,]/.test(c)
+
+// 在 s[i] 处探测"情绪词+分隔符"，命中返回 {key, 跳过长度}
+const peekEmo = (s: string, i: number): {key: string; len: number} | null => {
+	for (const w of EMO_WORDS) {
+		if (s.startsWith(w, i) && isSep(s[i + w.length] ?? "")) {
+			const key = emoKey(w)
+			if (key) return {key, len: w.length + 1}
+		}
+	}
+	return null
+}
+
+// 把 AI 输出解析成 [{emo, text}]。
+// 规则：
+// 1. 换行即分段；行内粘连的多个情绪标签也分段（如 "回来啦care 设好了"）
+// 2. [xxx]/【xxx】：已知→记 emo 并剥除；未知→剥除不回显；[cmd:...] 原样保留
+// 3. 行首无括号情绪词（"happy 好哦" / "happy：好哦"）识别并剥除
+// 4. 其余文字原样保留（连空格都不改），确保 TTS 照输出版本读
+const parseReply = (reply: string): ReplyPart[] => {
+	const out: ReplyPart[] = []
+	let buf = ""
 	let emo: string | null = null
-	const text = line.replace(/[【\[]([a-zA-Z\u4e00-\u9fff]{1,12})[\]】]/g, (raw, inner: string) => {
-		const key = inner.toLowerCase()
-		const e = VOICE_KEYS.includes(key) ? key : (REVERSE_LABELS[inner] ?? null)
-		if (e && !emo) emo = e
-		return e ? "" : raw
-	}).trim()
-	return {emo, text}
+	const flush = () => {
+		const t = buf.replace(/\s+/g, " ").trim()
+		if (t) out.push({emo, text: t})
+		buf = ""
+		emo = null
+	}
+	for (const line of reply.split(/\n+/)) {
+		const s = line.trim()
+		if (!s) { flush(); continue }
+		let i = 0
+		while (i < s.length) {
+			const ch = s[i]
+			// 方括号/全角方括号标签
+			if (ch === "[" || ch === "【" || ch === "(" || ch === "（") {
+				const close = ch === "[" ? "]" : ch === "【" ? "】" : ch === "(" ? ")" : "）"
+				const j = s.indexOf(close, i + 1)
+				if (j > i) {
+					const inner = s.slice(i + 1, j)
+					if (inner.startsWith("cmd:")) {
+						buf += "[cmd:" + inner.slice(4) + "] "
+						i = j + 1
+						continue
+					}
+					if (/^[a-zA-Z\u4e00-\u9fff]{1,12}$/.test(inner)) {
+						const key = emoKey(inner)
+						if (key) {
+							if (!emo) emo = key
+							i = j + 1
+							continue
+						}
+					}
+					// 方括号内的未知内容剥除；圆括号内的未知内容(如 (轻笑)) 保留为正文
+					if (ch === "[" || ch === "【") { i = j + 1; continue }
+				}
+				buf += ch; i++; continue
+			}
+			// 段首无括号情绪词
+			if (!buf.trim()) {
+				const pe = peekEmo(s, i)
+				if (pe && i === 0) {
+					if (!emo) emo = pe.key
+					i += pe.len
+					continue
+				}
+				if (pe !== null && i > 0) {
+					// 粘连在上一段之后（前段末尾为中文）
+					flush()
+					emo = pe.key
+					i += pe.len
+					continue
+				}
+			}
+			if (buf.trim()) {
+				const prev = buf[buf.length - 1]
+				if (/[\u4e00-\u9fffA-Za-z]/.test(prev)) {
+					const pe = peekEmo(s, i)
+					if (pe) {
+						flush()
+						emo = pe.key
+						i += pe.len
+						continue
+					}
+				}
+			}
+			if (ch === " ") {
+				if (buf.length && !buf.endsWith(" ")) buf += " "
+				i++
+				continue
+			}
+			buf += ch
+			i++
+		}
+		flush()
+	}
+	return out
 }
 
 const stripTags = (content: string): ReplyPart => {
-	const lines = content.split(/\n+/)
-	let emo: string | null = null
-	const cleaned = lines.map((l) => {
-		const p = parseTaggedLine(l.trim())
-		if (!emo && p.emo) emo = p.emo
-		return p.text
-	}).filter((s) => s)
-	return {emo, text: cleaned.join("\n")}
+	const parts = parseReply(content)
+	const emo = parts.find((p) => p.emo)?.emo ?? null
+	return {emo, text: parts.map((p) => p.text).join("\n")}
 }
 
-const splitReplies = (reply: string): ReplyPart[] => {
-	const lines = reply.split(/\n+/).map((s) => s.trim()).filter((s) => s)
-	const strip = (s: string) => s.replace(/[。！？!?^~，,]+$/g, "")
-	if (lines.length >= 2) return lines.map((s) => { const p = parseTaggedLine(s); return {emo: p.emo, text: strip(p.text)} }).filter((p) => p.text)
-	return [parseTaggedLine(reply.trim())]
-}
+const splitReplies = (reply: string): ReplyPart[] => parseReply(reply)
 
 const appendMemoryIfAny = (text: string) => {
 	const t = text.trim()
@@ -1218,7 +1499,6 @@ onMounted(async () => {
 	cfg.renderScale = s.renderScale || nativeDpr.value
 	cfg.tts = {...DEFAULT_TTS_SETTINGS, ...s.tts, voices: {...(s.tts?.voices ?? {})}}
 	window.__noriRenderScale = renderScaleNum.value
-	storagePath.value = getStorageDir()
 	storageReady.value = isStorageReady()
 	
 	if (!storageReady.value && !localStorage.getItem("storage_asked")) {
@@ -1226,22 +1506,44 @@ onMounted(async () => {
 		setTimeout(grantStorage, 1200)
 	}
 	messages.value = loadChat()
+	if (window.NoriTTS) { void ttsInit() }
+	// 清洗旧聊天里残留的无括号情绪词（如 "happy 早上好"）
+	let dirty = false
+	messages.value = messages.value.map((m) => {
+		if (m.role !== "assistant") return m
+		const n = stripTags(m.content).text
+		if (n !== m.content) { dirty = true; return {...m, content: n} }
+		return m
+	})
+	if (dirty) persistChat(messages.value)
 	if (cfg.apiKey.trim()) refreshModels()
 
-	if (window.NoriTTS) void ttsInit()
-
-	
 	try {
 		modelList.value = await fetchModelList()
 		listError.value = ""
+		localStorage.setItem(MODEL_LIST_CACHE, JSON.stringify(modelList.value))
 	} catch (e: any) {
-		listError.value = "获取模型列表失败: " + (e?.message ?? String(e))
-		return
+		// 离线时回退到缓存/已装模型，仅封面图加载失败被隐藏，不阻断流程
+		const cached = localStorage.getItem(MODEL_LIST_CACHE)
+		if (cached) {
+			try { modelList.value = JSON.parse(cached) } catch { }
+		}
+		if (modelList.value.length) listError.value = ""
 	}
 	const installed = await listInstalled()
-	if (installed.length) {
+	for (const i of installed) {
+		if (!modelList.value.some((m) => m.id === i.id)) {
+			modelList.value = [...modelList.value, {id: i.id, name: i.id}]
+		}
+	}
+	if (installed.length) localStorage.setItem(MODEL_LIST_CACHE, JSON.stringify(modelList.value))
+	if (modelList.value.length) {
+		listError.value = ""
 		const last = installed.find((i) => modelList.value.some((m) => m.id === i.id)) ?? installed[0]
-		currentModelId.value = last.id
+		currentModelId.value = last?.id ?? modelList.value[0].id
+	} else {
+		listError.value = "获取模型列表失败（离线且无已安装模型）"
+		return
 	}
 	await loadModel()
 })

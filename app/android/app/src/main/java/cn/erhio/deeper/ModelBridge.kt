@@ -1,6 +1,7 @@
 package cn.erhio.deeper
 
 import android.content.Context
+import android.net.Uri
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
@@ -20,8 +21,13 @@ class ModelBridge(private val appContext: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var webView: WebView? = null
     private val ioExecutor: ExecutorService = Executors.newCachedThreadPool()
+    private var pickedUri: Uri? = null
+
+    var onPickFile: (() -> Unit)? = null
 
     fun attach(v: WebView) { webView = v }
+
+    fun setPickedUri(uri: Uri?) { pickedUri = uri }
 
     companion object {
         private const val API_BASE = "https://api.elake.top/deeper"
@@ -47,6 +53,43 @@ class ModelBridge(private val appContext: Context) {
         }
         runCatching { legacy.deleteRecursively() }
     }
+
+    @android.webkit.JavascriptInterface
+    fun pickModel() {
+        mainHandler.post { onPickFile?.invoke() }
+    }
+
+    @android.webkit.JavascriptInterface
+    fun importPicked() {
+        ioExecutor.execute {
+            val json = runCatching {
+                val uri = pickedUri ?: return@runCatching err("未选择文件")
+                if (!ChatBridge.storageReady(appContext)) return@runCatching err("请先授予文件访问权限")
+                migrateLegacyModels()
+                if (!modelsDir.isDirectory && !modelsDir.mkdirs()) return@runCatching err("无法创建模型目录")
+                val displayName = queryDisplayName(uri) ?: "import_${System.currentTimeMillis()}.zip"
+                val id = safeSegment(displayName.removeSuffix(".zip").removeSuffix(".ZIP").ifEmpty { "import_${System.currentTimeMillis()}" })
+                val modelDir = modelsDir.resolve(id)
+                val existing = findEntryBase(modelDir)
+                if (existing != null) return@runCatching ok(existing)
+                val cacheZip = File(appContext.cacheDir, "import_$id.zip")
+                appContext.contentResolver.openInputStream(uri)!!.use { input ->
+                    cacheZip.outputStream().use { output -> input.copyTo(output, 128 * 1024) }
+                }
+                val entryBase = installZip(id, cacheZip)
+                cacheZip.delete()
+                ok(entryBase)
+            }.getOrElse { e -> err(e.message ?: "导入失败") }
+            postToJs("__noriModelRes", json)
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        appContext.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
+        }
+    }.getOrNull()
 
     @android.webkit.JavascriptInterface
     fun download(id: String) {

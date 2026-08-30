@@ -57,6 +57,8 @@ interface NoriChat {
 	fetchModels: (baseUrl: string, apiKey: string) => void
 	chat: (baseUrl: string, apiKey: string, model: string, messagesJson: string) => void
 	readFile: (name: string) => string
+	setAlarm: (hour: number, minute: number, label: string) => string
+	battery: () => string
 	writeFile: (name: string, content: string) => string
 	appendMemory: (text: string) => string
 	readMemory: () => string
@@ -142,6 +144,14 @@ export const isStorageReady = (): boolean => {
 
 export const requestStoragePermission = (): void => {
 	try { bridge().requestStoragePermission() } catch {  }
+}
+
+export const setAlarm = (hour: number, minute: number, label: string): string => {
+	try { return bridge().setAlarm(hour, minute, label) } catch { return "err:no-bridge" }
+}
+
+export const getBattery = (): {level: number; plugged: number} | null => {
+	try { return JSON.parse(bridge().battery()) } catch { return null }
 }
 
 export const getStorageDir = (): string => {

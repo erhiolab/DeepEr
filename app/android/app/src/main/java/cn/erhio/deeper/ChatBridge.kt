@@ -72,6 +72,30 @@ class ChatBridge(private val appContext: Context) {
     @android.webkit.JavascriptInterface
     fun getStorageDir(): String = "Download/DeepEr"
 
+    @android.webkit.JavascriptInterface
+    fun setAlarm(hour: Int, minute: Int, label: String): String = runCatching {
+        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
+            putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour.coerceIn(0, 23))
+            putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute.coerceIn(0, 59))
+            if (label.isNotBlank()) putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, label)
+            putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        appContext.startActivity(intent)
+        "ok"
+    }.getOrElse { "err:${it.message}" }
+
+    @android.webkit.JavascriptInterface
+    fun battery(): String = runCatching {
+        val intent = android.content.Intent(android.content.Intent.ACTION_BATTERY_CHANGED)
+        val r = appContext.registerReceiver(null, android.content.IntentFilter(intent.action))
+        val level = r?.getIntExtra("level", -1) ?: -1
+        val scale = r?.getIntExtra("scale", -1) ?: -1
+        val plugged = r?.getIntExtra("plugged", 0) ?: 0
+        if (level < 0 || scale <= 0) "{\"error\":1}"
+        else "{\"level\":${level * 100 / scale},\"plugged\":$plugged}"
+    }.getOrElse { "{\"error\":1}" }
+
     private fun queryUri(name: String): Uri? {
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val sel = "${MediaStore.MediaColumns.DISPLAY_NAME}=?"
