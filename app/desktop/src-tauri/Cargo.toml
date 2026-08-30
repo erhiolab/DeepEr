@@ -31,12 +31,22 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 chrono = "0.4"
 reqwest = { version = "0.12", features = ["json", "blocking", "stream"] }
 futures-util = "0.3"
+tokio = { version = "1", features = ["time", "process", "sync", "io-util"] }
+sse-stream = "0.2"
+# MCP HTTP 传输使用 rmcp 配套的 reqwest 0.13 (与项目其它模块的 0.12 互不影响)
+reqwest_mcp = { package = "reqwest", version = "0.13", features = ["json", "stream"] }
 # 加密: API Key 等敏感配置以 AES-256-GCM 加密后入库
 aes-gcm = "0.10"
 rand = "0.8"
 base64 = "0.22"
 # 压缩算法精简, 仅启用 deflate(纯 Rust miniz_oxide 后端), 避免编译依赖 cmake 的 zlib-ng/zstd 等 C 依赖
 zip = { version = "1", default-features = false, features = ["deflate"] }
+# MCP (Model Context Protocol) 客户端: 连接外部 MCP 服务器并调用其工具
+rmcp = { version = "0", features = [
+    "client",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+] }
 
 [target.'cfg(windows)'.dependencies]
 # 访问 WebView2 的 ICoreWebView2Controller (用于打开任务管理器)

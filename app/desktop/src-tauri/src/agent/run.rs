@@ -782,24 +782,49 @@ async fn run_loop(
 					},
 				}
 			} else {
-				let conn = state
-					.0
-					.lock()
-					.map_err(|e| format!("获取数据库连接失败: {e}"))?;
-				let result = match ToolService::global().execute(&conn, &call.name, call.args.clone()) {
-					Ok(value) => ExecResult {
-						name: call.name.clone(),
-						ok: true,
-						output: value.to_string(),
-					},
-					Err(err) => ExecResult {
-						name: call.name.clone(),
-						ok: false,
-						output: err,
-					},
+				// MCP 工具走异步专用路径 (连接外部服务器, 不占 DB 锁)
+				let provider = {
+					let conn = state
+						.0
+						.lock()
+						.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+					crate::tool::repository::get_by_name(&conn, &call.name)
+						.map(|definition| definition.map(|tool| tool.provider))
+						.unwrap_or(None)
 				};
-				drop(conn);
-				result
+				if provider.as_deref() == Some("mcp") {
+					match crate::mcp::runtime::execute_tool(&app, &call.name, call.args.clone()).await {
+						Ok(value) => ExecResult {
+							name: call.name.clone(),
+							ok: true,
+							output: value.to_string(),
+						},
+						Err(err) => ExecResult {
+							name: call.name.clone(),
+							ok: false,
+							output: err,
+						},
+					}
+				} else {
+					let conn = state
+						.0
+						.lock()
+						.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+					let result = match ToolService::global().execute(&conn, &call.name, call.args.clone()) {
+						Ok(value) => ExecResult {
+							name: call.name.clone(),
+							ok: true,
+							output: value.to_string(),
+						},
+						Err(err) => ExecResult {
+							name: call.name.clone(),
+							ok: false,
+							output: err,
+						},
+					};
+					drop(conn);
+					result
+				}
 			};
 			let mut execution = execution;
 			if !execution.ok && previous_calls.contains(&current_signatures[index]) {
