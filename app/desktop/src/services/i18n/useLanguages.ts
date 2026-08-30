@@ -567,6 +567,50 @@ const buildSnapshot = () => {
 					generateFailed: t("components.main.chat.generateFailed"),
 					unknownReason: t("components.main.chat.unknownReason"),
 				},
+				mcp: {
+					title: t("components.main.mcp.title"),
+					subtitle: t("components.main.mcp.subtitle"),
+					newMcp: t("components.main.mcp.newMcp"),
+					refresh: t("components.main.mcp.refresh"),
+					empty: t("components.main.mcp.empty"),
+					emptyHint: t("components.main.mcp.emptyHint"),
+					editorHint: t("components.main.mcp.editorHint"),
+					name: t("components.main.mcp.name"),
+					namePlaceholder: t("components.main.mcp.namePlaceholder"),
+					description: t("components.main.mcp.description"),
+					descriptionPlaceholder: t("components.main.mcp.descriptionPlaceholder"),
+					transport: t("components.main.mcp.transport"),
+					transportStdio: t("components.main.mcp.transportStdio"),
+					transportSse: t("components.main.mcp.transportSse"),
+					command: t("components.main.mcp.command"),
+					commandPlaceholder: t("components.main.mcp.commandPlaceholder"),
+					args: t("components.main.mcp.args"),
+					argsPlaceholder: t("components.main.mcp.argsPlaceholder"),
+					url: t("components.main.mcp.url"),
+					urlPlaceholder: t("components.main.mcp.urlPlaceholder"),
+					headers: t("components.main.mcp.headers"),
+					headersPlaceholder: t("components.main.mcp.headersPlaceholder"),
+					env: t("components.main.mcp.env"),
+					envPlaceholder: t("components.main.mcp.envPlaceholder"),
+					enabled: t("components.main.mcp.enabled"),
+					disabled: t("components.main.mcp.disabled"),
+					edit: t("components.main.mcp.edit"),
+					delete: t("components.main.mcp.delete"),
+					deleteConfirmTitle: t("components.main.mcp.deleteConfirmTitle"),
+					deleteConfirmMessage: (name: string) => t("components.main.mcp.deleteConfirmMessage", {name}),
+					dialogCreate: t("components.main.mcp.dialogCreate"),
+					dialogEdit: t("components.main.mcp.dialogEdit"),
+					nameEmpty: t("components.main.mcp.nameEmpty"),
+					nameDuplicate: t("components.main.mcp.nameDuplicate"),
+					transportInvalid: t("components.main.mcp.transportInvalid"),
+					commandEmpty: t("components.main.mcp.commandEmpty"),
+					urlEmpty: t("components.main.mcp.urlEmpty"),
+					argsInvalid: t("components.main.mcp.argsInvalid"),
+					headersInvalid: t("components.main.mcp.headersInvalid"),
+					envInvalid: t("components.main.mcp.envInvalid"),
+					saved: t("components.main.mcp.saved"),
+					saveFailed: t("components.main.mcp.saveFailed"),
+				},
 			}
 		},
 		views: {
@@ -669,6 +713,7 @@ export type LangGroupPath =
 	| "components.main.memory"
 	| "components.main.home"
 	| "components.main.chat"
+	| "components.main.mcp"
 	| "views.firstRun"
 	| "views.main"
 	| "views.pet"
