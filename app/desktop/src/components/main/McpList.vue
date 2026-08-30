@@ -12,6 +12,7 @@ import {
 	deleteMcp,
 	listMcp,
 	setMcpEnabled,
+	syncMcp,
 	updateMcp,
 	type McpServerInput,
 	type McpServerRecord,
@@ -57,11 +58,14 @@ const dirty = ref(false)
 // 同步状态
 let syncing = false
 
+// 同步中状态 (同步工具按钮)
+const syncingNow = ref(false)
+
 // MCP 服务器草稿
 interface McpDraft {
 	name: string
 	description: string
-	transport: "stdio" | "sse"
+	transport: "stdio" | "sse" | "http"
 	command: string
 	argsText: string
 	url: string
@@ -125,7 +129,11 @@ const load = async (): Promise<void> => {
 }
 
 // 传输协议标签
-const transportLabel = (transport: string): string => transport === "sse" ? I18N.value.transportSse : I18N.value.transportStdio
+const transportLabel = (transport: string): string => {
+	if (transport === "sse") return I18N.value.transportSse
+	if (transport === "http") return I18N.value.transportHttp
+	return I18N.value.transportStdio
+}
 
 // 从服务器记录创建草稿
 const draftFromServer = (server: McpServerRecord): McpDraft => ({
@@ -204,7 +212,7 @@ const save = async (): Promise<boolean> => {
 	else if (servers.value.some(server => server.id !== editingId.value && server.name === NAME)) {
 		NEXT_ERRORS.name = I18N.value.nameDuplicate
 	}
-	if (draft.value.transport !== "stdio" && draft.value.transport !== "sse") {
+	if (draft.value.transport !== "stdio" && draft.value.transport !== "sse" && draft.value.transport !== "http") {
 		NEXT_ERRORS.transport = I18N.value.transportInvalid
 	}
 	if (draft.value.transport === "stdio") {
@@ -224,8 +232,8 @@ const save = async (): Promise<boolean> => {
 		transport: draft.value.transport,
 		command: draft.value.transport === "stdio" ? draft.value.command.trim() : "",
 		args: draft.value.transport === "stdio" ? parseJsonArray(draft.value.argsText) as unknown[] : [],
-		url: draft.value.transport === "sse" ? draft.value.url.trim() : "",
-		headers: draft.value.transport === "sse" ? parseJsonObject(draft.value.headersText) ?? {} : {},
+		url: draft.value.transport !== "stdio" ? draft.value.url.trim() : "",
+		headers: draft.value.transport !== "stdio" ? parseJsonObject(draft.value.headersText) ?? {} : {},
 		env: draft.value.transport === "stdio" ? parseJsonObject(draft.value.envText) ?? {} : {},
 	}
 
@@ -245,6 +253,30 @@ const save = async (): Promise<boolean> => {
 		return true
 	} finally {
 		saving.value = false
+	}
+}
+
+// 同步工具 (调用后端 mcp_sync, 发现工具写入 tools 表)
+const doSync = async (): Promise<void> => {
+	if (syncingNow.value) return
+	syncingNow.value = true
+	try {
+		const RESULTS = await syncMcp()
+		const FAILED = RESULTS.filter(result => !result.ok)
+		if (FAILED.length > 0) {
+			const ERROR = FAILED
+				.map(result => `${result.serverName}: ${result.error ?? "未知错误"}`)
+				.join("; ")
+			showFeedback("error", I18N.value.syncFailed(ERROR))
+		} else {
+			showFeedback(
+				"ok",
+				I18N.value.syncDone(String(RESULTS.length), "0")
+			)
+		}
+	} finally {
+		syncingNow.value = false
+		await load()
 	}
 }
 
@@ -299,6 +331,10 @@ onBeforeUnmount(() => {
 			<button class="refresh-btn" @click="load">
 				<Icon name="refresh" :size="15"/>
 				{{ I18N.refresh }}
+			</button>
+			<button class="refresh-btn" :disabled="syncingNow" @click="doSync">
+				<Icon name="refresh" :size="15"/>
+				{{ syncingNow ? I18N.syncing : I18N.sync }}
 			</button>
 		</PageHeader>
 
@@ -367,6 +403,7 @@ onBeforeUnmount(() => {
 								<select v-model="draft.transport" class="input select">
 									<option value="stdio">{{ I18N.transportStdio }}</option>
 									<option value="sse">{{ I18N.transportSse }}</option>
+									<option value="http">{{ I18N.transportHttp }}</option>
 								</select>
 							</FormField>
 						</div>

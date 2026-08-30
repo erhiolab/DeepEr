@@ -552,6 +552,7 @@ export default {
 				transport: "传输方式",
 				transportStdio: "stdio (本地进程)",
 				transportSse: "SSE (远程地址)",
+				transportHttp: "HTTP (流式)",
 				command: "启动命令",
 				commandPlaceholder: "例如: npx",
 				args: "启动参数 (JSON 数组)",
@@ -577,6 +578,10 @@ export default {
 				envInvalid: "环境变量必须是 JSON 对象",
 				saved: "保存成功",
 				saveFailed: "保存失败",
+				sync: "同步工具",
+				syncing: "同步中…",
+				syncDone: "同步完成: 成功 {ok} 个, 失败 {failed} 个",
+				syncFailed: "同步失败: {error}",
 			},
 		}
 	},

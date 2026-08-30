@@ -14,7 +14,7 @@ export interface McpServerRecord {
 	id: number
 	name: string
 	description: string
-	transport: "stdio" | "sse"
+	transport: "stdio" | "sse" | "http"
 	command: string
 	args: unknown[]
 	url: string
@@ -31,7 +31,7 @@ export interface McpServerRecord {
 export interface McpServerInput {
 	name: string
 	description: string
-	transport: "stdio" | "sse"
+	transport: "stdio" | "sse" | "http"
 	command: string
 	args: unknown[]
 	url: string
@@ -98,5 +98,29 @@ export const setMcpEnabled = async (id: number, enabled: boolean): Promise<boole
 	} catch (error) {
 		await logger.error("[mcp] 切换 MCP 服务器状态失败", error)
 		return false
+	}
+}
+
+/**
+ * 同步结果 (与后端 SyncSummary camelCase 对齐)
+ */
+export interface McpSyncSummary {
+	serverId: number
+	serverName: string
+	ok: boolean
+	toolCount: number
+	tools: string[]
+	error?: string | null
+}
+
+/**
+ * 手动同步全部已启用的 MCP 服务器 (发现工具写入 tools 表)
+ */
+export const syncMcp = async (): Promise<McpSyncSummary[]> => {
+	try {
+		return await invoke<McpSyncSummary[]>("mcp_sync")
+	} catch (error) {
+		await logger.error("[mcp] 同步 MCP 工具失败", error)
+		return []
 	}
 }

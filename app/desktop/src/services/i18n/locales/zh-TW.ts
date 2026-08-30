@@ -552,6 +552,7 @@ export default {
 				transport: "傳輸方式",
 				transportStdio: "stdio (本機程序)",
 				transportSse: "SSE (遠端位址)",
+				transportHttp: "HTTP (串流)",
 				command: "啟動指令",
 				commandPlaceholder: "例如: npx",
 				args: "啟動參數 (JSON 陣列)",
@@ -577,6 +578,10 @@ export default {
 				envInvalid: "環境變數必須是 JSON 物件",
 				saved: "儲存成功",
 				saveFailed: "儲存失敗",
+				sync: "同步工具",
+				syncing: "同步中…",
+				syncDone: "同步完成: 成功 {ok} 個, 失敗 {failed} 個",
+				syncFailed: "同步失敗: {error}",
 			},
 		}
 	},

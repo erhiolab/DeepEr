@@ -582,6 +582,7 @@ const buildSnapshot = () => {
 					transport: t("components.main.mcp.transport"),
 					transportStdio: t("components.main.mcp.transportStdio"),
 					transportSse: t("components.main.mcp.transportSse"),
+					transportHttp: t("components.main.mcp.transportHttp"),
 					command: t("components.main.mcp.command"),
 					commandPlaceholder: t("components.main.mcp.commandPlaceholder"),
 					args: t("components.main.mcp.args"),
@@ -607,6 +608,10 @@ const buildSnapshot = () => {
 					envInvalid: t("components.main.mcp.envInvalid"),
 					saved: t("components.main.mcp.saved"),
 					saveFailed: t("components.main.mcp.saveFailed"),
+					sync: t("components.main.mcp.sync"),
+					syncing: t("components.main.mcp.syncing"),
+					syncDone: (ok: string, failed: string) => t("components.main.mcp.syncDone", {ok, failed}),
+					syncFailed: (error: string) => t("components.main.mcp.syncFailed", {error}),
 				},
 			}
 		},
