@@ -32,6 +32,10 @@ const I18N = computed(() => {
 
 const GUARD = useUnsavedGuard()
 
+const ARGS_PLACEHOLDER = '["-y", "@modelcontextprotocol/server-filesystem"]'
+const HEADERS_PLACEHOLDER = '{"Authorization": "Bearer xxx"}'
+const ENV_PLACEHOLDER = '{"API_KEY": "xxx"}'
+
 // 服务器列表
 const servers = ref<McpServerRecord[]>([])
 
@@ -391,7 +395,7 @@ onBeforeUnmount(() => {
 									class="input textarea code"
 									rows="3"
 									:class="{invalid: !!errors.args}"
-									:placeholder="I18N.argsPlaceholder"
+									:placeholder="ARGS_PLACEHOLDER"
 									@input="errors.args = null"
 								/>
 							</FormField>
@@ -401,7 +405,7 @@ onBeforeUnmount(() => {
 									class="input textarea code"
 									rows="3"
 									:class="{invalid: !!errors.env}"
-									:placeholder="I18N.envPlaceholder"
+									:placeholder="ENV_PLACEHOLDER"
 									@input="errors.env = null"
 								/>
 							</FormField>
@@ -422,7 +426,7 @@ onBeforeUnmount(() => {
 									class="input textarea code"
 									rows="3"
 									:class="{invalid: !!errors.headers}"
-									:placeholder="I18N.headersPlaceholder"
+									:placeholder="HEADERS_PLACEHOLDER"
 									@input="errors.headers = null"
 								/>
 							</FormField>
