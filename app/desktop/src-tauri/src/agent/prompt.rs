@@ -48,6 +48,7 @@ pub fn build_system_prompt(conn: &Connection) -> Result<String, String> {
 		.filter_map(|name| tool_line(&tools, name))
 		.collect::<Vec<_>>()
 		.join("\n");
+	let mcp_hint = "外部工具 (MCP): 接入的 MCP 服务器工具也会出现在工具库中, 调用名格式为「服务器名-工具名」, 不确定时先用 tool-search 搜索。";
 
 	let prompt = format!(
 		"{AGENT_PROTOCOL_MARKER}\n\
@@ -58,13 +59,15 @@ pub fn build_system_prompt(conn: &Connection) -> Result<String, String> {
 \n\
 工具命名: 每个工具都有英文调用名(name)与中文标题(label), 调用时使用英文调用名。\n\
 \n\
-核心工具 (始终可用):\n\
-{core_lines}\n\
-\n\
-重要工具 (始终可用):\n\
-{important_lines}\n\
-\n\
-长期记忆规则:\n\
+	核心工具 (始终可用):\n\
+	{core_lines}\n\
+	\n\
+	重要工具 (始终可用):\n\
+	{important_lines}\n\
+	\n\
+	{mcp_hint}\n\
+	\n\
+	长期记忆规则:\n\
 - 用户的重要信息 (姓名、生日、偏好、约定、重要事件、美好回忆等) 应该用 memory-add 保存为长期记忆, 不要只停留在对话里。\n\
 - 回答涉及用户个人情况时, 先用 memory-search 回忆相关记忆; 不确定就先搜索。\n\
 - 如果用户提到了记忆里没有的重要信息, 主动用 memory-add 补充保存。\n\
