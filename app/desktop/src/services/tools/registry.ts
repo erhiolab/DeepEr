@@ -35,3 +35,16 @@ export const searchTools = async (query: string, limit = 10): Promise<ToolDefini
 		return []
 	}
 }
+
+/**
+ * 更新工具搜索别名 (前端工具页编辑)
+ */
+export const updateToolKeywords = async (id: number, keywords: string[]): Promise<boolean> => {
+	try {
+		await invoke("tool_update_keywords", {id, keywords})
+		return true
+	} catch (error) {
+		await logger.error("[tools] 更新搜索别名失败", error)
+		return false
+	}
+}

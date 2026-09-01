@@ -438,6 +438,11 @@ const buildSnapshot = () => {
 					copied: t("components.main.toolList.copied"),
 					copyFailed: t("components.main.toolList.copyFailed"),
 					agentHintBuiltin: t("components.main.toolList.agentHintBuiltin"),
+					aliases: t("components.main.toolList.aliases"),
+					aliasesPlaceholder: t("components.main.toolList.aliasesPlaceholder"),
+					aliasesSaved: t("components.main.toolList.aliasesSaved"),
+					aliasesSaveFailed: t("components.main.toolList.aliasesSaveFailed"),
+					save: t("components.main.toolList.save"),
 				},
 				scheduled: {
 					title: t("components.main.scheduled.title"),

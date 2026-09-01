@@ -12,7 +12,7 @@ use crate::tool::model::ToolDefinition;
 
 /// 查询列
 const TOOL_COLUMNS: &str =
-	"id, name, label, description, provider, executor, input_schema, config, enabled, builtin, version, created_at, updated_at";
+	"id, name, label, description, keywords, provider, executor, input_schema, config, enabled, builtin, version, created_at, updated_at";
 
 /// 当前时间戳 (秒)
 fn now() -> i64 {
@@ -28,6 +28,27 @@ fn parse_json(raw: Option<String>) -> Value {
 		.unwrap_or_else(|| json!({}))
 }
 
+/// 解析搜索别名列: 按换行 / 逗号 / 顿号分隔, 去重去空
+fn parse_keywords(raw: Option<String>) -> Vec<String> {
+	let mut out: Vec<String> = Vec::new();
+	if let Some(raw) = raw {
+		// 统一中文逗号/顿号为英文逗号后按换行/逗号拆分
+		let normalized = raw.replace("\u{ff0c}", ",").replace("\u{3001}", ",");
+		for part in normalized.split(['\n', ',']) {
+			let part = part.trim();
+			if !part.is_empty() && !out.iter().any(|k| k == part) {
+				out.push(part.to_string());
+			}
+		}
+	}
+	out
+}
+
+/// 别名列表转存储串 (换行分隔)
+fn join_keywords(keywords: &[String]) -> String {
+	keywords.join("\n")
+}
+
 /// 从 SQLite 行读取工具定义
 fn row_to_definition(row: &Row<'_>) -> rusqlite::Result<ToolDefinition> {
 	Ok(ToolDefinition {
@@ -35,15 +56,16 @@ fn row_to_definition(row: &Row<'_>) -> rusqlite::Result<ToolDefinition> {
 		name: row.get(1)?,
 		label: row.get(2)?,
 		description: row.get(3)?,
-		provider: row.get(4)?,
-		executor: row.get(5)?,
-		input_schema: parse_json(row.get(6)?),
-		config: parse_json(row.get(7)?),
-		enabled: row.get::<_, i64>(8)? != 0,
-		builtin: row.get::<_, i64>(9)? != 0,
-		version: row.get(10)?,
-		created_at: row.get(11)?,
-		updated_at: row.get(12)?,
+		keywords: parse_keywords(row.get(4)?),
+		provider: row.get(5)?,
+		executor: row.get(6)?,
+		input_schema: parse_json(row.get(7)?),
+		config: parse_json(row.get(8)?),
+		enabled: row.get::<_, i64>(9)? != 0,
+		builtin: row.get::<_, i64>(10)? != 0,
+		version: row.get(11)?,
+		created_at: row.get(12)?,
+		updated_at: row.get(13)?,
 	})
 }
 
@@ -215,12 +237,19 @@ const BUILTIN_TOOLS: &[(&str, &str, &str, &str, &str, &str)] = &[
 pub fn init_defaults(conn: &Connection) -> rusqlite::Result<()> {
 	let timestamp = now();
 	for (name, label, description, executor, schema, config) in BUILTIN_TOOLS {
+		// 内置搜索别名种子: 仅在为空时写入, 保留用户在界面上编辑的别名
+		let seed_keywords = BUILTIN_KEYWORDS
+			.iter()
+			.find(|(n, _)| n == name)
+			.map(|(_, aliases)| aliases.join(","))
+			.unwrap_or_default();
 		conn.execute(
-			"INSERT INTO tools (name, label, description, provider, executor, input_schema, config, enabled, builtin, version, created_at, updated_at)
-			 VALUES (?1, ?2, ?3, 'internal', ?4, ?5, ?6, 1, 1, '1.0.0', ?7, ?7)
+			"INSERT INTO tools (name, label, description, keywords, provider, executor, input_schema, config, enabled, builtin, version, created_at, updated_at)
+			 VALUES (?1, ?2, ?3, ?4, 'internal', ?5, ?6, ?7, 1, 1, '1.0.0', ?8, ?8)
 			 ON CONFLICT(name) DO UPDATE SET
 				label = excluded.label,
 				description = excluded.description,
+				keywords = CASE WHEN tools.keywords = '' THEN excluded.keywords ELSE tools.keywords END,
 				provider = excluded.provider,
 				executor = excluded.executor,
 				input_schema = excluded.input_schema,
@@ -228,7 +257,7 @@ pub fn init_defaults(conn: &Connection) -> rusqlite::Result<()> {
 				enabled = excluded.enabled,
 				version = excluded.version,
 				updated_at = excluded.updated_at",
-			params![name, label, description, executor, schema, config, timestamp],
+			params![name, label, description, seed_keywords, executor, schema, config, timestamp],
 		)?;
 	}
 	// 清理已下架的内置工具 (种子表里不再存在的 builtin 行, 如被拆分/替换的旧工具)
@@ -246,6 +275,7 @@ pub fn upsert_mcp_tool(
 	name: &str,
 	label: &str,
 	description: &str,
+	keywords: &str,
 	executor: &str,
 	schema: Value,
 	config: Value,
@@ -253,11 +283,12 @@ pub fn upsert_mcp_tool(
 ) -> Result<(), String> {
 	let timestamp = now();
 	conn.execute(
-		"INSERT INTO tools (name, label, description, provider, executor, input_schema, config, enabled, builtin, version, created_at, updated_at)
-		 VALUES (?1, ?2, ?3, 'mcp', ?4, ?5, ?6, ?7, 0, '1.0.0', ?8, ?8)
+		"INSERT INTO tools (name, label, description, keywords, provider, executor, input_schema, config, enabled, builtin, version, created_at, updated_at)
+		 VALUES (?1, ?2, ?3, ?4, 'mcp', ?5, ?6, ?7, ?8, 0, '1.0.0', ?9, ?9)
 		 ON CONFLICT(name) DO UPDATE SET
 			label = excluded.label,
 			description = excluded.description,
+			keywords = CASE WHEN tools.keywords = '' THEN excluded.keywords ELSE tools.keywords END,
 			provider = excluded.provider,
 			executor = excluded.executor,
 			input_schema = excluded.input_schema,
@@ -269,6 +300,7 @@ pub fn upsert_mcp_tool(
 			name,
 			label,
 			description,
+			keywords,
 			executor,
 			schema.to_string(),
 			config.to_string(),
@@ -300,37 +332,141 @@ pub fn count_mcp_tools_by_server(conn: &Connection, server_id: i64) -> Result<us
 	.map_err(|e| format!("统计 MCP 工具数量失败: {e}"))
 }
 
+/// 更新工具搜索别名 (前端'工具页'编辑, 换行分隔存储)
+pub fn update_keywords(conn: &Connection, id: i64, keywords: &[String]) -> Result<(), String> {
+	let timestamp = now();
+	let joined = join_keywords(keywords);
+	conn.execute(
+		"UPDATE tools SET keywords = ?1, updated_at = ?2 WHERE id = ?3",
+		params![joined, timestamp, id],
+	)
+	.map_err(|e| format!("更新搜索别名失败: {e}"))?;
+	Ok(())
+}
+
 /// 获取全部工具 (按调用名排序)
 pub fn list(conn: &Connection) -> Result<Vec<ToolDefinition>, String> {
 	query_all(conn, &format!("SELECT {TOOL_COLUMNS} FROM tools ORDER BY name ASC"))
 }
 
-/// 搜索工具 (调用名 / 中文标题 / 描述模糊匹配; 空关键词返回全部)
+/// 内置工具搜索别名 (AI 常用说法, 弥补名称/描述缺少的关键词)
+const BUILTIN_KEYWORDS: &[(&str, &[&str])] = &[
+	("tool-search", &["搜索工具", "查找工具", "工具列表", "找工具", "search", "find"]),
+	("tool-list-all", &["全部工具", "所有工具", "工具清单", "工具一览", "all", "list"]),
+	("time-now", &["现在时间", "几点", "当前时间", "日期时间", "now", "date", "clock"]),
+	("time-today", &["今天", "今日", "星期几", "今天星期", "today"]),
+	("time-zone", &["时区", "utc", "偏移", "timezone"]),
+	("calculator", &["数学", "计算器", "算术", "加减乘除", "求值", "运算", "math", "calc"]),
+	("data-json", &["json", "解析", "校验", "查询字段", "格式化", "美化", "parse", "validate"]),
+	("data-text", &["文本", "模板", "变量替换", "分割", "合并", "字符串", "template", "split", "merge"]),
+	("schedule-create-once", &["定时", "一次性任务", "提醒", "闹钟", "计划", "once"]),
+	("schedule-create-recurring", &["定时", "循环任务", "重复", "每天", "每周", "每小时", "周期", "recurring"]),
+	("schedule-update", &["定时", "修改任务", "编辑任务", "改时间"]),
+	("schedule-list", &["定时", "任务列表", "查询任务", "任务清单"]),
+	("schedule-delete", &["定时", "删除任务", "取消任务"]),
+	("memory-add", &["记忆", "记住", "保存信息", "重要信息", "提醒自己"]),
+	("memory-search", &["记忆", "回忆", "搜索记忆", "想起", "查找记忆"]),
+	("memory-list", &["记忆", "全部记忆", "记忆清单"]),
+	("memory-update", &["记忆", "修改记忆", "更新记忆"]),
+	("memory-delete", &["记忆", "删除记忆", "忘记"]),
+	("app-check-update", &["更新", "版本", "检查更新", "新版本", "update"]),
+	("app-update-apply", &["更新", "升级", "安装更新", "应用更新", "apply"]),
+];
+
+/// 查询分词: 按空白/标点切分, 中英文数字下划线保留 (CJK 连续串作为整体, 便于 2-gram 兜底)
+fn tokenize_query(query: &str) -> Vec<String> {
+	query
+		.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+		.filter(|t| !t.is_empty())
+		.map(|t| t.to_lowercase())
+		.collect()
+}
+
+/// 判断 token 是否包含 CJK 字符 (中文搜索用 2-gram 兜底)
+fn has_cjk(text: &str) -> bool {
+	text.chars().any(|c| {
+		matches!(c as u32, 0x4E00..=0x9FFF | 0x3400..=0x4DBF | 0xF900..=0xFAFF)
+	})
+}
+
+/// 单 token 在某字段的最佳匹配分 (0 = 无匹配)
+fn token_field_score(token: &str, name: &str, label: &str, description: &str, keywords: &[String]) -> i64 {
+	let mut best = 0i64;
+	if name.contains(token) {
+		best = best.max(4);
+	}
+	if label.contains(token) {
+		best = best.max(3);
+	}
+	if keywords.iter().any(|kw| kw.contains(token)) {
+		best = best.max(2);
+	}
+	if description.contains(token) {
+		best = best.max(1);
+	}
+	// 中文长串兜底: 2-gram 任一命中即算分
+	if best == 0 && has_cjk(token) {
+		let chars: Vec<char> = token.chars().collect();
+		if chars.len() > 2 {
+			for pair in chars.windows(2) {
+				let bigram: String = pair.iter().collect();
+				if name.contains(&bigram) {
+					best = best.max(2);
+				} else if label.contains(&bigram) {
+					best = best.max(2);
+				} else if keywords.iter().any(|kw| kw.contains(&bigram)) {
+					best = best.max(1);
+				} else if description.contains(&bigram) {
+					best = best.max(1);
+				}
+				if best > 0 {
+					break;
+				}
+			}
+		}
+	}
+	best
+}
+
+/// 搜索工具: 分词多字段匹配 (调用名/中文标题/描述/别名), 命中词数优先 + 字段权重排序.
+/// 解决 AI 用组合关键词 (如 "stop service") 搜不到工具的问题; 空关键词返回全部.
 pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<ToolDefinition>, String> {
-	let keyword = query.trim().to_lowercase();
-	let limit = limit.clamp(1, 200) as i64;
-	if keyword.is_empty() {
+	let limit = limit.clamp(1, 200);
+	let query = query.trim();
+	if query.is_empty() {
 		return query_all(
 			conn,
 			&format!("SELECT {TOOL_COLUMNS} FROM tools ORDER BY name ASC LIMIT {limit}"),
 		);
 	}
-	let mut stmt = conn
-		.prepare(&format!(
-			"SELECT {TOOL_COLUMNS} FROM tools
-			 WHERE instr(lower(name), ?1) > 0
-			    OR instr(lower(label), ?1) > 0
-			    OR instr(lower(description), ?1) > 0
-			 ORDER BY name ASC
-			 LIMIT ?2"
-		))
-		.map_err(|e| format!("查询工具失败: {e}"))?;
-	let rows = stmt
-		.query_map(params![keyword, limit], row_to_definition)
-		.map_err(|e| format!("查询工具失败: {e}"))?
-		.collect::<Result<Vec<_>, _>>()
-		.map_err(|e| format!("解析工具失败: {e}"))?;
-	Ok(rows)
+	let tokens = tokenize_query(query);
+	if tokens.is_empty() {
+		return Ok(Vec::new());
+	}
+	let all = query_all(conn, &format!("SELECT {TOOL_COLUMNS} FROM tools ORDER BY name ASC"))?;
+	let mut scored: Vec<(i64, ToolDefinition)> = Vec::new();
+	for tool in all {
+		let name = tool.name.to_lowercase();
+		let label = tool.label.to_lowercase();
+		let description = tool.description.to_lowercase();
+		let keywords: Vec<String> = tool.keywords.iter().map(|k| k.to_lowercase()).collect();
+		let mut total = 0i64;
+		let mut matched = 0usize;
+		for token in &tokens {
+			let score = token_field_score(token, &name, &label, &description, &keywords);
+			if score > 0 {
+				matched += 1;
+			}
+			total += score;
+		}
+		if matched > 0 {
+			// 命中词数优先 (×100), 其次字段权重总分
+			scored.push(((matched as i64) * 100 + total, tool));
+		}
+	}
+	scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.cmp(&b.1.name)));
+	scored.truncate(limit);
+	Ok(scored.into_iter().map(|(_, tool)| tool).collect())
 }
 
 /// 按调用名查工具

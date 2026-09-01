@@ -29,6 +29,10 @@ export interface ToolDefinition {
 	 */
 	description: string
 	/**
+	 * 搜索别名: AI 搜索工具时的额外关键词 (前端可编辑, 每行一个)
+	 */
+	keywords: string[]
+	/**
 	 * 是否内置工具
 	 */
 	builtin: boolean

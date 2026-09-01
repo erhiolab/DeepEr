@@ -48,6 +48,16 @@ pub fn build_system_prompt(conn: &Connection) -> Result<String, String> {
 		.filter_map(|name| tool_line(&tools, name))
 		.collect::<Vec<_>>()
 		.join("\n");
+	// 工具类别: 取中文标题第一段 (如 工具/时间/定时/记忆/FlyEnv), 去重排序后给 AI 当搜索路标
+	let mut categories: Vec<String> = tools
+		.iter()
+		.filter_map(|tool| tool.label.split('-').next().map(|s| s.trim().to_string()))
+		.filter(|s| !s.is_empty())
+		.collect::<std::collections::HashSet<_>>()
+		.into_iter()
+		.collect();
+	categories.sort();
+	let categories_line = categories.join(" / ");
 	let mcp_hint = "外部工具 (MCP): 接入的 MCP 服务器工具也会出现在工具库中, 调用名格式为「服务器名-工具名」, 不确定时先用 tool-search 搜索。";
 
 	let prompt = format!(
@@ -64,6 +74,9 @@ pub fn build_system_prompt(conn: &Connection) -> Result<String, String> {
 	\n\
 	重要工具 (始终可用):\n\
 	{important_lines}\n\
+	\n\
+	工具类别 (搜索工具时先用「类别 + 功能词」组合查询, 例如 定时/记忆/时间/计算 或 MCP 服务器名, 搜不到就换关键词):\n\
+	{categories_line}\n\
 	\n\
 	{mcp_hint}\n\
 	\n\

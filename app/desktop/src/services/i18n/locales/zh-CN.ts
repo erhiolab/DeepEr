@@ -414,6 +414,11 @@ export default {
 				copied: "已复制调用名",
 				copyFailed: "复制失败",
 				agentHintBuiltin: "内置注册工具",
+				aliases: "搜索别名",
+				aliasesPlaceholder: "每行一个别名, AI 搜索工具时也会匹配这些词",
+				aliasesSaved: "别名已保存",
+				aliasesSaveFailed: "保存失败",
+				save: "保存",
 			},
 			scheduled: {
 				title: "定时任务",

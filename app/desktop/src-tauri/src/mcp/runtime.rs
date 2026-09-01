@@ -591,6 +591,45 @@ fn unique_tool_name(conn: &Connection, base: &str, server_id: i64) -> String {
 	}
 }
 
+/// 为 MCP 工具派生搜索关键词: 服务器名 + 工具名分词 (snake_case/camelCase/标点) + 标题分词
+fn mcp_keywords(server_name: &str, tool_name: &str, title: &str) -> Vec<String> {
+	let mut words: Vec<String> = Vec::new();
+	let mut push_words = |text: &str| {
+		let mut current = String::new();
+		let mut prev_lower = false;
+		for ch in text.chars() {
+			if ch.is_alphanumeric() {
+				// camelCase 边界: 大写跟在小写/数字后时断词
+				if ch.is_uppercase() && prev_lower && !current.is_empty() {
+					words.push(current.to_lowercase());
+					current.clear();
+				}
+				current.push(ch);
+				prev_lower = ch.is_lowercase() || ch.is_numeric();
+			} else {
+				if !current.is_empty() {
+					words.push(current.to_lowercase());
+					current.clear();
+				}
+				prev_lower = false;
+			}
+		}
+		if !current.is_empty() {
+			words.push(current.to_lowercase());
+		}
+	};
+	push_words(server_name);
+	push_words(tool_name);
+	push_words(title);
+	let mut out: Vec<String> = Vec::new();
+	for word in words {
+		if word.chars().count() >= 2 && !out.contains(&word) {
+			out.push(word);
+		}
+	}
+	out
+}
+
 /// 同步单个服务器: 连接 → 列出工具 → 全量写回 tools 表
 pub async fn sync_server(app: &AppHandle, server: &McpServerRecord) -> Result<SyncSummary, String> {
 	let connection = McpRuntime::global().get_connection(server).await?;
@@ -626,11 +665,13 @@ pub async fn sync_server(app: &AppHandle, server: &McpServerRecord) -> Result<Sy
 			"serverName": server.name,
 			"mcpTool": mcp_name,
 		});
+		let keywords = mcp_keywords(&server.name, &mcp_name, &title).join(",");
 		tool_repository::upsert_mcp_tool(
 			&conn,
 			&name,
 			&label,
 			&description,
+			&keywords,
 			&mcp_name,
 			schema,
 			config,

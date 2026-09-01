@@ -126,6 +126,7 @@ pub fn run() {
 
             commands::tools::tool_list,
             commands::tools::tool_search,
+            commands::tools::tool_update_keywords,
             commands::tool::tool_execute,
             commands::agent::agent_run,
             commands::agent::agent_cancel,

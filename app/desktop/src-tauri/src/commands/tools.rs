@@ -42,3 +42,18 @@ pub fn tool_search(
 		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
 	repository::search(&conn, &args.query, args.limit.unwrap_or(10) as usize)
 }
+
+/// 更新工具搜索别名 (前端「工具页」编辑, 换行分隔存储)
+/// invoke("tool_update_keywords", { id: 1, keywords: ["别名1", "别名2"] })
+#[tauri::command]
+pub fn tool_update_keywords(
+	state: tauri::State<'_, db::Db>,
+	id: i64,
+	keywords: Vec<String>,
+) -> Result<(), String> {
+	let conn = state
+		.0
+		.lock()
+		.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+	repository::update_keywords(&conn, id, &keywords)
+}

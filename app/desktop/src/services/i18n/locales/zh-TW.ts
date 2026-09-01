@@ -414,6 +414,11 @@ export default {
 				copied: "已複製呼叫名稱",
 				copyFailed: "複製失敗",
 				agentHintBuiltin: "內建註冊工具",
+				aliases: "搜尋別名",
+				aliasesPlaceholder: "每行一個別名, AI 搜尋工具時也會比對這些詞",
+				aliasesSaved: "別名已儲存",
+				aliasesSaveFailed: "儲存失敗",
+				save: "儲存",
 			},
 			scheduled: {
 				title: "定時任務",

@@ -15,6 +15,8 @@ pub struct ToolDefinition {
 	pub label: String,
 	/// 用途 / 参数 / 调用方式说明
 	pub description: String,
+	/// 搜索别名 (AI 搜索关键词, 每行/逗号一个; 前端可编辑)
+	pub keywords: Vec<String>,
 	/// Provider 类型: internal / http / mcp / plugin
 	pub provider: String,
 	/// Provider 内部的执行目标 (internal 时即 Handler 名)

@@ -392,7 +392,7 @@ const EXTRACT_SYSTEM_PROMPT: &str = "你是记忆提取器。从对话中提取�
 const SUMMARY_SYSTEM_PROMPT: &str = "你是对话摘要器。用简洁的中文总结这段对话的要点 (发生了什么、用户的偏好/约定/关键信息), 300 字以内, 只输出摘要正文。";
 
 /// 上下文末尾重申 (长上下文下模型容易对开头的系统消息失焦, 在最新用户消息前再强调一次)
-const CONTEXT_END_REMINDER: &str = "[执行提醒] 你是 DeepEr 的 AI 助手, 保持当前人设。用户要求任何操作时必须先调用工具; 需要时间先查 time-now; 涉及用户个人信息时先 memory-search 长期记忆; 用户姓名/生日/偏好等重要信息记得用 memory-add 保存。";
+const CONTEXT_END_REMINDER: &str = "[执行提醒] 你是 DeepEr 的 AI 助手, 保持当前人设。用户要求任何操作时必须先调用工具; 搜索工具时先用「类别 + 功能词」组合 (如 定时/记忆/时间/计算/服务器名), 一次搜不到就换关键词多搜几次; 需要时间先查 time-now; 涉及用户个人信息时先 memory-search 长期记忆; 用户姓名/生日/偏好等重要信息记得用 memory-add 保存。";
 
 /// 摘要候选: 对话超过阈值时, 取最早一段未被摘要覆盖的范围
 struct SummaryCandidate {

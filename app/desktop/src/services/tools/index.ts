@@ -2,4 +2,4 @@
  * 工具注册机统一出口
  */
 export * from "./types"
-export {listTools, searchTools} from "./registry"
+export {listTools, searchTools, updateToolKeywords} from "./registry"

@@ -5,7 +5,7 @@ import useLanguages from "../../services/i18n/useLanguages"
 import Icon from "../common/Icon.vue"
 import PageHeader from "../common/PageHeader.vue"
 import EmptyState from "../common/EmptyState.vue"
-import {listTools, type ToolDefinition} from "../../services/tools"
+import {listTools, updateToolKeywords, type ToolDefinition} from "../../services/tools"
 
 const I18N = computed(() => {
 	const SNAPSHOT = useLanguages()
@@ -30,6 +30,22 @@ const activeCategory = ref("")
 
 // 已展开的工具 id
 const expanded = ref<number[]>([])
+
+// 搜索别名编辑草稿 (tool id → 文本, 每行一个别名)
+const aliasesDraft = ref<Record<number, string>>({})
+const savingAliases = ref<Record<number, boolean>>({})
+
+// 别名保存反馈
+const aliasesFeedback = ref<{id: number, ok: boolean} | null>(null)
+let aliasesFeedbackTimer: ReturnType<typeof setTimeout> | null = null
+
+const showAliasesFeedback = (id: number, ok: boolean): void => {
+	aliasesFeedback.value = {id, ok}
+	if (aliasesFeedbackTimer) clearTimeout(aliasesFeedbackTimer)
+	aliasesFeedbackTimer = setTimeout(() => {
+		aliasesFeedback.value = null
+	}, 2200)
+}
 
 // 已复制调用名
 const copiedName = ref<string | null>(null)
@@ -77,7 +93,8 @@ const filteredTools = computed(() => {
 	return categoryTools.value.filter(tool =>
 		tool.name.toLowerCase().includes(KEYWORD) ||
 		tool.label.toLowerCase().includes(KEYWORD) ||
-		tool.description.toLowerCase().includes(KEYWORD),
+		tool.description.toLowerCase().includes(KEYWORD) ||
+		(tool.keywords ?? []).some(k => k.toLowerCase().includes(KEYWORD)),
 	)
 })
 
@@ -93,9 +110,35 @@ const onTabsWheel = (event: WheelEvent): void => {
 
 // 展开 / 收起工具卡片 (支持同时展开多个)
 const toggleExpand = (id: number): void => {
-	expanded.value = expanded.value.includes(id)
-		? expanded.value.filter(item => item !== id)
-		: [...expanded.value, id]
+	const NOW_EXPANDED = !expanded.value.includes(id)
+	expanded.value = NOW_EXPANDED
+		? [...expanded.value, id]
+		: expanded.value.filter(item => item !== id)
+	if (NOW_EXPANDED) {
+		// 展开时同步别名草稿 (每行一个)
+		const TOOL = tools.value.find(tool => tool.id === id)
+		aliasesDraft.value[id] = (TOOL?.keywords ?? []).join("\n")
+	}
+}
+
+// 保存搜索别名
+const saveAliases = async (tool: ToolDefinition): Promise<void> => {
+	const KEYWORDS = (aliasesDraft.value[tool.id] ?? "")
+		.split("\n")
+		.map(line => line.trim())
+		.filter(line => line.length > 0)
+	savingAliases.value = {...savingAliases.value, [tool.id]: true}
+	try {
+		const OK = await updateToolKeywords(tool.id, KEYWORDS)
+		if (OK) {
+			tool.keywords = KEYWORDS
+			showAliasesFeedback(tool.id, true)
+		} else {
+			showAliasesFeedback(tool.id, false)
+		}
+	} finally {
+		savingAliases.value = {...savingAliases.value, [tool.id]: false}
+	}
 }
 
 // 注册时间展示 (内置工具初始化时间为准)
@@ -127,6 +170,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
 	if (copyTimer) clearTimeout(copyTimer)
 	if (copyErrorTimer) clearTimeout(copyErrorTimer)
+	if (aliasesFeedbackTimer) clearTimeout(aliasesFeedbackTimer)
 })
 </script>
 
@@ -218,6 +262,31 @@ onBeforeUnmount(() => {
 									<span class="meta-label">{{ I18N.registeredAt }}</span>
 									<span class="meta-value">{{ formatTime(tool.createdAt) }}</span>
 								</span>
+							</div>
+							<div class="tool-aliases">
+								<span class="meta-label">{{ I18N.aliases }}</span>
+								<textarea
+									v-model="aliasesDraft[tool.id]"
+									class="aliases-input"
+									:placeholder="I18N.aliasesPlaceholder"
+									rows="3"
+								/>
+								<div class="aliases-actions">
+									<button
+										class="aliases-save"
+										:disabled="savingAliases[tool.id]"
+										@click="saveAliases(tool)"
+									>
+										{{ I18N.save }}
+									</button>
+									<span
+										v-if="aliasesFeedback && aliasesFeedback.id === tool.id"
+										class="aliases-feedback"
+										:class="aliasesFeedback.ok ? 'ok' : 'error'"
+									>
+										{{ aliasesFeedback.ok ? I18N.aliasesSaved : I18N.aliasesSaveFailed }}
+									</span>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -512,6 +581,77 @@ onBeforeUnmount(() => {
 	.meta-value {
 		color: var(--deep-teal-bright);
 		font-family: inherit;
+	}
+}
+
+.tool-aliases {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin-top: 0.4rem;
+
+	.meta-label {
+		font-size: 1.05rem;
+		color: var(--text-muted);
+	}
+}
+
+.aliases-input {
+	width: 100%;
+	padding: 0.6rem 0.8rem;
+	border: 0.1rem solid var(--line-subtle);
+	border-radius: var(--radius-sm);
+	background: var(--bg-deep);
+	color: var(--text-primary);
+	font-family: inherit;
+	font-size: 1.1rem;
+	line-height: 1.5;
+	resize: vertical;
+	box-sizing: border-box;
+
+	&:focus {
+		outline: none;
+		border-color: var(--deep-teal-bright);
+	}
+}
+
+.aliases-actions {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+
+.aliases-save {
+	padding: 0.4rem 1.2rem;
+	border: 0.1rem solid var(--line-strong);
+	border-radius: var(--radius-sm);
+	background-color: rgba(125, 227, 255, 0.08);
+	color: var(--deep-teal-bright);
+	font-family: inherit;
+	font-size: 1.05rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s ease;
+
+	&:hover:not(:disabled) {
+		background-color: rgba(125, 227, 255, 0.16);
+	}
+
+	&:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+}
+
+.aliases-feedback {
+	font-size: 1.05rem;
+
+	&.ok {
+		color: var(--touch-ok);
+	}
+
+	&.error {
+		color: var(--danger);
 	}
 }
 
