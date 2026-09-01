@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod db;
 mod log;
+mod mcp;
 mod memory;
 mod resource;
 mod secret;
@@ -44,6 +45,11 @@ pub fn run() {
             let db_handle = db::init(app_handle)?;
             // 先注册 DB 状态, 再启动调度线程 (线程内会访问该状态)
             app.manage(db_handle);
+            // 后台同步已启用的 MCP 服务器工具 (失败仅记日志, 不阻塞启动)
+            let mcp_sync_app = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                crate::mcp::runtime::sync_all(&mcp_sync_app).await;
+            });
             // 初始化定时任务调度线程 (后台持续检查, 到点 emit 事件)
             task::scheduler::init(app_handle.clone())?;
             // 初始化资源目录 (资源和下载临时目录)
@@ -105,6 +111,13 @@ pub fn run() {
             commands::memory::memory_update,
             commands::memory::memory_delete,
 
+            commands::mcp::mcp_list,
+            commands::mcp::mcp_create,
+            commands::mcp::mcp_update,
+            commands::mcp::mcp_delete,
+            commands::mcp::mcp_set_enabled,
+            commands::mcp::mcp_sync,
+
             commands::summary::summary_list,
             commands::summary::summary_create,
             commands::summary::summary_delete,
@@ -115,6 +128,7 @@ pub fn run() {
             commands::tools::tool_search,
             commands::tool::tool_execute,
             commands::agent::agent_run,
+            commands::agent::agent_cancel,
 
             commands::tasks::task_list,
             commands::tasks::task_create,

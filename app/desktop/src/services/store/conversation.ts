@@ -12,12 +12,13 @@
  */
 import {computed, reactive, ref} from "vue"
 import {defineStore} from "pinia"
+import {invoke} from "@tauri-apps/api/core"
 import {assetUrl} from "../asset"
 import {contextInsert, contextList, estimateTokens} from "../context"
 import {logger} from "../logger"
 import {maybeNotifyAiReply} from "../chatNotify"
 import useLanguages from "../i18n/useLanguages"
-import type {Persona} from "../persona"
+import {getPersona, getSelectedPersonaId, selectPersona, type Persona} from "../persona"
 
 /**
  * 对话消息方向
@@ -54,6 +55,15 @@ const parseToolCallNames = (text: string): string[] => {
 		if (NAME) NAMES.push(NAME)
 	}
 	return NAMES
+}
+
+// 去掉 <tool_call ...> / <tool_result ...> 标签, 还原 AI 的中间思考文本
+const stripToolTags = (text: string): string => {
+	return text
+		.replace(/<tool_call\b[^>]*>[\s\S]*?<\/tool_call>/g, "")
+		.replace(/<tool_result\b[^>]*>[\s\S]*?<\/tool_result>/g, "")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim()
 }
 
 // 从工具结果留痕 (type=tool, role=user) 中解析 调用名 → 是否成功
@@ -182,6 +192,22 @@ export const useConversationStore = defineStore("conversation", () => {
 		return MSG
 	}
 
+	/**
+	 * 在指定消息之前插入左侧 (AI) 消息 (用于多轮循环中的中间思考文本)
+	 */
+	const pushLeftBefore = (anchorId: number, text: string): ChatMessage => {
+		const MSG = reactive<ChatMessage>({id: nextId++, side: "left", text, createdAt: Date.now()}) as ChatMessage
+		const INDEX = HISTORY.value.findIndex(item => item.id === anchorId)
+		if (INDEX === -1) {
+			HISTORY.value = [...HISTORY.value, MSG]
+		} else {
+			const NEXT = [...HISTORY.value]
+			NEXT.splice(INDEX, 0, MSG)
+			HISTORY.value = NEXT
+		}
+		return MSG
+	}
+
 	// 播放一段已合成的音频
 	const playAudioAsset = (audioAssetPath: string): Promise<void> =>
 		new Promise<void>((resolve) => {
@@ -218,6 +244,13 @@ export const useConversationStore = defineStore("conversation", () => {
 		const MSG = push("left", "")
 		MSG.isStreaming = true
 		setTyping(true)
+		// onDone 只允许触发一次 (防止异常路径重复放行队列导致并发请求)
+		let finished = false
+		const finish = () => {
+			if (finished) return
+			finished = true
+			onDone?.()
+		}
 		void (async () => {
 			try {
 				// 动态导入避免循环依赖
@@ -230,6 +263,10 @@ export const useConversationStore = defineStore("conversation", () => {
 						? CHAT.toolResultSuccess
 						: `${CHAT.toolResultFailed}${REASON}`
 					pushCenterBefore(MSG.id, CHAT.toolCall(name, RESULT_LABEL))
+				}, (text) => {
+					// 中间思考文本: 以独立 AI 气泡显示在最终回答气泡上方
+					const CLEAN = stripToolTags(text)
+					if (CLEAN) pushLeftBefore(MSG.id, CLEAN)
 				})
 			MSG.isStreaming = false
 			setTyping(false)
@@ -242,15 +279,26 @@ export const useConversationStore = defineStore("conversation", () => {
 			} else {
 				MSG.text = RESULT.error || useLanguages().components.main.chat.generateFailed
 			}
-			onDone?.()
+			finish()
 			} catch (err) {
 				await logger.error("conversation LLM 请求异常", err)
 				MSG.isStreaming = false
 				setTyping(false)
 				MSG.text = String(err)
-				onDone?.()
+				finish()
 			}
 		})()
+	}
+
+	/**
+	 * 中断当前 AI 执行 (兜底: Agent 卡死时由聊天界面「中断执行」按钮调用)
+	 */
+	const interrupt = async (): Promise<void> => {
+		try {
+			await invoke("agent_cancel")
+		} catch (error) {
+			await logger.error("[conversation] 中断 Agent 执行失败", error)
+		}
 	}
 
 	// 排队消息 (AI 忙时先入队, 回复结束后一次性批量发送)
@@ -313,6 +361,40 @@ export const useConversationStore = defineStore("conversation", () => {
 	}
 
 	/**
+	 * 重新应用人设 (等同切换/应用人设): 重写入设上下文 (type=person) + 重新插入
+	 * Agent 系统提示词标记 (type=agent_prompt, 后端构建时展开为完整提示词),
+	 * 然后重发开场白 (有开场白直接显示, 无则让 AI 生成问候).
+	 */
+	const reapplyPersona = async (): Promise<void> => {
+		const CHAT = useLanguages().components.main.chat
+		const ID = await getSelectedPersonaId()
+		const PERSONA = ID === null ? null : await getPersona(ID)
+		// 1. 重写入设上下文 (后端 persona_select 会清掉旧人设再写当前人设)
+		if (PERSONA) {
+			const OK = await selectPersona(PERSONA.id)
+			if (!OK) {
+				pushCenter(CHAT.personaReapplyFailed)
+				return
+			}
+		}
+		// 2. 重新插入 Agent 系统提示词标记 (content 区分来源, 历史回显用)
+		await contextInsert({
+			type: "agent_prompt",
+			role: "system",
+			content: PERSONA ? "persona" : "agent",
+			tokenCount: 1,
+		})
+		pushCenter(PERSONA ? CHAT.personaReapplied : CHAT.agentPromptReinserted)
+		// 3. 重发开场白 (无人设时退回为提醒 AI 确认遵守)
+		if (PERSONA) {
+			await startPersona(PERSONA)
+		} else {
+			pendingQueue.push({content: CHAT.agentPromptReminder, kind: "touch"})
+			drainQueue()
+		}
+	}
+
+	/**
 	 * 设置人设后触发首轮互动:
 	 * - 有开场白: 直接作为 AI 首条消息 (不消耗 LLM)
 	 * - 无开场白: 发起一次 LLM 请求生成问候
@@ -363,15 +445,29 @@ export const useConversationStore = defineStore("conversation", () => {
 		let pendingCalls: {name: string, createdAt: number}[] = []
 
 		for (const record of ORDERED) {
-			if (record.type === "talk" || record.type === "touch" || record.type === "schedule") {
-				if (!record.role || !record.content.trim()) continue
+			if (record.type === "talk" || record.type === "touch" || record.type === "schedule" || record.type === "agent_prompt") {
+				// agent_prompt 记录内容为空 (仅作标记), 其余类型要求有内容
+				if (record.type !== "agent_prompt" && (!record.role || !record.content.trim())) continue
+				const IS_STATE = record.type === "touch" || record.type === "schedule" || record.type === "agent_prompt"
+				const CHAT = useLanguages().components.main.chat
 				ITEMS.push({
-					side: (record.type === "touch" || record.type === "schedule") ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
-					text: record.content,
+					side: IS_STATE ? "center" as ChatSide : record.role === "assistant" ? "left" as ChatSide : "right" as ChatSide,
+					text: record.type === "agent_prompt"
+						? (record.content === "persona" ? CHAT.personaReapplied : CHAT.agentPromptReinserted)
+						: record.content,
 					createdAt: record.createdAt * 1000,
 				})
 			} else if (record.type === "tool") {
 				if (record.role === "assistant") {
+					// 中间思考文本还原成左侧气泡 (去掉 <tool_call>/<tool_result> 标签)
+					const THOUGHT = stripToolTags(record.content)
+					if (THOUGHT) {
+						ITEMS.push({
+							side: "left" as ChatSide,
+							text: THOUGHT,
+							createdAt: record.createdAt * 1000,
+						})
+					}
 					// 本轮调用列表 (结果行紧随其后)
 					pendingCalls = parseToolCallNames(record.content).map(name => ({
 						name,
@@ -430,12 +526,15 @@ export const useConversationStore = defineStore("conversation", () => {
 		history: HISTORY,
 		// 对方是否正在输入/加载
 		isTyping,
+		// 中断当前 AI 执行
+		interrupt,
 		// 聊天界面消息
 		chatItems,
 		// 方法
 		sendMessage,
 		sendTouch,
 		sendScheduled,
+		reapplyPersona,
 		startPersona,
 		loadHistory,
 		setTyping,

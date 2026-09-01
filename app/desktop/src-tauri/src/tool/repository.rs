@@ -240,6 +240,66 @@ pub fn init_defaults(conn: &Connection) -> rusqlite::Result<()> {
 	Ok(())
 }
 
+/// 写入一条 MCP 同步工具 (provider=mcp, 幂等 upsert)
+pub fn upsert_mcp_tool(
+	conn: &Connection,
+	name: &str,
+	label: &str,
+	description: &str,
+	executor: &str,
+	schema: Value,
+	config: Value,
+	enabled: bool,
+) -> Result<(), String> {
+	let timestamp = now();
+	conn.execute(
+		"INSERT INTO tools (name, label, description, provider, executor, input_schema, config, enabled, builtin, version, created_at, updated_at)
+		 VALUES (?1, ?2, ?3, 'mcp', ?4, ?5, ?6, ?7, 0, '1.0.0', ?8, ?8)
+		 ON CONFLICT(name) DO UPDATE SET
+			label = excluded.label,
+			description = excluded.description,
+			provider = excluded.provider,
+			executor = excluded.executor,
+			input_schema = excluded.input_schema,
+			config = excluded.config,
+			enabled = excluded.enabled,
+			version = excluded.version,
+			updated_at = excluded.updated_at",
+		params![
+			name,
+			label,
+			description,
+			executor,
+			schema.to_string(),
+			config.to_string(),
+			if enabled { 1 } else { 0 },
+			timestamp
+		],
+	)
+	.map_err(|e| format!("写入 MCP 工具失败: {e}"))?;
+	Ok(())
+}
+
+/// 删除某 MCP 服务器的全部同步工具 (禁用/删除/重新同步前清理)
+pub fn delete_mcp_tools_by_server(conn: &Connection, server_id: i64) -> Result<usize, String> {
+	conn.execute(
+		"DELETE FROM tools WHERE provider = 'mcp' AND json_extract(config, '$.serverId') = ?1",
+		params![server_id],
+	)
+	.map_err(|e| format!("清理 MCP 工具失败: {e}"))
+}
+
+/// 统计某 MCP 服务器已同步的工具数量
+pub fn count_mcp_tools_by_server(conn: &Connection, server_id: i64) -> Result<usize, String> {
+	conn.query_row(
+		"SELECT COUNT(*) FROM tools WHERE provider = 'mcp' AND json_extract(config, '$.serverId') = ?1",
+		params![server_id],
+		|row| row.get::<_, i64>(0),
+	)
+	.map(|count| count as usize)
+	.map_err(|e| format!("统计 MCP 工具数量失败: {e}"))
+}
+
 /// 获取全部工具 (按调用名排序)
 pub fn list(conn: &Connection) -> Result<Vec<ToolDefinition>, String> {
 	query_all(conn, &format!("SELECT {TOOL_COLUMNS} FROM tools ORDER BY name ASC"))

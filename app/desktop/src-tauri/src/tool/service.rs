@@ -42,6 +42,7 @@ impl ToolService {
 
 		match definition.provider.as_str() {
 			"internal" => self.runtime.execute(conn, &definition.executor, args),
+			"mcp" => Err("MCP 工具需要异步执行, 请通过 Agent 循环调用".to_string()),
 			other => Err(format!("暂不支持的工具 Provider: {other}")),
 		}
 	}

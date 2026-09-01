@@ -15,6 +15,22 @@ const I18N = computed(() => useLanguages().components.main.talk)
 const L2D = useLive2DStore()
 const CONV = useConversationStore()
 
+// 「更多」下拉菜单
+const moreOpen = ref(false)
+const moreMenuEl = ref<HTMLElement | null>(null)
+
+// 点击菜单外关闭
+const onDocClick = (event: MouseEvent) => {
+	const EL = moreMenuEl.value
+	if (EL && !EL.contains(event.target as Node)) moreOpen.value = false
+}
+
+// 重新应用人设: 重写入设 + 重插系统提示词 + 重发开场白
+const reapplyPersona = (): void => {
+	moreOpen.value = false
+	void CONV.reapplyPersona()
+}
+
 // 当前启用的人设 (有选中人设时, 对话对象显示为人设)
 const persona = ref<Persona | null>(null)
 
@@ -136,6 +152,7 @@ watch([() => CONV.history, () => CONV.isTyping], () => {
 onMounted(async () => {
 	const EL = listEl.value
 	if (EL) EL.addEventListener("scroll", onScroll, {passive: true})
+	document.addEventListener("click", onDocClick)
 	// 从 context 表回显最近聊天历史 (只回显一次), 再吸底
 	await CONV.loadHistory()
 	scrollToBottom()
@@ -146,6 +163,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
 	listEl.value?.removeEventListener("scroll", onScroll)
+	document.removeEventListener("click", onDocClick)
 })
 
 // 模型切换时重新加载配置, 及时跟上新名称/头像
@@ -169,12 +187,25 @@ watch(() => L2D.currentModel, (model) => {
 					<h2 class="peer-name">{{ peerName }}</h2>
 					<p class="peer-state" :class="{typing: CONV.isTyping}">
 						{{ CONV.isTyping ? I18N.typing : I18N.online }}
+						<button v-if="CONV.isTyping" class="interrupt-btn" @click="CONV.interrupt()">
+							{{ I18N.interrupt }}
+						</button>
 					</p>
 				</div>
 			</div>
-			<button class="more-btn" :title="I18N.more">
-				<Icon name="add" :size="18"/>
-			</button>
+			<div ref="moreMenuEl" class="more-wrap">
+				<button class="more-btn" :title="I18N.more" @click.stop="moreOpen = !moreOpen">
+					<Icon name="add" :size="18"/>
+				</button>
+				<Transition name="dropdown">
+					<div v-if="moreOpen" class="more-menu">
+						<button class="more-item" @click="reapplyPersona">
+							<Icon name="page" :size="14"/>
+							{{ I18N.reinsertAgentPrompt }}
+						</button>
+					</div>
+				</Transition>
+			</div>
 		</header>
 		<div ref="listEl" class="talk-body">
 			<TransitionGroup name="msg">
@@ -211,6 +242,7 @@ watch(() => L2D.currentModel, (model) => {
 				</button>
 			</form>
 		</footer>
+
 	</section>
 </template>
 
@@ -286,9 +318,27 @@ watch(() => L2D.currentModel, (model) => {
 		font-size: 1.05rem;
 		color: var(--text-muted);
 		transition: color 0.2s ease;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
 
 		&.typing {
 			color: var(--deep-teal-bright);
+		}
+
+		.interrupt-btn {
+			padding: 0.15rem 0.7rem;
+			border: 0.1rem solid rgba(255, 107, 107, 0.45);
+			border-radius: 99rem;
+			background: rgba(255, 107, 107, 0.08);
+			color: var(--danger, #ff6b6b);
+			font-size: 1rem;
+			cursor: pointer;
+			transition: all 0.2s ease;
+
+			&:hover {
+				background: rgba(255, 107, 107, 0.18);
+			}
 		}
 	}
 
@@ -312,6 +362,58 @@ watch(() => L2D.currentModel, (model) => {
 			border-color: var(--line-strong);
 		}
 	}
+
+	.more-wrap {
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.more-menu {
+		position: absolute;
+		top: calc(100% + 0.5rem);
+		right: 0;
+		min-width: 16rem;
+		padding: 0.4rem;
+		border: 0.1rem solid var(--line-subtle);
+		border-radius: var(--radius-md);
+		background: var(--bg-panel);
+		box-shadow: var(--shadow-soft);
+		z-index: 30;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.more-item {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+		padding: 0.7rem 0.9rem;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--text-body);
+		font-size: 1.15rem;
+		font-family: inherit;
+		cursor: pointer;
+		transition: background 0.15s ease, color 0.15s ease;
+
+		&:hover {
+			background: rgba(125, 227, 255, 0.1);
+			color: var(--deep-teal-bright);
+		}
+	}
+}
+
+.dropdown-enter-active,
+.dropdown-leave-active {
+	transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+	opacity: 0;
+	transform: translateY(-0.3rem);
 }
 
 .talk-body {
