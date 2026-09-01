@@ -2,7 +2,7 @@
 	"name": "deeper",
 	"private": true,
 	"description": "DeepEr - a desktop pet application",
-	"version": "0.2.1",
+	"version": "0.3.0",
 	"author": "erhio, qicajie",
 	"type": "module",
 	"scripts": {

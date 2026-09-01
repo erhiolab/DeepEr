@@ -1,6 +1,6 @@
 [package]
 name = "deeper"
-version = "0.2.1"
+version = "0.3.0"
 description = "DeepEr"
 authors = ["erhio", "qicajie"]
 edition = "2021"
