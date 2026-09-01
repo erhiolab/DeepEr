@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "deeper"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
