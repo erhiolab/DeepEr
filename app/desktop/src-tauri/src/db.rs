@@ -136,16 +136,8 @@ pub fn init(app: &AppHandle) -> DbResult<Db> {
     let conn = Connection::open(&db_path)?;
     // 创建数据库表
     conn.execute_batch(SCHEMA)?;
-    // 老库补列: tools 表缺少 keywords 列时补上 (幂等, 已发布版本兼容)
-    let has_keywords: bool = conn
-        .prepare("PRAGMA table_info(tools)")?
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<Result<Vec<_>, _>>()?
-        .iter()
-        .any(|name| name == "keywords");
-    if !has_keywords {
-        conn.execute("ALTER TABLE tools ADD COLUMN keywords TEXT NOT NULL DEFAULT ''", [])?;
-    }
+    // 旧库结构升级 / 兼容步骤统一在 upgrade.rs 集中执行 (幂等)
+    crate::upgrade::run(&conn)?;
     // 初始化默认配置
     // 只补充缺失配置, 不覆盖用户已有配置.
     config::init_defaults(&conn)?;

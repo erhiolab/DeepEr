@@ -1,9 +1,9 @@
 //! Definition Registry: tools 表内置种子 / 查询
 //!
-//! tools 表字段: name / label / description / provider / executor /
+//! tools 表字段: name / label / description / keywords / provider / executor /
 //! input_schema / config / enabled / builtin / version / created_at / updated_at.
 //! 内置工具幂等 upsert (定义以代码为准, 每次启动刷新); 用户注册写入留给后续插件系统.
-//! 软件未发布, 不做旧库迁移: 表结构以 db.rs SCHEMA 为准.
+//! 旧库结构变更统一走 upgrade.rs (此处只维护种子与查询).
 
 use rusqlite::{params, Connection, Row};
 use serde_json::{json, Value};

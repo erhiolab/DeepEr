@@ -11,6 +11,7 @@ mod secret;
 mod task;
 mod tool;
 mod tray;
+mod upgrade;
 mod api;
 mod update;
 
