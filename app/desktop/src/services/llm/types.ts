@@ -15,12 +15,12 @@
 /**
  * 适配器唯一标识
  */
-export type LLMAdapterId = "openai-responses" | "anthropic-messages" | "google-genai"
+export type LLMAdapterId = "openai-responses" | "openai-chat" | "anthropic-messages" | "google-genai"
 
 /**
  * 后端平台标识 (与后端命令前缀 / 桥接层命令表对应)
  */
-export type LLMPlatform = "openai" | "anthropic" | "google"
+export type LLMPlatform = "openai" | "openai-chat" | "anthropic" | "google"
 
 /**
  * LLM 对话角色 (软件统一协议)

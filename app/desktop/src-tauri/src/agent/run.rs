@@ -14,7 +14,8 @@ use crate::agent::context::{self, estimate_tokens, CONTEXT_TOKEN_BUDGET};
 use crate::agent::parser;
 use crate::agent::prompt;
 use crate::commands::llm::{
-	self, anthropic_messages, google_genai, openai_responses, LlmGenerateArgs, LlmGenerateOutcome, LlmMessage,
+	self, anthropic_messages, google_genai, openai_chat, openai_responses, LlmGenerateArgs,
+	LlmGenerateOutcome, LlmMessage,
 };
 use crate::db;
 use crate::log::{self, LogSource};
@@ -81,6 +82,7 @@ pub fn request_cancel() {
 /// 当前启用的 LLM 平台
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Platform {
+	OpenAiChat,
 	OpenAi,
 	Anthropic,
 	Google,
@@ -145,6 +147,7 @@ fn active_platform(state: &tauri::State<'_, db::Db>) -> Result<Platform, String>
 	let adapter = llm::read_db_string(&conn, "llm_adapter")?;
 	drop(conn);
 	match adapter.as_deref() {
+		Some("openai-chat") => Ok(Platform::OpenAiChat),
 		Some("openai-responses") => Ok(Platform::OpenAi),
 		Some("anthropic-messages") => Ok(Platform::Anthropic),
 		Some("google-genai") => Ok(Platform::Google),
@@ -199,6 +202,7 @@ async fn generate_round(
 		request_id: None,
 	};
 	match platform {
+		Platform::OpenAiChat => openai_chat::llm_openai_chat_generate(app, state, args).await,
 		Platform::OpenAi => openai_responses::llm_openai_generate(app, state, args).await,
 		Platform::Anthropic => anthropic_messages::llm_anthropic_generate(app, state, args).await,
 		Platform::Google => google_genai::llm_google_generate(app, state, args).await,

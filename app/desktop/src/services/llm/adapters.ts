@@ -15,6 +15,7 @@ import {config} from "../config"
 import {logger} from "../logger"
 import {anthropicMessagesAdapter} from "./anthropic"
 import {googleGenAiAdapter} from "./googlegenai"
+import {openAiChatAdapter} from "./openaichat"
 import {openAiResponsesAdapter} from "./openairesponses"
 import type {LLMAdapter, LLMAdapterId} from "./types"
 
@@ -33,6 +34,7 @@ export const LLM_ADAPTER_DISABLED = "none"
  */
 export const LLM_ADAPTERS: LLMAdapter[] = [
 	openAiResponsesAdapter,
+	openAiChatAdapter,
 	anthropicMessagesAdapter,
 	googleGenAiAdapter,
 	// 未来在此追加其它适配器实例

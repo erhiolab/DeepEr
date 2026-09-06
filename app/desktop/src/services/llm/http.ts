@@ -42,6 +42,11 @@ const PLATFORM_COMMANDS: Record<LLMPlatform, {
 		test: "llm_openai_test_connection",
 		list: "llm_openai_list_models",
 	},
+	"openai-chat": {
+		generate: "llm_openai_chat_generate",
+		test: "llm_openai_chat_test_connection",
+		list: "llm_openai_chat_list_models",
+	},
 	anthropic: {
 		generate: "llm_anthropic_generate",
 		test: "llm_anthropic_test_connection",

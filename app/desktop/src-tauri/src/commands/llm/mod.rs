@@ -1,10 +1,12 @@
 //! LLM 适配器命令模块(后端实现层)
+//! - [`openai_chat`] OpenAI Chat Completions API (旧版 / 兼容网关)
 //! - [`openai_responses`] OpenAI Responses API
 //! - [`anthropic_messages`] Anthropic Messages API
 //! - [`google_genai`] Google GenAI (Gemini)
 
 pub mod anthropic_messages;
 pub mod google_genai;
+pub mod openai_chat;
 pub mod openai_responses;
 
 use std::time::Duration;
