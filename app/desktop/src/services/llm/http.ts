@@ -21,6 +21,12 @@ interface BackendGenerateResult {
 	errorCode?: string
 }
 
+interface BackendStreamEnd {
+	requestId: string
+	ok: boolean
+	error?: string
+}
+
 /**
  * 后端统一连接测试结果 (与后端 LlmTestOutcome 的 camelCase 对应)
  */
@@ -69,9 +75,9 @@ const translateError = (code: string | undefined, fallback: string | undefined, 
 		case "missing_model":
 			return ERRORS.missingModel
 		case "network_error":
-			return ERRORS.networkError
+			return fallback ?? ERRORS.networkError
 		case "http_error":
-			return ERRORS.httpError(status)
+			return fallback ?? ERRORS.httpError(status)
 		default:
 			return fallback ?? "操作失败"
 	}
@@ -132,17 +138,26 @@ export const backendGenerateStream = async (
 	const DELTA_UNSUB = await listen<{requestId: string, delta: string}>("llm-stream-delta", event => {
 		if (event.payload.requestId === REQUEST_ID) onDelta?.(event.payload.delta)
 	})
+	let streamEnd: BackendStreamEnd | undefined
+	const END_UNSUB = await listen<BackendStreamEnd>("llm-stream-end", event => {
+		if (event.payload.requestId === REQUEST_ID) streamEnd = event.payload
+	})
 	try {
 		const RESULT = await invoke<BackendGenerateResult>(PLATFORM_COMMANDS[platform].generate, {
 			args: requestArgs(request, REQUEST_ID),
 		})
-		return toGenerateResult(RESULT)
+		const NORMALIZED = toGenerateResult(RESULT)
+		if (NORMALIZED.ok && streamEnd && !streamEnd.ok) {
+			return {ok: false, error: streamEnd.error ?? "LLM 流式响应失败"}
+		}
+		return NORMALIZED
 	} catch (error) {
 		const REASON = typeof error === "string" && error.trim() ? error.trim() : "LLM 流式生成失败"
 		await logger.error("后端 LLM 流式生成失败", error)
 		return {ok: false, error: REASON}
 	} finally {
 		DELTA_UNSUB()
+		END_UNSUB()
 	}
 }
 
