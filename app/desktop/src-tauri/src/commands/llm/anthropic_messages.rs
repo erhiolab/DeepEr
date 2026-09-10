@@ -10,7 +10,10 @@ use std::time::Duration;
 use crate::db;
 use crate::log::{self, LogSource};
 
-use super::{db_conn, decrypt_api_key, read_db_string_or, stream_generate, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
+use super::{
+    db_conn, decrypt_api_key, read_db_string_or, stream_generate, truncate_utf8, LlmGenerateArgs,
+    LlmGenerateOutcome, LlmTestOutcome,
+};
 
 /// 配置键前缀 (与前端 llm_anthropic_messages.ts 保持一致)
 const PREFIX: &str = "llm_anthropic_messages";
@@ -207,6 +210,16 @@ pub async fn llm_anthropic_generate(
                 _ => (None, None),
             }
         },
+        |json| {
+            if json.get("type").and_then(|v| v.as_str()) == Some("error") {
+                json.pointer("/error/message")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            } else {
+                None
+            }
+        },
+        |json| json.get("type").and_then(|v| v.as_str()) == Some("message_stop"),
     )
     .await
     {
@@ -268,9 +281,6 @@ pub async fn llm_anthropic_test_connection(
     }
 }
 
-fn truncate(mut s: String) -> String {
-    if s.len() > 240 {
-        s.truncate(240);
-    }
-    s
+fn truncate(s: String) -> String {
+    truncate_utf8(s, 240)
 }

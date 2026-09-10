@@ -10,7 +10,10 @@ use std::time::Duration;
 use crate::db;
 use crate::log::{self, LogSource};
 
-use super::{db_conn, decrypt_api_key, read_db_string_or, stream_generate, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
+use super::{
+    db_conn, decrypt_api_key, read_db_string_or, stream_generate, truncate_utf8, LlmGenerateArgs,
+    LlmGenerateOutcome, LlmTestOutcome,
+};
 
 /// 配置键前缀 (与前端 llm_google_genai.ts 保持一致)
 const PREFIX: &str = "llm_google_genai";
@@ -193,6 +196,15 @@ pub async fn llm_google_generate(
             }
             (None, None)
         },
+        |_| None,
+        |json| {
+            json.get("candidates")
+                .and_then(|v| v.as_array())
+                .and_then(|v| v.first())
+                .and_then(|v| v.get("finishReason"))
+                .and_then(|v| v.as_str())
+                .is_some()
+        },
     )
     .await
     {
@@ -301,9 +313,6 @@ pub async fn llm_google_list_models(
     }
 }
 
-fn truncate(mut s: String) -> String {
-    if s.len() > 240 {
-        s.truncate(240);
-    }
-    s
+fn truncate(s: String) -> String {
+    truncate_utf8(s, 240)
 }

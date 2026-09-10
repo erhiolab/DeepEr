@@ -10,8 +10,9 @@ use crate::db;
 use crate::log::{self, LogSource};
 
 use super::{
-	db_conn, decrypt_api_key, read_db_string_or, stream_generate, LlmGenerateArgs,
-	LlmGenerateOutcome, LlmTestOutcome,
+	build_openai_url, db_conn, decrypt_api_key, error_detail, extract_openai_stream_error,
+	is_openai_reasoning_model, read_db_string_or, stream_generate, truncate_utf8,
+	LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome,
 };
 
 /// 配置键前缀 (与前端 llm_openaichat.ts 保持一致)
@@ -38,12 +39,12 @@ fn normalize_base_url(raw: &str, fallback: &str) -> String {
 
 /// 拼接 {base}/v1/chat/completions
 fn build_chat_url(base: &str) -> String {
-	format!("{}/v1/chat/completions", base.trim_end_matches('/'))
+	build_openai_url(base, "chat/completions")
 }
 
 /// 拼接 {base}/v1/models
 fn build_models_url(base: &str) -> String {
-	format!("{}/v1/models", base.trim_end_matches('/'))
+	build_openai_url(base, "models")
 }
 
 /// 从数据库读取配置
@@ -76,25 +77,41 @@ fn build_body(cfg: &Config, args: &LlmGenerateArgs) -> serde_json::Value {
 	let mut body = json!({
 		"model": model,
 		"messages": messages,
-		"temperature": args.temperature.unwrap_or(1.0),
 		"stream": true,
 		// 请求流式末尾附带 usage (多数兼容网关支持; 不支持的会忽略或直接不回 usage)
 		"stream_options": { "include_usage": true },
 	});
+	let reasoning_model = is_openai_reasoning_model(body["model"].as_str().unwrap_or_default());
+	if !reasoning_model {
+		if let Some(temperature) = args.temperature {
+			body["temperature"] = json!(temperature);
+		}
+	}
 	if let Some(max) = args.max_tokens.filter(|n| *n > 0) {
-		body["max_tokens"] = json!(max);
+		let key = if reasoning_model {
+			"max_completion_tokens"
+		} else {
+			"max_tokens"
+		};
+		body[key] = json!(max);
 	}
 	body
 }
 
-/// 构造测试请求体 (非流式, 只回 1 token)
+/// 构造测试请求体 (非流式，给推理模型预留少量思考预算)
 fn build_test_body(cfg: &Config) -> serde_json::Value {
 	use serde_json::json;
-	json!({
+	let mut body = json!({
 		"model": cfg.model,
 		"messages": [{"role": "user", "content": "ping"}],
-		"max_tokens": 1,
-	})
+	});
+	let key = if is_openai_reasoning_model(&cfg.model) {
+		"max_completion_tokens"
+	} else {
+		"max_tokens"
+	};
+	body[key] = json!(64);
+	body
 }
 
 /// 校验配置完整性
@@ -113,9 +130,9 @@ async fn post_json(
 	url: String,
 	headers: Vec<(String, String)>,
 	body: serde_json::Value,
-) -> Result<(u16, serde_json::Value), String> {
+) -> Result<(u16, String), String> {
 	let client = Client::builder()
-		.timeout(Duration::from_secs(20))
+		.timeout(Duration::from_secs(60))
 		.build()
 		.map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
 	let mut req = client.post(&url);
@@ -128,11 +145,8 @@ async fn post_json(
 		.await
 		.map_err(|e| format!("无法连接 {url}: {e}"))?;
 	let status = resp.status().as_u16();
-	let parsed = resp
-		.json::<serde_json::Value>()
-		.await
-		.unwrap_or(serde_json::Value::Null);
-	Ok((status, parsed))
+	let text = resp.text().await.unwrap_or_default();
+	Ok((status, text))
 }
 
 /// 发送一次 GET JSON 请求, 返回 (status, body)
@@ -226,6 +240,14 @@ pub async fn llm_openai_chat_generate(
 				.map(|s| s.to_string())
 		},
 		|json| extract_usage(json),
+		extract_openai_stream_error,
+		|json| {
+			json.get("choices")
+				.and_then(|choices| choices.as_array())
+				.and_then(|choices| choices.first())
+				.and_then(|choice| choice.get("finish_reason"))
+				.is_some_and(|reason| !reason.is_null())
+		},
 	)
 	.await
 	{
@@ -282,11 +304,15 @@ pub async fn llm_openai_chat_test_connection(
 	}
 	let body = build_test_body(&cfg);
 	match post_json(build_chat_url(&cfg.base_url), auth_headers(&cfg), body).await {
-		Ok((status, _)) => {
+		Ok((status, response)) => {
 			if (200..300).contains(&status) {
 				Ok(LlmTestOutcome::ok(status))
 			} else {
-				Ok(LlmTestOutcome::http_err(status))
+				let detail = error_detail(&response);
+				Ok(LlmTestOutcome::http_err_with(
+					status,
+					format!("HTTP {status}: {detail}"),
+				))
 			}
 		}
 		Err(e) => {
@@ -363,9 +389,45 @@ pub async fn llm_openai_chat_list_models(
 }
 
 /// 截断错误/响应文本便于日志展示
-fn truncate(mut s: String) -> String {
-	if s.len() > 240 {
-		s.truncate(240);
+fn truncate(s: String) -> String {
+	truncate_utf8(s, 240)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn config(model: &str) -> Config {
+		Config {
+			base_url: String::new(),
+			api_key: String::new(),
+			model: model.to_string(),
+		}
 	}
-	s
+
+	fn args(model: &str) -> LlmGenerateArgs {
+		LlmGenerateArgs {
+			messages: Vec::new(),
+			model: Some(model.to_string()),
+			temperature: Some(0.5),
+			max_tokens: Some(128),
+			request_id: None,
+		}
+	}
+
+	#[test]
+	fn reasoning_models_use_completion_token_limit_without_temperature() {
+		let body = build_body(&config("unused"), &args("o3-mini"));
+		assert!(body.get("temperature").is_none());
+		assert!(body.get("max_tokens").is_none());
+		assert_eq!(body["max_completion_tokens"], 128);
+	}
+
+	#[test]
+	fn regular_models_keep_legacy_chat_parameters() {
+		let body = build_body(&config("unused"), &args("gpt-4o"));
+		assert_eq!(body["temperature"], 0.5);
+		assert_eq!(body["max_tokens"], 128);
+		assert!(body.get("max_completion_tokens").is_none());
+	}
 }

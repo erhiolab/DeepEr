@@ -8,7 +8,11 @@ use std::time::Duration;
 use crate::db;
 use crate::log::{self, LogSource};
 
-use super::{db_conn, decrypt_api_key, read_db_string, read_db_string_or, stream_generate, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome};
+use super::{
+    build_openai_url, db_conn, decrypt_api_key, error_detail, extract_openai_stream_error,
+    is_openai_reasoning_model, read_db_string, read_db_string_or, stream_generate,
+    truncate_utf8, LlmGenerateArgs, LlmGenerateOutcome, LlmTestOutcome,
+};
 
 /// 配置键前缀 (与前端 llm_openai_responses.ts 保持一致)
 const PREFIX: &str = "llm_openai_responses";
@@ -35,12 +39,12 @@ fn normalize_base_url(raw: &str, fallback: &str) -> String {
 
 /// 拼接 {base}/v1/responses
 fn build_responses_url(base: &str) -> String {
-    format!("{}/v1/responses", base.trim_end_matches('/'))
+    build_openai_url(base, "responses")
 }
 
 /// 拼接 {base}/v1/models
 fn build_models_url(base: &str) -> String {
-    format!("{}/v1/models", base.trim_end_matches('/'))
+    build_openai_url(base, "models")
 }
 
 /// 从数据库读取配置
@@ -78,9 +82,15 @@ fn build_body(cfg: &Config, args: &LlmGenerateArgs) -> serde_json::Value {
     let mut body = json!({
         "model": model,
         "input": input,
-        "temperature": args.temperature.unwrap_or(1.0),
         "stream": true,
     });
+    if cfg.reasoning_effort.is_empty()
+        && !is_openai_reasoning_model(body["model"].as_str().unwrap_or_default())
+    {
+        if let Some(temperature) = args.temperature {
+            body["temperature"] = json!(temperature);
+        }
+    }
     if let Some(max) = args.max_tokens.filter(|n| *n > 0) {
         body["max_output_tokens"] = json!(max);
     }
@@ -97,7 +107,7 @@ fn build_test_body(cfg: &Config) -> serde_json::Value {
     let mut body = json!({
         "model": cfg.model,
         "input": [{"role": "user", "content": "ping"}],
-        "max_output_tokens": 1,
+        "max_output_tokens": 64,
     });
     if !cfg.reasoning_effort.is_empty() {
         body["reasoning"] = json!({ "effort": cfg.reasoning_effort });
@@ -117,9 +127,9 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, String)> {
 }
 
 /// 发送一次 POST JSON 请求, 返回 (status, body)
-async fn post_json(url: String, headers: Vec<(String, String)>, body: serde_json::Value) -> Result<(u16, serde_json::Value), String> {
+async fn post_json(url: String, headers: Vec<(String, String)>, body: serde_json::Value) -> Result<(u16, String), String> {
     let client = Client::builder()
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
     let mut req = client.post(&url);
@@ -132,11 +142,8 @@ async fn post_json(url: String, headers: Vec<(String, String)>, body: serde_json
         .await
         .map_err(|e| format!("无法连接 {url}: {e}"))?;
     let status = resp.status().as_u16();
-    let parsed = resp
-        .json::<serde_json::Value>()
-        .await
-        .unwrap_or(serde_json::Value::Null);
-    Ok((status, parsed))
+    let text = resp.text().await.unwrap_or_default();
+    Ok((status, text))
 }
 
 /// 发送一次 GET JSON 请求, 返回 (status, body)
@@ -217,6 +224,8 @@ pub async fn llm_openai_generate(
             }
             (None, None)
         },
+        extract_openai_stream_error,
+        |json| json.get("type").and_then(|v| v.as_str()) == Some("response.completed"),
     )
     .await
     {
@@ -250,11 +259,15 @@ pub async fn llm_openai_test_connection(
     }
     let body = build_test_body(&cfg);
     match post_json(build_responses_url(&cfg.base_url), auth_headers(&cfg), body).await {
-        Ok((status, _)) => {
+        Ok((status, response)) => {
             if (200..300).contains(&status) {
                 Ok(LlmTestOutcome::ok(status))
             } else {
-                Ok(LlmTestOutcome::http_err(status))
+                let detail = error_detail(&response);
+                Ok(LlmTestOutcome::http_err_with(
+                    status,
+                    format!("HTTP {status}: {detail}"),
+                ))
             }
         }
         Err(e) => {
@@ -309,9 +322,43 @@ pub async fn llm_openai_list_models(
 }
 
 /// 截断错误/响应文本便于日志展示
-fn truncate(mut s: String) -> String {
-    if s.len() > 240 {
-        s.truncate(240);
+fn truncate(s: String) -> String {
+    truncate_utf8(s, 240)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(model: &str) -> Config {
+        Config {
+            base_url: String::new(),
+            api_key: String::new(),
+            model: model.to_string(),
+            reasoning_effort: String::new(),
+        }
     }
-    s
+
+    fn args(temperature: Option<f64>) -> LlmGenerateArgs {
+        LlmGenerateArgs {
+            messages: Vec::new(),
+            model: None,
+            temperature,
+            max_tokens: Some(128),
+            request_id: None,
+        }
+    }
+
+    #[test]
+    fn omits_temperature_for_reasoning_models() {
+        let body = build_body(&config("gpt-5"), &args(Some(0.5)));
+        assert!(body.get("temperature").is_none());
+        assert_eq!(body["max_output_tokens"], 128);
+    }
+
+    #[test]
+    fn sends_explicit_temperature_for_regular_models() {
+        let body = build_body(&config("gpt-4o"), &args(Some(0.5)));
+        assert_eq!(body["temperature"], 0.5);
+    }
 }

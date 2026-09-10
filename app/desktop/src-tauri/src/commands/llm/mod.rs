@@ -137,13 +137,88 @@ impl LlmTestOutcome {
     }
 
     pub fn http_err(status: u16) -> Self {
+        Self::http_err_with(status, format!("HTTP {status}"))
+    }
+
+    pub fn http_err_with(status: u16, error: impl Into<String>) -> Self {
         Self {
             ok: false,
             status: Some(status),
-            error: Some(format!("HTTP {status}")),
+            error: Some(error.into()),
             error_code: Some("http_error".to_string()),
         }
     }
+}
+
+/// 拼接 OpenAI 兼容端点，兼容用户把 base URL 配置为 `.../v1`。
+pub(crate) fn build_openai_url(base: &str, endpoint: &str) -> String {
+    let base = base.trim_end_matches('/');
+    let base = base.strip_suffix("/v1").unwrap_or(base);
+    format!("{base}/v1/{}", endpoint.trim_start_matches('/'))
+}
+
+/// GPT-5 与 o 系列推理模型不接受旧式采样/输出参数组合。
+pub(crate) fn is_openai_reasoning_model(model: &str) -> bool {
+    let model = model
+        .trim()
+        .rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    model.starts_with("gpt-5")
+        || model
+            .strip_prefix('o')
+            .and_then(|suffix| suffix.chars().next())
+            .is_some_and(|c| c.is_ascii_digit())
+}
+
+/// 按 UTF-8 字符边界截断，避免中文或 emoji 被切在多字节编码中间。
+pub(crate) fn truncate_utf8(mut text: String, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text;
+    }
+    let mut end = max_bytes;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+    text
+}
+
+/// 从常见 JSON 错误响应中提取可展示的详情。
+pub(crate) fn error_detail(body: &str) -> String {
+    let parsed = serde_json::from_str::<serde_json::Value>(body).ok();
+    let detail = parsed
+        .as_ref()
+        .and_then(|json| {
+            json.pointer("/error/message")
+                .or_else(|| json.pointer("/response/error/message"))
+                .or_else(|| json.get("message"))
+        })
+        .and_then(|value| value.as_str())
+        .unwrap_or_else(|| body.trim());
+    let detail = if detail.is_empty() {
+        "响应体为空"
+    } else {
+        detail
+    };
+    truncate_utf8(detail.to_string(), 240)
+}
+
+/// OpenAI Responses/兼容流中的应用层错误（HTTP 状态仍可能是 200）。
+pub(crate) fn extract_openai_stream_error(json: &serde_json::Value) -> Option<String> {
+    let event_type = json.get("type").and_then(|value| value.as_str());
+    let has_error = json.get("error").is_some_and(|error| !error.is_null());
+    if !matches!(event_type, Some("response.failed" | "error")) && !has_error {
+        return None;
+    }
+    let message = json
+        .pointer("/response/error/message")
+        .or_else(|| json.pointer("/error/message"))
+        .or_else(|| json.get("message"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("模型流式响应失败");
+    Some(message.to_string())
 }
 
 /// 从数据库读取指定配置项的字符串值 (缺失返回 None)
@@ -179,12 +254,14 @@ pub fn decrypt_api_key(app: &tauri::AppHandle, encoded: &str) -> Result<String, 
 
 /// SSE 流式读取骨架: 发送 POST 请求, 逐行解析 `data:` 负载,
 /// 对每个 data 调用 `extract` 提取文本增量并 `emit` 到前端; 累计完整文本.
-/// 可选的 `collect_usage` 在每个 data 上提取 usage token (输入/输出).
+/// `collect_usage` 提取 usage token，`extract_error` 检测流内错误，
+/// `is_complete` 判断各协议的正常完成事件。
 /// 结束时统一 `emit` `STREAM_EVENT_END`.
 ///
 /// 返回 `(status, 完整文本, 输入token, 输出token)`:
 /// - 非 2xx 时第二个元素为响应原文 (用于错误展示), 不会 emit 增量.
-/// - 2xx 时第二个元素为拼接的完整文本, 后两元素为流式过程中收集到的 usage.
+/// - 2xx 且正常完成时第二个元素为拼接的完整文本, 后两元素为流式过程中收集到的 usage.
+/// - 流内错误、读取中断或未见完成标记的 EOF 均返回 `Err`.
 pub async fn stream_generate(
     app: &tauri::AppHandle,
     request_id: &str,
@@ -193,6 +270,8 @@ pub async fn stream_generate(
     body: serde_json::Value,
     extract: fn(&serde_json::Value) -> Option<String>,
     collect_usage: fn(&serde_json::Value) -> (Option<u64>, Option<u64>),
+    extract_error: fn(&serde_json::Value) -> Option<String>,
+    is_complete: fn(&serde_json::Value) -> bool,
 ) -> Result<(u16, String, Option<u64>, Option<u64>), String> {
     // 结束事件统一收尾
     let finish = |app: &tauri::AppHandle, request_id: &str, ok: bool, error: Option<String>| {
@@ -206,10 +285,17 @@ pub async fn stream_generate(
         );
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(300))
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(900))
         .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+    {
+        Ok(client) => client,
+        Err(error) => {
+            let error = format!("创建 HTTP 客户端失败: {error}");
+            finish(app, request_id, false, Some(error.clone()));
+            return Err(error);
+        }
+    };
     let mut req = client.post(&url);
     for (k, v) in headers {
         req = req.header(&k, &v);
@@ -232,13 +318,14 @@ pub async fn stream_generate(
     let mut usage_input: Option<u64> = None;
     let mut usage_output: Option<u64> = None;
     let mut sse_buf: Vec<u8> = Vec::new();
+    let mut saw_completion = false;
     let mut bytes = resp.bytes_stream();
     // 逐块累积并逐行解析
     while let Some(chunk) = bytes.next().await {
         let chunk = match chunk {
             Ok(c) => c,
             Err(e) => {
-                finish(app, request_id, true, Some(format!("流读取中断: {e}")));
+                finish(app, request_id, false, Some(format!("流读取中断: {e}")));
                 return Err(format!("流读取失败: {e}"));
             }
         };
@@ -254,9 +341,14 @@ pub async fn stream_generate(
                 let data = data.trim();
                 // OpenAI Responses 流结束标记
                 if data == "[DONE]" {
+                    finish(app, request_id, true, None);
                     return Ok((status, full, usage_input, usage_output));
                 }
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(error) = extract_error(&json) {
+                        finish(app, request_id, false, Some(error.clone()));
+                        return Err(error);
+                    }
                     // 累积 usage: 不同事件的 input / output 各自取非 None
                     let (input, output) = collect_usage(&json);
                     if input.is_some() {
@@ -274,10 +366,62 @@ pub async fn stream_generate(
                             );
                         }
                     }
+                    if is_complete(&json) {
+                        saw_completion = true;
+                    }
                 }
             }
         }
     }
-    finish(app, request_id, true, None);
-    Ok((status, full, usage_input, usage_output))
+    if saw_completion {
+        finish(app, request_id, true, None);
+        Ok((status, full, usage_input, usage_output))
+    } else {
+        let error = "流在完成事件前意外结束".to_string();
+        finish(app, request_id, false, Some(error.clone()));
+        Err(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn openai_url_does_not_duplicate_v1() {
+        assert_eq!(
+            build_openai_url("https://api.example.com/v1/", "responses"),
+            "https://api.example.com/v1/responses"
+        );
+        assert_eq!(
+            build_openai_url("https://api.example.com", "chat/completions"),
+            "https://api.example.com/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn reasoning_model_detection_avoids_gpt_4o_false_positive() {
+        assert!(is_openai_reasoning_model("gpt-5-mini"));
+        assert!(is_openai_reasoning_model("openai/o3-mini"));
+        assert!(!is_openai_reasoning_model("gpt-4o"));
+        assert!(!is_openai_reasoning_model("omni-moderation-latest"));
+    }
+
+    #[test]
+    fn utf8_truncation_stays_on_character_boundary() {
+        assert_eq!(truncate_utf8("中文🙂error".to_string(), 5), "中");
+        assert_eq!(truncate_utf8("中文🙂error".to_string(), 6), "中文");
+        assert_eq!(truncate_utf8("中文🙂error".to_string(), 10), "中文🙂");
+    }
+
+    #[test]
+    fn extracts_openai_stream_failures() {
+        let failed = json!({
+            "type": "response.failed",
+            "response": {"error": {"message": "推理失败"}}
+        });
+        assert_eq!(extract_openai_stream_error(&failed).as_deref(), Some("推理失败"));
+        assert_eq!(extract_openai_stream_error(&json!({"type": "response.completed"})), None);
+    }
 }
