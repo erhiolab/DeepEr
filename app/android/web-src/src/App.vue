@@ -258,7 +258,7 @@ import {
 import {applyCanvasLayout} from "./services/live2d/stage"
 import {readMotionGroups, readExpressionNames} from "./services/live2d/motions"
 import {coverUrl} from "./services/gateway/api"
-import {fetchModelList, ensureModel, listInstalled} from "./services/live2d/modelStore"
+import {fetchModelList, ensureModel, listInstalled, isOfflineLive2d} from "./services/live2d/modelStore"
 import {
 	loadTouchConfig,
 	saveTouchConfig,
@@ -1026,7 +1026,11 @@ const exportTouchCfg = () => {
 	t.touches = touchAreas.value
 	const r = writeFile(f, JSON.stringify(t))
 	if (r === "ok") triggerBubble(`已导出到 ${getStorageDir()}/${f}`)
-	else triggerBubble("导出失败：请先授予存储权限")
+	else {
+		// 离线版启动时不申请存储权限, 这里按需申请
+		if (isOfflineLive2d()) grantStorage()
+		triggerBubble("导出失败：请先授予存储权限")
+	}
 }
 
 const importTouchCfg = () => {
@@ -1504,7 +1508,8 @@ onMounted(async () => {
 	window.__noriRenderScale = renderScaleNum.value
 	storageReady.value = isStorageReady()
 	
-	if (!storageReady.value && !localStorage.getItem("storage_asked")) {
+	// 离线版模型内置, 不需要存储权限; 只有在线版(下载模型)才在启动时申请一次
+	if (!isOfflineLive2d() && !storageReady.value && !localStorage.getItem("storage_asked")) {
 		localStorage.setItem("storage_asked", "1")
 		setTimeout(grantStorage, 1200)
 	}
