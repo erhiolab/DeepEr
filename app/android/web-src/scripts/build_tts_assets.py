@@ -12,9 +12,12 @@ _mu = _types.ModuleType("my_utils")
 _mu.load_audio = lambda *a, **k: (_ for _ in ()).throw(NotImplementedError)
 sys.modules["my_utils"] = _mu
 
-OUT = "F:/Nori-Desktop-Pet/app/android/app/src/main/assets/tts_data"
+# 产物写入 online 口味源集 (端侧 TTS 只在 online 口味里); 按脚本位置解析, 不写死盘符
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_ANDROID_SRC = os.path.normpath(os.path.join(_SCRIPT_DIR, "../../app/src"))
+OUT = os.path.join(_ANDROID_SRC, "online/assets/tts_data")
 os.makedirs(OUT, exist_ok=True)
-REF_DIR = "F:/Nori-Desktop-Pet/app/android/app/src/main/assets/ref"
+REF_DIR = os.path.join(_ANDROID_SRC, "online/assets/ref")
 P = repo + "/GPT_SoVITS/pretrained_models"
 t0 = time.time()
 
