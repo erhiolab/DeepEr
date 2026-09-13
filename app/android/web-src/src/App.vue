@@ -106,7 +106,7 @@
 		</Transition>
 
 		<Transition name="fade">
-		<div v-if="panel === 'tts'" class="tts-page">
+		<div v-if="TTS_ENABLED && panel === 'tts'" class="tts-page">
 			<div class="tts-top">
 				<span class="tts-title">语音合成（TTS）</span>
 				<button class="x" @click="panel = ''">✕</button>
@@ -237,7 +237,7 @@
 								<input type="range" min="0.5" max="3.0" step="0.1" v-model.number="cfg.renderScale" :style="rangeFill(cfg.renderScale, 0.5, 3.0)" @change="applyRenderScale" />
 								<div class="hint">越接近手机原生分辨率越清晰，耗电和发热越高；卡顿时调低即可</div>
 							</div>
-							<button class="btn ripple" @click="openPanel('tts')">语音合成（TTS）</button>
+							<button v-if="TTS_ENABLED" class="btn ripple" @click="openPanel('tts')">语音合成（TTS）</button>
 							<button class="btn ripple" @click="saveSettingsNow">保存设置</button>
 						</template>
 					</div>
@@ -288,6 +288,8 @@ import {
 	type ChatMsg,
 } from "./services/chat"
 import {ttsInit, ttsReady, ttsSynthesize, ttsPlay, ttsStop, ttsStatus, ttsEmotions, ttsReinit, ttsLastError, type TtsStatus} from "./services/tts"
+
+const TTS_ENABLED = __TTS_ENABLED__
 
 type P = "model" | "motion" | "expression" | "touch" | "settings" | "tts" | ""
 
@@ -442,7 +444,7 @@ __watch(() => panel.value, (newVal) => {
 		drawStart = null
 		drawDragged = false
 	}
-	if (newVal === 'tts') refreshTtsStatus()
+	if (TTS_ENABLED && newVal === 'tts') refreshTtsStatus()
 })
 
 __watch([scale, offsetX, offsetY, ready], () => {
@@ -490,6 +492,7 @@ const surface = (content: string) => {
 }
 
 	const speakText = async (text: string, scene: "chat" | "touch", emo: string | null = null) => {
+		if (!TTS_ENABLED) return
 		if (!cfg.tts.enabled) return
 		if (scene === "chat" && !cfg.tts.chat) return
 		if (scene === "touch" && !cfg.tts.touch) return
@@ -1506,7 +1509,7 @@ onMounted(async () => {
 		setTimeout(grantStorage, 1200)
 	}
 	messages.value = loadChat()
-	if (window.NoriTTS) { void ttsInit() }
+	if (TTS_ENABLED && window.NoriTTS) { void ttsInit() }
 	
 	let dirty = false
 	messages.value = messages.value.map((m) => {

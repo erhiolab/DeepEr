@@ -35,8 +35,9 @@ Thumbs.db
 /keystore/
 
 # bundled tts models (synced from F:/TTSAI, not tracked)
-/app/src/main/assets/tts/
-/app/src/std/assets/tts/
-/app/src/full/assets/tts/
-/app/src/main/assets/tts_data/
+# 共享模型(roberta/encoder/vits) + tts_data 只进 online 口味; 解码器按 std/full 分档
+/app/src/online/assets/tts/
+/app/src/online/assets/tts_data/
+/app/src/onlineStd/assets/tts/
+/app/src/onlineFull/assets/tts/
 *_screen.png

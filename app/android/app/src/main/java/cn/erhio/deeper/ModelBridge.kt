@@ -27,6 +27,9 @@ class ModelBridge(private val appContext: Context) {
 
     fun attach(v: WebView) { webView = v }
 
+    @android.webkit.JavascriptInterface
+    fun isOffline(): Boolean = BuildConfig.OFFLINE_LIVE2D
+
     fun setPickedUri(uri: Uri?) { pickedUri = uri }
 
     companion object {
@@ -95,6 +98,11 @@ class ModelBridge(private val appContext: Context) {
     fun download(id: String) {
         ioExecutor.execute {
             val json = runCatching {
+                if (BuildConfig.OFFLINE_LIVE2D) {
+                    val bundled = bundledModels().firstOrNull { it.first == safeSegment(id) }
+                    return@runCatching bundled?.let { ok(it.second) }
+                        ?: err("离线版本未内置模型: $id")
+                }
                 if (!ChatBridge.storageReady(appContext)) {
                     return@runCatching err("请先在设置中授予文件访问权限, 再下载模型")
                 }
@@ -130,6 +138,9 @@ class ModelBridge(private val appContext: Context) {
     fun listInstalled(): String {
         val arr = JSONArray()
         runCatching {
+            bundledModels().forEach { (id, entryBase) ->
+                arr.put(JSONObject().put("id", id).put("entryBase", entryBase))
+            }
             migrateLegacyModels()
             val root = modelsDir
             root.listFiles()?.forEach { dir ->
@@ -141,6 +152,23 @@ class ModelBridge(private val appContext: Context) {
             }
         }
         return arr.toString()
+    }
+
+    private fun bundledModels(): List<Pair<String, String>> {
+        if (!BuildConfig.OFFLINE_LIVE2D) return emptyList()
+        return appContext.assets.list("live2d").orEmpty().mapNotNull { id ->
+            findBundledEntry("live2d/$id")?.let { id to it }
+        }
+    }
+
+    private fun findBundledEntry(path: String): String? {
+        for (name in appContext.assets.list(path).orEmpty()) {
+            if (name.endsWith(".model3.json", ignoreCase = true)) {
+                return name.removeSuffix(".model3.json")
+            }
+            findBundledEntry("$path/$name")?.let { return it }
+        }
+        return null
     }
 
     @android.webkit.JavascriptInterface

@@ -3,9 +3,15 @@ import vue from "@vitejs/plugin-vue"
 import legacy from "@vitejs/plugin-legacy"
 import path from "node:path"
 
-const OUT_DIR = path.resolve(__dirname, "../app/src/main/assets/web")
+const OUT_DIR = process.env.WEB_OUT_DIR
+	? path.resolve(process.env.WEB_OUT_DIR)
+	: path.resolve(__dirname, "../app/build/generated/web-assets/dev/web")
+const TTS_ENABLED = process.env.VITE_TTS_ENABLED !== "false"
 
 export default defineConfig({
+	define: {
+		__TTS_ENABLED__: JSON.stringify(TTS_ENABLED),
+	},
 	plugins: [
 		vue(),
 		legacy({

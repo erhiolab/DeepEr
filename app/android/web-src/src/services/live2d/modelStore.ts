@@ -14,6 +14,7 @@ interface InstalledMeta {
 interface Bridge {
 	download: (id: string) => void
 	listInstalled: () => string
+	isOffline: () => boolean
 }
 
 
@@ -38,8 +39,15 @@ const parseBridgeResult = (raw: string): {ok: boolean; entryBase?: string; messa
 }
 
 export const fetchModelList = async (): Promise<{id: string; name: string}[]> => {
+	if (isOfflineLive2d()) {
+		return (await listInstalled()).map(({id}) => ({id, name: id}))
+	}
 	const body = await fetchLive2dList()
 	return body.list ?? []
+}
+
+export const isOfflineLive2d = (): boolean => {
+	try { return !!bridge().isOffline() } catch { return false }
 }
 
 export const listInstalled = async (): Promise<InstalledMeta[]> => {

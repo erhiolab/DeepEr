@@ -31,7 +31,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var assetLoader: WebViewAssetLoader
     private val modelBridge by lazy { ModelBridge(applicationContext) }
     private val chatBridge by lazy { ChatBridge(this) }
-    private val ttsBridge by lazy { TtsBridge(applicationContext) }
 
     companion object {
         private const val ENTRY_URL = "https://appassets.androidplatform.net/assets/web/index.html"
@@ -51,15 +50,27 @@ class MainActivity : AppCompatActivity() {
 
         webView.addJavascriptInterface(modelBridge, "NoriBridge")
         webView.addJavascriptInterface(chatBridge, "NoriChat")
-        webView.addJavascriptInterface(ttsBridge, "NoriTTS")
+        installTtsBridgeIfEnabled()
         chatBridge.attach(webView)
         modelBridge.onPickFile = { filePicker.launch("*/*") }
         modelBridge.attach(webView)
-        ttsBridge.attach(webView)
 
         setupImmersive()
         setupWebView()
         loadPage()
+    }
+
+    private fun installTtsBridgeIfEnabled() {
+        if (!BuildConfig.ENABLE_TTS) return
+        runCatching {
+            val bridge = Class.forName("cn.erhio.deeper.TtsBridge")
+                .getConstructor(android.content.Context::class.java)
+                .newInstance(applicationContext)
+            bridge.javaClass.getMethod("attach", WebView::class.java).invoke(bridge, webView)
+            webView.addJavascriptInterface(bridge, "NoriTTS")
+        }.onFailure {
+            android.util.Log.e("DeepEr", "TTS bridge unavailable", it)
+        }
     }
 
     private fun setupImmersive() {
@@ -126,6 +137,10 @@ class MainActivity : AppCompatActivity() {
                 if (idx < 0) return null
                 val rel = url.substring(idx + marker.length)
                 if (rel.isBlank()) return null
+                if (BuildConfig.OFFLINE_LIVE2D) {
+                    val bundled = runCatching { assets.open("live2d/$rel") }.getOrNull()
+                    if (bundled != null) return WebResourceResponse(mimeFor(rel), null, bundled)
+                }
                 val file = File(modelBridge.modelsDir, rel)
                 if (!file.exists() || !file.isFile) return null
                 val stream = try { file.inputStream() } catch (_: Exception) { return null }
