@@ -103,6 +103,17 @@ const MOTION_RESET_NEW = `    if (i == B.priorityForce) {
 const MODEL_INFO_OLD = `this._model.saveParameters(), this._modelMatrix = new qi(`
 const MODEL_INFO_NEW = `window.__noriModelCanvas = { w: this._model.getCanvasWidth(), h: this._model.getCanvasHeight() }; this._model.saveParameters(), this._modelMatrix = new qi(`
 
+// Cubism Core 默认从 CDN 加载(离线包会卡住), 改为加载内置的 live2dcubismcore.min.js;
+// 若页面里已经有全局 Live2DCubismCore 则直接跳过.
+const CORE_FN_OLD = `const _a = () => new Promise((r) => {
+  const t = document.createElement("script");`
+const CORE_FN_NEW = `const _a = () => new Promise((r) => {
+  if (window.Live2DCubismCore) { r(); return; }
+  const t = document.createElement("script");`
+
+const CORE_SRC_OLD = `t.src = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js",`
+const CORE_SRC_NEW = `t.src = "live2dcubismcore.min.js",`
+
 let changed = false
 const apply = (n, o, n2) => {
 	if (source.includes(o)) { source = source.replace(o, n2); changed = true; console.log(`[patch-live2d] ${n} ok`) }
@@ -125,5 +136,7 @@ apply("纹理CORS1", TEX_IMG_OLD, TEX_IMG_NEW)
 apply("纹理CORS2", TEX_NEW_OLD, TEX_NEW_NEW)
 apply("动作前参数复位", MOTION_RESET_OLD, MOTION_RESET_NEW)
 apply("模型尺寸暴露", MODEL_INFO_OLD, MODEL_INFO_NEW)
+apply("Cubism Core 本地加载守卫", CORE_FN_OLD, CORE_FN_NEW)
+apply("Cubism Core 去 CDN", CORE_SRC_OLD, CORE_SRC_NEW)
 
 if (changed) writeFileSync(TARGET, source)

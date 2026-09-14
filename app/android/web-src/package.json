@@ -6,6 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
+		"prebuild": "node scripts/patch-live2d.mjs",
 		"build": "vue-tsc --noEmit && vite build",
 		"preview": "vite preview",
 		"postinstall": "node scripts/patch-live2d.mjs",
