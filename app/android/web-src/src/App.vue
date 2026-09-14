@@ -119,7 +119,7 @@
 							<div v-else-if="!modelList.length" class="empty">正在获取模型列表…</div>
 							<div v-else class="grid">
 								<div v-for="m in modelList" :key="m.id" class="mc" :class="{on: m.id === currentModelId}" @click="pick(m.id)">
-									<div class="thumb"><img :src="coverUrl(m.id)" @error="hideThumb" /></div>
+									<div class="thumb"><img :src="modelCover(m.id)" @error="hideThumb" /></div>
 									<div class="mname">{{ m.name }}</div>
 								</div>
 							</div>
@@ -197,7 +197,6 @@ import {
 } from "./services/live2d"
 import {applyCanvasLayout} from "./services/live2d/stage"
 import {readMotionGroups, readExpressionNames} from "./services/live2d/motions"
-import {coverUrl} from "./services/gateway/api"
 import {fetchModelList, ensureModel, listInstalled} from "./services/live2d/modelStore"
 import {
 	loadTouchConfig,
@@ -265,7 +264,14 @@ const listError = ref("")
 const currentModel = computed(() => modelList.value.find((m) => m.id === currentModelId.value))
 const panelTitle = (p: P) => ({model: "选择模型", motion: "动作列表", expression: "表情列表", touch: "自定义触摸", settings: "设置"} as Record<string, string>)[p] ?? ""
 
-const hideThumb = (e: Event) => { (e.currentTarget as HTMLElement).style.visibility = "hidden" }
+// 没有内置封面时隐藏整个缩略图区, 卡片只保留名称 (离线包不联网取图)
+const hideThumb = (e: Event) => {
+	const el = e.currentTarget as HTMLElement
+	if (el.parentElement) el.parentElement.style.display = "none"
+}
+
+// 模型封面走内置资源(离线): live2d/<id>/cover.png; 没有该图时 img 报错, 卡片只显示名称
+const modelCover = (id: string): string => `live2d/${id}/cover.png`
 
 
 
