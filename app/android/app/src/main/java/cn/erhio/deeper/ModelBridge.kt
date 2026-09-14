@@ -10,8 +10,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.zip.ZipInputStream
@@ -27,13 +25,9 @@ class ModelBridge(private val appContext: Context) {
 
     fun attach(v: WebView) { webView = v }
 
-    @android.webkit.JavascriptInterface
-    fun isOffline(): Boolean = BuildConfig.OFFLINE_LIVE2D
-
     fun setPickedUri(uri: Uri?) { pickedUri = uri }
 
     companion object {
-        private const val API_BASE = "https://api.elake.top/deeper"
         const val MODELS_ROOT = "DeepEr/models"
     }
 
@@ -98,29 +92,14 @@ class ModelBridge(private val appContext: Context) {
     fun download(id: String) {
         ioExecutor.execute {
             val json = runCatching {
-                if (BuildConfig.OFFLINE_LIVE2D) {
-                    val bundled = bundledModels().firstOrNull { it.first == safeSegment(id) }
-                    return@runCatching bundled?.let { ok(it.second) }
-                        ?: err("离线版本未内置模型: $id")
-                }
-                if (!ChatBridge.storageReady(appContext)) {
-                    return@runCatching err("请先在设置中授予文件访问权限, 再下载模型")
-                }
+                // 模型随包内置: 先查 assets, 再查用户导入的本地目录(可选)
+                val bundled = bundledModels().firstOrNull { it.first == safeSegment(id) }
+                if (bundled != null) return@runCatching ok(bundled.second)
                 migrateLegacyModels()
-                if (!modelsDir.isDirectory && !modelsDir.mkdirs()) {
-                    return@runCatching err("无法创建模型目录, 请检查存储权限")
-                }
-                val modelDir = modelsDir.resolve(safeSegment(id))
-                val existing = findEntryBase(modelDir)
-                if (existing != null) return@runCatching ok(existing)
-                val url = getDownloadUrl(id)
-                val zipFile = File(appContext.cacheDir, "model_${safeSegment(id)}.zip")
-                downloadToFile(url, zipFile)
-                val entryBase = installZip(id, zipFile)
-                zipFile.delete()
-                ok(entryBase)
+                findEntryBase(modelsDir.resolve(safeSegment(id)))?.let { return@runCatching ok(it) }
+                err("未找到模型: $id")
             }.getOrElse { e ->
-                err(e.message ?: "下载失败")
+                err(e.message ?: "加载模型失败")
             }
             postToJs("__noriModelRes", json)
         }
@@ -155,7 +134,6 @@ class ModelBridge(private val appContext: Context) {
     }
 
     private fun bundledModels(): List<Pair<String, String>> {
-        if (!BuildConfig.OFFLINE_LIVE2D) return emptyList()
         return appContext.assets.list("live2d").orEmpty().mapNotNull { id ->
             findBundledEntry("live2d/$id")?.let { id to it }
         }
@@ -197,39 +175,6 @@ class ModelBridge(private val appContext: Context) {
         val dir = modelDir.resolve(safeSegment(entryBase))
         val f = File(dir, "$entryBase.model3.json")
         return if (f.exists()) 0 else 1
-    }
-
-    private fun getDownloadUrl(id: String): String {
-        val u = URL("$API_BASE/resource/download_url?type=live2d&name=${encode(id)}")
-        val conn = (u.openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            requestMethod = "GET"
-        }
-        try {
-            if (conn.responseCode !in 200..299) throw RuntimeException("获取下载链接失败: HTTP ${conn.responseCode}")
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val json = JSONObject(body)
-            if (json.optBoolean("error", false)) throw RuntimeException(json.optString("message", "网关返回错误"))
-            return json.optJSONObject("body")?.optString("url") ?: throw RuntimeException("下载链接为空")
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private fun downloadToFile(url: String, out: File) {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15_000
-            readTimeout = 30_000
-        }
-        try {
-            if (conn.responseCode !in 200..299) throw RuntimeException("下载 ZIP 失败: HTTP ${conn.responseCode}")
-            conn.inputStream.use { input ->
-                FileOutputStream(out).use { output -> input.copyTo(output, 128 * 1024) }
-            }
-        } finally {
-            conn.disconnect()
-        }
     }
 
     private fun installZip(id: String, zipFile: File): String {
@@ -293,8 +238,6 @@ class ModelBridge(private val appContext: Context) {
     private fun sanitize(raw: String): String = raw.replace("\\", "/")
 
     private fun safeSegment(s: String): String = s.replace(Regex("[^A-Za-z0-9._-]"), "_")
-
-    private fun encode(s: String): String = java.net.URLEncoder.encode(s, "UTF-8")
 
     private fun ok(entryBase: String): String =
         JSONObject().put("ok", true).put("entryBase", entryBase).toString()

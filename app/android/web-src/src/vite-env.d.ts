@@ -1,7 +1,4 @@
 
-
-declare const __TTS_ENABLED__: boolean
-
 declare module "*.vue" {
 	import type {DefineComponent} from "vue"
 	const component: DefineComponent<{}, {}, any>

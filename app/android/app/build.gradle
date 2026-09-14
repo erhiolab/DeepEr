@@ -24,26 +24,6 @@ android {
         }
     }
 
-    flavorDimensions "mode", "pack"
-    productFlavors {
-        online {
-            dimension "mode"
-            buildConfigField "boolean", "OFFLINE_LIVE2D", "false"
-            buildConfigField "boolean", "ENABLE_TTS", "true"
-        }
-        offline {
-            dimension "mode"
-            buildConfigField "boolean", "OFFLINE_LIVE2D", "true"
-            buildConfigField "boolean", "ENABLE_TTS", "false"
-        }
-        std {
-            dimension "pack"
-        }
-        full {
-            dimension "pack"
-        }
-    }
-
     buildTypes {
         release {
             minifyEnabled false
@@ -54,9 +34,7 @@ android {
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
-            def abi = output.getFilter(com.android.build.OutputFile.ABI)
-            def flavor = abi ? "${variant.flavorName}-${abi}" : variant.flavorName
-            outputFileName = "DeepEr-${variant.versionName}-${flavor}-${variant.buildType.name}.apk"
+            outputFileName = "DeepEr-${variant.versionName}-${variant.buildType.name}.apk"
         }
     }
 
@@ -71,25 +49,6 @@ android {
 
     buildFeatures {
         viewBinding true
-        buildConfig true
-    }
-
-    sourceSets {
-        online.assets.srcDir "$buildDir/generated/web-assets/online"
-        offline.assets.srcDirs = ['src/offline/assets', "$buildDir/generated/web-assets/offline"]
-    }
-
-    androidResources {
-        noCompress += 'onnx'
-    }
-
-    splits {
-        abi {
-            enable true
-            reset()
-            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
-            universalApk false
-        }
     }
 }
 
@@ -98,34 +57,4 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.webkit:webkit:1.10.0'
-    onlineImplementation 'com.microsoft.onnxruntime:onnxruntime-android:1.18.0'
-}
-
-// 前端构建器: 默认 pnpm.cmd, 可用 -Ppnpm=<路径> 或环境变量 PNPM 覆盖 (PATH 里没有 pnpm 时也能指定)
-def frontendRunner = providers.gradleProperty('pnpm')
-        .orElse(providers.environmentVariable('PNPM'))
-        .getOrElse('pnpm.cmd')
-
-def registerWebBuild = { String mode, boolean enableTts ->
-    tasks.register("build${mode.capitalize()}Web", Exec) {
-        workingDir rootProject.file('web-src')
-        commandLine frontendRunner, 'build'
-        environment 'VITE_TTS_ENABLED', enableTts.toString()
-        environment 'WEB_OUT_DIR', file("$buildDir/generated/web-assets/${mode}/web").absolutePath
-        inputs.dir rootProject.file('web-src/src')
-        inputs.file rootProject.file('web-src/index.html')
-        inputs.file rootProject.file('web-src/vite.config.ts')
-        outputs.dir file("$buildDir/generated/web-assets/${mode}/web")
-    }
-}
-
-registerWebBuild('online', true)
-registerWebBuild('offline', false)
-
-tasks.configureEach { task ->
-    def lower = task.name.toLowerCase()
-    if (lower.startsWith('merge') && lower.endsWith('assets')) {
-        if (lower.contains('online')) task.dependsOn tasks.named('buildOnlineWeb')
-        if (lower.contains('offline')) task.dependsOn tasks.named('buildOfflineWeb')
-    }
 }

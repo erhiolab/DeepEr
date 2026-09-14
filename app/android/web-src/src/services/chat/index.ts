@@ -7,16 +7,6 @@ import NORI_PROMPT from "./nori-prompt.md?raw"
 
 export const PERSONA_PROMPT: string = NORI_PROMPT
 
-export interface TtsSettings {
-	enabled: boolean
-	chat: boolean
-	touch: boolean
-	voice: string
-	follow: boolean
-	maxLen: number
-	voices: Record<string, string>
-}
-
 export interface Settings {
 	apiKey: string
 	baseUrl: string
@@ -25,17 +15,6 @@ export interface Settings {
 	bubbleScale: number
 
 	renderScale: number
-	tts: TtsSettings
-}
-
-export const DEFAULT_TTS_SETTINGS: TtsSettings = {
-	enabled: true,
-	chat: true,
-	touch: true,
-	voice: "gentleness",
-	follow: true,
-	maxLen: 80,
-	voices: {},
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -44,7 +23,6 @@ export const DEFAULT_SETTINGS: Settings = {
 	model: "",
 	bubbleScale: 1,
 	renderScale: 1,
-	tts: {...DEFAULT_TTS_SETTINGS},
 }
 
 export interface ChatMsg {
@@ -83,12 +61,12 @@ const bridge = (): NoriChat => {
 export const loadSettings = (): Settings => {
 	try {
 		const raw = bridge().readFile("settings.json")
-		if (!raw) return {...DEFAULT_SETTINGS, tts: {...DEFAULT_TTS_SETTINGS, voices: {}}}
+		if (!raw) return {...DEFAULT_SETTINGS}
 		const parsed = JSON.parse(raw)
-		const merged: Settings = {...DEFAULT_SETTINGS, ...parsed, tts: {...DEFAULT_TTS_SETTINGS, ...(parsed?.tts ?? {}), voices: {...(parsed?.tts?.voices ?? {})}}}
+		const merged: Settings = {...DEFAULT_SETTINGS, ...parsed}
 		return merged
 	} catch {
-		return {...DEFAULT_SETTINGS, tts: {...DEFAULT_TTS_SETTINGS, voices: {}}}
+		return {...DEFAULT_SETTINGS}
 	}
 }
 

@@ -2,8 +2,6 @@
 
 
 
-import {fetchLive2dList} from "../gateway/api"
-
 export type ProgressFn = (phase: string, percent?: number) => void
 
 interface InstalledMeta {
@@ -14,7 +12,6 @@ interface InstalledMeta {
 interface Bridge {
 	download: (id: string) => void
 	listInstalled: () => string
-	isOffline: () => boolean
 }
 
 
@@ -39,15 +36,8 @@ const parseBridgeResult = (raw: string): {ok: boolean; entryBase?: string; messa
 }
 
 export const fetchModelList = async (): Promise<{id: string; name: string}[]> => {
-	if (isOfflineLive2d()) {
-		return (await listInstalled()).map(({id}) => ({id, name: id}))
-	}
-	const body = await fetchLive2dList()
-	return body.list ?? []
-}
-
-export const isOfflineLive2d = (): boolean => {
-	try { return !!bridge().isOffline() } catch { return false }
+	// 模型随包内置: 直接列出已安装(内置 + 用户导入)的模型
+	return (await listInstalled()).map(({id}) => ({id, name: id}))
 }
 
 export const listInstalled = async (): Promise<InstalledMeta[]> => {
