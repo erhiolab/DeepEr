@@ -30,7 +30,7 @@ class ModelBridge(private val appContext: Context) {
     fun setPickedUri(uri: Uri?) { pickedUri = uri }
 
     companion object {
-        private const val API_BASE = "https://api.elake.top/deeper"
+        private const val API_BASE = "https://api.erhio.cn/deeper"
         const val MODELS_ROOT = "DeepEr/models"
     }
 

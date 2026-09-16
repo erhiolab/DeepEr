@@ -1,7 +1,7 @@
 //! 后端 API 客户端模块
 //!
 //! 集中管理对后端网关的所有 HTTP 请求:
-//! - 公共基础地址 [`API_BASE_URL`](https://api.elake.top/deeper)
+//! - 公共基础地址 [`API_BASE_URL`](https://api.erhio.cn/deeper)
 //! - 统一响应结构 [`ApiResponse`]
 //! - 各业务接口 (`/live2d/list`、`/resource/download_url` 等)
 //!
@@ -11,7 +11,7 @@
 use serde::de::DeserializeOwned;
 
 /// API 基础地址
-pub const API_BASE_URL: &str = "https://api.elake.top/deeper";
+pub const API_BASE_URL: &str = "https://api.erhio.cn/deeper";
 /// 后端接口路径
 pub mod path {
     /// 获取资源下载地址

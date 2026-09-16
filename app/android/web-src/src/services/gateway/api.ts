@@ -1,7 +1,7 @@
 
 
 
-const API_BASE_URL = "https://api.elake.top/deeper"
+const API_BASE_URL = "https://api.erhio.cn/deeper"
 
 export interface ApiResponse<T> {
 	body: T | null
