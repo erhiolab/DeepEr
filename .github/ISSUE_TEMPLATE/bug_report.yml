@@ -29,7 +29,7 @@ body:
     id: version
     attributes:
       label: 项目版本 / Project Version
-      description: 你使用的是哪个版本? (例如: v1.2.0 或 commit hash) / Which version are you using? (e.g., v1.2.0 or commit hash)
+      description: "你使用的是哪个版本? (例如: v1.2.0 或 commit hash) / Which version are you using? (e.g., v1.2.0 or commit hash)"
       placeholder: v1.0.0
     validations:
       required: true
@@ -85,7 +85,7 @@ body:
     attributes:
       label: 附加信息 / Additional Context
       description: 任何能帮助我们定位问题的额外上下文 / Add any other context about the problem here
-      placeholder: 例如: 网络环境/特殊配置等 / e.g., network environment, special configurations
+      placeholder: "例如: 网络环境/特殊配置等 / e.g., network environment, special configurations"
 
   - type: checkboxes
     id: terms
