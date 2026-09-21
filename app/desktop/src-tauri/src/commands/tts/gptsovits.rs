@@ -86,16 +86,17 @@ fn fail_outcome(code: &str, error: String) -> TtsSynthesizeOutcome {
     }
 }
 
-/// 归一化服务地址
+/// 归一化服务地址. 未显式填写协议时默认 HTTPS; 本地 HTTP 服务需明确填写 `http://`
 fn normalize_base_url(raw: &str, fallback: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return fallback.to_string();
     }
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
         return trimmed.to_string();
     }
-    format!("http://{trimmed}")
+    format!("https://{trimmed}")
 }
 
 /// 拼接 {base}/tts
@@ -392,6 +393,26 @@ mod tests {
         // GPT-SoVITS api_v2.py 合成失败返回 {"message":"tts failed","Exception":<真因>}
         let body = r#"{"message":"tts failed","Exception":"参考音频在3~10秒范围内, 请更换! "}"#;
         assert_eq!(extract_error_message(body), "参考音频在3~10秒范围内, 请更换! ");
+    }
+
+    #[test]
+    fn normalize_base_url_defaults_to_https() {
+        assert_eq!(
+            normalize_base_url("tts.example.com:9880", "https://fallback.example.com"),
+            "https://tts.example.com:9880"
+        );
+        assert_eq!(
+            normalize_base_url("http://127.0.0.1:9880", "https://fallback.example.com"),
+            "http://127.0.0.1:9880"
+        );
+        assert_eq!(
+            normalize_base_url("HTTPS://tts.example.com", "https://fallback.example.com"),
+            "HTTPS://tts.example.com"
+        );
+        assert_eq!(
+            normalize_base_url("  ", "https://fallback.example.com"),
+            "https://fallback.example.com"
+        );
     }
 
     #[test]

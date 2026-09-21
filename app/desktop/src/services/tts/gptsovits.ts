@@ -82,13 +82,14 @@ export const defaultConfig: () => GptSoVitsConfig = () => {
 }
 
 /**
- * 归一化服务地址: 去掉首尾空白, 自动补全 http:// 前缀
+ * 归一化服务地址: 去掉首尾空白, 未显式填写协议时默认使用 HTTPS
+ * 本地 HTTP 服务需明确填写 http://, 避免远程地址意外降级为明文传输
  */
 export const normalizeBaseUrl = (raw: string): string => {
 	const TRIMMED = raw.trim()
 	if (!TRIMMED) return "http://127.0.0.1:9880"
-	if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(TRIMMED)) return TRIMMED
-	return `http://${TRIMMED}`
+	if (/^https?:\/\//i.test(TRIMMED)) return TRIMMED
+	return `https://${TRIMMED}`
 }
 
 /**
