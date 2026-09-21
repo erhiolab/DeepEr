@@ -12,7 +12,7 @@ const PROPS = defineProps<{
 }>()
 
 const INSTANCE = new MarkdownIt({
-	html: true,
+	html: false,
 	linkify: true,
 	typographer: true,
 	breaks: true,
