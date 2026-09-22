@@ -5,8 +5,8 @@
 
 use rusqlite::Connection;
 use std::error::Error as StdError;
-use std::path::PathBuf;
-use std::sync::Mutex;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 use crate::config::{self};
@@ -15,8 +15,30 @@ use crate::log::{self, LogSource};
 /// 统一错误类型: 兼容 tauri setup(Box<dyn Error>)与 command(String)
 pub type DbResult<T> = Result<T, Box<dyn StdError>>;
 
-/// 数据库封装: 内部用 Mutex 包 Connection,供 Tauri state 跨命令共享
-pub struct Db(pub Mutex<Connection>);
+/// 数据库连接工厂。
+///
+/// 不跨命令共享 `Connection`，避免异步命令等待同步 Mutex 时阻塞运行时。
+/// SQLite 的 WAL 与 busy timeout 负责协调多个短生命周期连接。
+pub struct Db(pub ConnectionFactory);
+
+pub struct ConnectionFactory {
+    path: PathBuf,
+}
+
+impl ConnectionFactory {
+    /// 打开独立数据库连接。
+    ///
+    /// 保留 `lock` 方法名以兼容现有调用点；该方法不持有任何进程内锁。
+    pub fn lock(&self) -> rusqlite::Result<Connection> {
+        open_connection(&self.path)
+    }
+}
+
+fn open_connection(path: &Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    Ok(conn)
+}
 
 /// 建表
 const SCHEMA: &str = "
@@ -133,7 +155,8 @@ pub fn init(app: &AppHandle) -> DbResult<Db> {
     std::fs::create_dir_all(&dir)?;
     let db_path = dir.join(DB_FILE_NAME);
     // 打开或创建 SQLite 数据库
-    let conn = Connection::open(&db_path)?;
+    let conn = open_connection(&db_path)?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
     // 创建数据库表
     conn.execute_batch(SCHEMA)?;
     // 旧库结构升级 / 兼容步骤统一在 upgrade.rs 集中执行 (幂等)
@@ -151,7 +174,8 @@ pub fn init(app: &AppHandle) -> DbResult<Db> {
         &format!("数据库已打开: {}", db_path.display()),
     );
 
-    Ok(Db(Mutex::new(conn)))
+    drop(conn);
+    Ok(Db(ConnectionFactory { path: db_path }))
 }
 
 /// 获取应用数据目录

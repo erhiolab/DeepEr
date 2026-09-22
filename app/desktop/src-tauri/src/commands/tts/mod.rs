@@ -25,10 +25,8 @@ pub(crate) fn read_db_string_or(conn: &Connection, key: &str, fallback: &str) ->
     Ok(read_db_string(conn, key)?.unwrap_or_else(|| fallback.to_string()))
 }
 
-/// 从应用拿唯一 DB 连接的锁 (供各命令复用)
-pub(crate) fn db_conn<'a>(
-    state: &'a tauri::State<'_, db::Db>,
-) -> Result<std::sync::MutexGuard<'a, Connection>, String> {
+/// 为当前操作打开独立 DB 连接
+pub(crate) fn db_conn(state: &tauri::State<'_, db::Db>) -> Result<Connection, String> {
     state.0.lock().map_err(|e| e.to_string())
 }
 

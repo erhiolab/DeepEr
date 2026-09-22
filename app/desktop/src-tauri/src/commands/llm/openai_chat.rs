@@ -185,11 +185,9 @@ fn auth_headers(cfg: &Config) -> Vec<(String, String)> {
 
 /// 从 Chat Completions 流式事件中提取 usage (两种字段命名都兼容)
 fn extract_usage(json: &serde_json::Value) -> (Option<u64>, Option<u64>) {
-	let usage = json.get("usage");
-	if usage.is_none() {
+	let Some(usage) = json.get("usage") else {
 		return (None, None);
-	}
-	let usage = usage.unwrap();
+	};
 	let input = usage
 		.get("prompt_tokens")
 		.and_then(|v| v.as_u64())
@@ -429,5 +427,10 @@ mod tests {
 		assert_eq!(body["temperature"], 0.5);
 		assert_eq!(body["max_tokens"], 128);
 		assert!(body.get("max_completion_tokens").is_none());
+	}
+
+	#[test]
+	fn missing_usage_returns_empty_counts() {
+		assert_eq!(extract_usage(&serde_json::json!({"choices": []})), (None, None));
 	}
 }

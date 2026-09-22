@@ -8,6 +8,7 @@
 //! - 同一会话内新建/修改/启用任务会把 last_fired 重置为当前时刻, 避免触发"过去的"时间
 
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -44,10 +45,27 @@ pub fn init(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 	app.manage(SchedulerState(Arc::new(Mutex::new(HashMap::new()))));
 	let handle = app.clone();
 	thread::spawn(move || loop {
-		tick(&handle);
+		if let Err(error) = run_tick_safely(|| tick(&handle)) {
+			let _ = log::write(
+				&handle,
+				&LogSource::Backend,
+				"error",
+				&format!("定时任务调度发生 panic，下一轮将自动恢复: {error}"),
+			);
+		}
 		thread::sleep(Duration::from_secs(1));
 	});
 	Ok(())
+}
+
+fn run_tick_safely(tick: impl FnOnce()) -> Result<(), String> {
+	catch_unwind(AssertUnwindSafe(tick)).map_err(|payload| {
+		payload
+			.downcast_ref::<&str>()
+			.map(|message| (*message).to_string())
+			.or_else(|| payload.downcast_ref::<String>().cloned())
+			.unwrap_or_else(|| "未知 panic".to_string())
+	})
 }
 
 fn tick(app: &AppHandle) {
@@ -138,5 +156,16 @@ fn tick(app: &AppHandle) {
 		if task.kind == "once" {
 			let _ = repository::delete(&conn, task.id);
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::run_tick_safely;
+
+	#[test]
+	fn scheduler_tick_panic_is_contained() {
+		let result = run_tick_safely(|| panic!("tick failed"));
+		assert_eq!(result.unwrap_err(), "tick failed");
 	}
 }
