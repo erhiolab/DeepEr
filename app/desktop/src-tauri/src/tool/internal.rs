@@ -359,12 +359,16 @@ fn json_query_value<'a>(root: &'a Value, query: &str) -> Result<&'a Value, Strin
 	let mut current = root;
 	let mut index = 0usize;
 	while index < rest.len() {
-		let c = rest[index..].chars().next().unwrap();
+		let Some(c) = rest[index..].chars().next() else {
+			break;
+		};
 		if c == '.' {
 			index += 1;
 			let start = index;
 			while index < rest.len() {
-				let ch = rest[index..].chars().next().unwrap();
+				let Some(ch) = rest[index..].chars().next() else {
+					break;
+				};
 				if ch == '.' || ch == '[' {
 					break;
 				}
@@ -384,7 +388,10 @@ fn json_query_value<'a>(root: &'a Value, query: &str) -> Result<&'a Value, Strin
 				index += ch.len_utf8();
 				let start = index;
 				while index < rest.len() && !rest[index..].starts_with(ch) {
-					index += rest[index..].chars().next().unwrap().len_utf8();
+					let Some(next) = rest[index..].chars().next() else {
+						return Err("查询路径缺少右引号".to_string());
+					};
+					index += next.len_utf8();
 				}
 				if index >= rest.len() {
 					return Err("查询路径缺少右引号".to_string());
@@ -400,8 +407,11 @@ fn json_query_value<'a>(root: &'a Value, query: &str) -> Result<&'a Value, Strin
 					.ok_or_else(|| format!("字段不存在: {key}"))?;
 			} else {
 				let start = index;
-				while index < rest.len() && rest[index..].chars().next().unwrap().is_ascii_digit() {
-					index += 1;
+				while let Some(next) = rest[index..].chars().next() {
+					if !next.is_ascii_digit() {
+						break;
+					}
+					index += next.len_utf8();
 				}
 				if start == index {
 					return Err("查询路径中的数组下标无效".to_string());
@@ -928,5 +938,28 @@ impl ToolHandler for MemoryDeleteHandler {
 			.ok_or_else(|| "参数缺失: id(记忆 id) 为必填参数".to_string())?;
 		memory_repository::delete(conn, id)?;
 		Ok(json!({ "ok": true, "id": id }))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::json_query_value;
+	use serde_json::json;
+
+	#[test]
+	fn json_query_handles_multibyte_keys() {
+		let value = json!({"用户": [{"名字": "测试😀"}]});
+		assert_eq!(
+			json_query_value(&value, "$.用户[0].名字").ok(),
+			Some(&value["用户"][0]["名字"])
+		);
+	}
+
+	#[test]
+	fn malformed_json_queries_return_errors() {
+		let value = json!({"用户": []});
+		for query in ["$.", "$['用户", "$[😀]", "$.用户[😀]"] {
+			assert!(json_query_value(&value, query).is_err(), "{query}");
+		}
 	}
 }

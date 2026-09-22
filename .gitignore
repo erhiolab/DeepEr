@@ -1,3 +1,6 @@
 .reasonix
 docs/key_password
 app/.idea/
+node_modules/
+target/
+dist/

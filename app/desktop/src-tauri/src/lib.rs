@@ -18,7 +18,7 @@ mod update;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         // 资源文件通道: 通过 `asset://` / `http://asset.localhost` 把 `data` 目录
         .register_uri_scheme_protocol(asset::SCHEME, |ctx, request| asset::handle(&ctx, request))
@@ -182,5 +182,4 @@ pub fn run() {
             commands::task_manager::open_task_manager
         ])
         .run(tauri::generate_context!())
-        .expect("运行应用时出错")
 }

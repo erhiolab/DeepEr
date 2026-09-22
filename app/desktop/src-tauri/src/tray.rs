@@ -73,8 +73,13 @@ pub fn init(
         None::<&str>,
     )?;
     let toggle = MenuItem::with_id(app_handle, MENU_TOGGLE, "显示", !first_run, None::<&str>)?;
-    let devtools =
-        MenuItem::with_id(app_handle, MENU_DEVTOOLS, "打开控制台", true, None::<&str>)?;
+    let devtools = MenuItem::with_id(
+        app_handle,
+        MENU_DEVTOOLS,
+        "打开控制台",
+        cfg!(debug_assertions),
+        None::<&str>,
+    )?;
     // "取消穿透"初始禁用, 前端开启穿透后才可用
     let cancel_passthrough = MenuItem::with_id(
         app_handle,
