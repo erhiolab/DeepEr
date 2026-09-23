@@ -76,6 +76,6 @@ func setupRouter() http.Handler {
 	router.Register(r)
 	handler := middleware.Logger()(r)
 	handler = middleware.RequestID()(handler)
-	handler = middleware.CORS(handler)
+	handler = middleware.CORS(handler, config.Get().Gateway.AllowedOrigins)
 	return handler
 }

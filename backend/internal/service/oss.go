@@ -3,13 +3,54 @@ package service
 import (
 	"backend/internal/config"
 	"backend/internal/logger"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"go.uber.org/zap"
 )
+
+// ErrInvalidObjectKey 表示外部输入无法安全地用于构造 OSS object key。
+var ErrInvalidObjectKey = errors.New("invalid OSS object key")
+
+const maxObjectSegmentBytes = 255
+
+func validateObjectSegment(label, value string) error {
+	if value == "" || value != strings.TrimSpace(value) || len(value) > maxObjectSegmentBytes {
+		return fmt.Errorf("%w: %s 格式无效", ErrInvalidObjectKey, label)
+	}
+	// 查询参数已被 net/url 解码一次; 同时拒绝 %, 防止双重编码绕过
+	if value == "." || strings.Contains(value, "..") || strings.ContainsAny(value, "/\\%") {
+		return fmt.Errorf("%w: %s 包含非法路径字符", ErrInvalidObjectKey, label)
+	}
+	for _, char := range value {
+		if unicode.IsControl(char) {
+			return fmt.Errorf("%w: %s 包含控制字符", ErrInvalidObjectKey, label)
+		}
+	}
+	return nil
+}
+
+func resourceObjectKey(objectType, objectName string) (string, error) {
+	if err := validateObjectSegment("资源类型", objectType); err != nil {
+		return "", err
+	}
+	if err := validateObjectSegment("资源名称", objectName); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s.zip", objectType, objectName), nil
+}
+
+func coverObjectKey(modelID string) (string, error) {
+	if err := validateObjectSegment("模型 ID", modelID); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s.webp", coverDir, modelID), nil
+}
 
 // OSSService OSS服务
 type OSSService struct {
@@ -46,7 +87,10 @@ func NewOSSService() (*OSSService, error) {
 // objectName: 资源名称
 func (s *OSSService) GetSignedURL(objectType, objectName string) (string, error) {
 	// 构建对象路径: live2d/nori.zip
-	objectKey := fmt.Sprintf("%s/%s.zip", objectType, objectName)
+	objectKey, err := resourceObjectKey(objectType, objectName)
+	if err != nil {
+		return "", err
+	}
 
 	// 检查对象是否存在
 	exists, err := s.bucket.IsObjectExist(objectKey)
@@ -93,7 +137,10 @@ type CoverMeta struct {
 // OpenCover 打开模型封面对象 live2d-images/<modelID>.webp
 // 返回可读流与对象元信息; 调用方需负责关闭返回的流.
 func (s *OSSService) OpenCover(modelID string) (io.ReadCloser, *CoverMeta, error) {
-	objectKey := fmt.Sprintf("%s/%s.webp", coverDir, modelID)
+	objectKey, err := coverObjectKey(modelID)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// 检查对象是否存在 (与 GetSignedURL 保持一致)
 	exists, err := s.bucket.IsObjectExist(objectKey)

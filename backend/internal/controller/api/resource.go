@@ -4,6 +4,7 @@ import (
 	"backend/internal/logger"
 	"backend/internal/service"
 	"backend/internal/utils"
+	"errors"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -37,6 +38,10 @@ func GetResourceDownloadURL() http.HandlerFunc {
 		// 获取签名URL
 		signedURL, err := ossService.GetSignedURL(resourceType, resourceName)
 		if err != nil {
+			if errors.Is(err, service.ErrInvalidObjectKey) {
+				utils.BadRequest(w, "资源标识不合法")
+				return
+			}
 			logger.WithRequestLogCtx(r.Context()).Error("获取签名URL失败",
 				zap.String("type", resourceType), zap.String("name", resourceName), zap.Error(err))
 			utils.Error(w, http.StatusNotFound, err.Error())
