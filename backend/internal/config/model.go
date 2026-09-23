@@ -2,9 +2,10 @@ package config
 
 // gatewayConfig 网关配置
 type gatewayConfig struct {
-	Port     int    `yaml:"port"`
-	DataPath string `yaml:"data-path"`
-	TempPath string `yaml:"temp-path"`
+	Port           int      `yaml:"port"`
+	DataPath       string   `yaml:"data-path"`
+	TempPath       string   `yaml:"temp-path"`
+	AllowedOrigins []string `yaml:"allowed-origins"`
 }
 
 // LoggerConfig 日志配置

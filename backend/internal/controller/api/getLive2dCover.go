@@ -4,6 +4,7 @@ import (
 	"backend/internal/logger"
 	"backend/internal/service"
 	"backend/internal/utils"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,6 +36,10 @@ func GetLive2dCover() http.HandlerFunc {
 		// 打开封面对象
 		body, meta, err := ossService.OpenCover(modelID)
 		if err != nil {
+			if errors.Is(err, service.ErrInvalidObjectKey) {
+				utils.BadRequest(w, "模型 ID 不合法")
+				return
+			}
 			logger.WithRequestLogCtx(r.Context()).Error("打开封面对象失败",
 				zap.String("modelID", modelID), zap.Error(err))
 			utils.Error(w, http.StatusNotFound, err.Error())
