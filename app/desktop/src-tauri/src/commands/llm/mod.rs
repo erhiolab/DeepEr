@@ -307,7 +307,14 @@ pub async fn stream_generate(
     };
     let status = resp.status().as_u16();
     if status < 200 || status >= 300 {
-        let text = resp.text().await.unwrap_or_default();
+        let text = match resp.text().await {
+            Ok(text) => text,
+            Err(error) => {
+                let error = format!("读取 {url} 错误响应体失败: {error}");
+                finish(app, request_id, false, Some(error.clone()));
+                return Err(error);
+            }
+        };
         finish(app, request_id, false, Some(format!("HTTP {status}")));
         return Ok((status, text, None, None));
     }

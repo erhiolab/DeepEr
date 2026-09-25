@@ -852,7 +852,7 @@ async fn run_loop(
 				output_preview
 			),
 		);
-		let calls = parser::parse_tool_calls(&text);
+		let calls = parser::parse_tool_calls(&text)?;
 		// 中间思考文本推给前端展示 (最终回答由返回值填充, 不重复推送)
 		if !calls.is_empty() {
 			let _ = app.emit(
