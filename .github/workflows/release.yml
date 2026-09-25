@@ -10,22 +10,16 @@ permissions:
 
 jobs:
   release:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-          # - platform: macos-latest    # 需要 macOS 签名证书
-          # - platform: ubuntu-latest   # 需要 libwebkit2gtk 等系统库
-    runs-on: ${{ matrix.platform }}
+    name: Windows release
+    runs-on: windows-latest
 
     steps:
-      # ---------- Checkout ----------
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # 需要完整标签历史来生成"上一版本至今"的更新内容.
+          fetch-depth: 0
 
-      # ---------- Toolchain ----------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -39,34 +33,23 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-pc-windows-msvc
 
-      - name: Cache cargo
+      - name: Restore Cargo cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             app/desktop/src-tauri/target
-          key: release-${{ runner.os }}-${{ hashFiles('app/desktop/src-tauri/Cargo.lock') }}
-
-      # ---------- System deps ----------
-      - name: Install Linux deps
-        if: startsWith(matrix.platform, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
+          key: release-windows-${{ hashFiles('app/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            release-windows-
 
       - name: Install Windows C++ Build Tools
-        if: startsWith(matrix.platform, 'windows')
         uses: ilammy/msvc-dev-cmd@v1
 
-      # ---------- Frontend build ----------
-      - name: Install JS deps
+      - name: Install JS dependencies
         working-directory: app/desktop
         run: pnpm install --frozen-lockfile
 
@@ -82,19 +65,16 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$RAW_KEY" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set!"
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set"
             exit 1
           fi
           printf '%s' "$RAW_KEY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' > "$RUNNER_TEMP/deeper.key"
           echo "KEY_PATH=$RUNNER_TEMP/deeper.key" >> "$GITHUB_OUTPUT"
 
-      # ---------- Clean stale bundle artifacts ----------
       - name: Clean stale bundle artifacts
         working-directory: app/desktop
         shell: bash
-        run: |
-          rm -rf src-tauri/target/release/bundle
-          echo "Cleaned src-tauri/target/release/bundle"
+        run: rm -rf src-tauri/target/release/bundle
 
       - name: Build Tauri release
         working-directory: app/desktop
@@ -104,94 +84,32 @@ jobs:
           CI: true
         run: pnpm tauri:build
 
-      # ---------- Verify artifacts ----------
-      - name: Verify updater artifacts
-        working-directory: app/desktop
+      - name: Verify release artifacts
         shell: bash
         run: |
-          echo "=== All bundle files ==="
-          find src-tauri/target/release/bundle -type f
+          set -euo pipefail
+          find app/desktop/src-tauri/target/release/bundle -type f
 
-      # ---------- Generate latest.json manifest ----------
-      - name: Generate latest.json manifest
+      - name: Generate release metadata
         shell: bash
         env:
           BUNDLE: app/desktop/src-tauri/target/release/bundle
+          ANDROID_BUNDLE: app/android/app/build/outputs/apk/release
           TAG: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
         run: |
-          BUNDLE_DIR="$BUNDLE"
-          VER="${TAG#v}"
-          BASE="https://github.com/${REPO}/releases/download/${TAG}"
-          echo "Version: $VER"
-          echo "Base URL: $BASE"
-
-          BUNDLE_DIR="$BUNDLE_DIR" BASE="$BASE" VER="$VER" node > latest.json << 'NODE_SCRIPT'
-          const fs = require('fs');
-          const path = require('path');
-          const bundle = process.env.BUNDLE_DIR;
-          const base   = process.env.BASE;
-          const ver    = process.env.VER;
-
-          const platforms = {};
-
-          function walk(dir, depth, acc) {
-            if (depth > 6) return;
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-              const full = path.join(dir, e.name);
-              if (e.isDirectory()) { walk(full, depth + 1, acc); continue; }
-              const low = e.name.toLowerCase();
-              // Windows NSIS: -setup.exe (+ .exe.sig)
-              if (low.endsWith('-setup.exe') && !acc.nsis) acc.nsis = full;
-              // 兜底: 任意 .exe (+ .exe.sig)
-              else if (low.endsWith('.exe') && !acc.nsis && !acc.anyExe) acc.anyExe = full;
-              // Windows MSI: .msi (+ .msi.sig)
-              else if (low.endsWith('.msi') && !acc.msi) acc.msi = full;
-              // macOS: aarch64 / x86_64 Apple 应用
-              else if (low.endsWith('.aarch64.app.tar.gz') && !acc.macArm) acc.macArm = full;
-              else if (low.endsWith('.x86_64.app.tar.gz') && !acc.macX64) acc.macX64 = full;
-              else if (low.endsWith('.app.tar.gz') && !acc.macGeneric) acc.macGeneric = full;
-              // Linux: AppImage (raw 或 .tar.gz 均可后续处理)
-              else if (low.endsWith('.appimage') && !acc.linux) acc.linux = full;
-            }
-          }
-
-          const readSig = (p) => {
-            try { return fs.readFileSync(p + '.sig', 'utf8').trim(); } catch (e) { return ''; }
-          };
-          // URL 中文件名部分做编码 (空格 → %20), 避免下载 404
-          const enc = (p) => base + '/' + encodeURIComponent(path.basename(p));
-
-          const acc = { nsis: null, anyExe: null, msi: null, macArm: null, macX64: null, macGeneric: null, linux: null };
-          walk(bundle, 0, acc);
-
-          // Windows x86_64 首选 NSIS, 兜底任意 exe
-          const winExe = acc.nsis || acc.anyExe;
-          if (winExe)  platforms['windows-x86_64']      = { url: enc(winExe),       signature: readSig(winExe) };
-          if (acc.msi) platforms['windows-x86_64-msi']  = { url: enc(acc.msi),       signature: readSig(acc.msi) };
-          if (acc.macArm)    platforms['darwin-aarch64'] = { url: enc(acc.macArm),       signature: readSig(acc.macArm) };
-          if (acc.macX64)    platforms['darwin-x86_64']  = { url: enc(acc.macX64),       signature: readSig(acc.macX64) };
-          if (!acc.macArm && !acc.macX64 && acc.macGeneric) platforms['darwin-x86_64'] = { url: enc(acc.macGeneric), signature: readSig(acc.macGeneric) };
-          if (acc.linux) platforms['linux-x86_64']       = { url: enc(acc.linux),       signature: readSig(acc.linux) };
-
-          console.log(JSON.stringify({ version: ver, notes: '', pub_date: new Date().toISOString(), platforms }, null, 2));
-          NODE_SCRIPT
-
+          set -euo pipefail
+          node .github/scripts/generate-release-metadata.mjs
+          echo "=== release-body.md ==="
+          cat release-body.md
           echo "=== latest.json ==="
           cat latest.json
 
-      # ---------- Create GitHub Release ----------
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          body: |
-            ## DeepEr ${{ github.ref_name }}
-
-            Auto-generated release from [GitHub Actions](.github/workflows/release.yml).
-
-            ### 下载
-            - **Windows x64**: 见下方 Assets 中的 `*.exe` 安装包
+          body_path: release-body.md
           draft: false
           prerelease: false
           files: |
@@ -199,4 +117,5 @@ jobs:
             app/desktop/src-tauri/target/release/bundle/**/*.msi
             app/desktop/src-tauri/target/release/bundle/**/*.zip
             app/desktop/src-tauri/target/release/bundle/**/*.sig
+            app/android/app/build/outputs/apk/release/**/*.apk
             latest.json
