@@ -288,28 +288,40 @@ pub async fn llm_google_list_models(
             format!("创建 HTTP 客户端失败: {e}")
         })?;
     match client.get(&url).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            let parsed: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
-            let ids = parsed
+        Ok(resp) => {
+            let status = resp.status();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| format!("读取 Google 模型列表响应失败: {e}"))?;
+            if !status.is_success() {
+                return Err(format!(
+                    "Google 模型列表请求失败: HTTP {}: {}",
+                    status.as_u16(),
+                    truncate(text)
+                ));
+            }
+            let parsed: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| format!("解析 Google 模型列表响应失败: {e}"))?;
+            let models = parsed
                 .get("models")
                 .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|m| {
-                            m.get("name")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                                .map(|s| s.strip_prefix("models/").map(|x| x.to_string()).unwrap_or(s))
-                        })
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
+                .ok_or_else(|| "Google 模型列表响应缺少 models 数组".to_string())?;
+            let mut ids = models
+                .iter()
+                .map(|model| {
+                    let name = model
+                        .get("name")
+                        .and_then(|value| value.as_str())
+                        .filter(|name| !name.is_empty())
+                        .ok_or_else(|| "Google 模型列表包含无效 name".to_string())?;
+                    Ok(name.strip_prefix("models/").unwrap_or(name).to_string())
                 })
-                .unwrap_or_default();
-            let mut ids = ids;
+                .collect::<Result<Vec<_>, String>>()?;
             ids.sort();
             Ok(ids)
         }
-        _ => Ok(Vec::new()),
+        Err(error) => Err(format!("Google 模型列表网络请求失败: {error}")),
     }
 }
 

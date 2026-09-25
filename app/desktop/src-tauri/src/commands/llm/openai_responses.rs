@@ -142,7 +142,10 @@ async fn post_json(url: String, headers: Vec<(String, String)>, body: serde_json
         .await
         .map_err(|e| format!("无法连接 {url}: {e}"))?;
     let status = resp.status().as_u16();
-    let text = resp.text().await.unwrap_or_default();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取 {url} 响应体失败: {e}"))?;
     Ok((status, text))
 }
 
@@ -300,24 +303,31 @@ pub async fn llm_openai_list_models(
     {
         Err(e) => {
             let _ = log::write(&app, &LogSource::Backend, "error", &format!("OpenAI 模型列表网络请求失败: {e}"));
-            Ok(Vec::new())
+            Err(e)
         }
         Ok((status, resp)) if (200..300).contains(&status) => {
-            let ids = resp
+            let models = resp
                 .get("data")
                 .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
+                .ok_or_else(|| "OpenAI 模型列表响应缺少 data 数组".to_string())?;
+            let mut ids = models
+                .iter()
+                .map(|model| {
+                    model
+                        .get("id")
+                        .and_then(|value| value.as_str())
+                        .filter(|id| !id.is_empty())
+                        .map(String::from)
+                        .ok_or_else(|| "OpenAI 模型列表包含无效 id".to_string())
                 })
-                .unwrap_or_default();
-            let mut ids = ids;
+                .collect::<Result<Vec<_>, _>>()?;
             ids.sort();
             Ok(ids)
         }
-        _ => Ok(Vec::new()),
+        Ok((status, resp)) => Err(format!(
+            "OpenAI 模型列表请求失败: HTTP {status}: {}",
+            truncate(resp.to_string())
+        )),
     }
 }
 

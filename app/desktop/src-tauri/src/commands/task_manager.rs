@@ -4,10 +4,33 @@ use crate::log;
 use tauri::{AppHandle, Manager};
 
 #[cfg(windows)]
-use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_6;
+use webview2_com::Microsoft::Web::WebView2::Win32::{
+    ICoreWebView2Controller, ICoreWebView2_6,
+};
 #[cfg(windows)]
 use windows::core::Interface;
 
+#[cfg(windows)]
+fn open_webview_task_manager(controller: ICoreWebView2Controller) -> Result<(), String> {
+    // SAFETY: Tauri clones this reference-counted COM controller from the live
+    // WebView and invokes this helper inside with_webview on the WebView thread.
+    // The derived COM interfaces are used only for the duration of this call
+    // and are never retained across threads or beyond the controller lifetime.
+    unsafe {
+        controller
+            .CoreWebView2()
+            .map_err(|e| format!("获取核心 WebView2 失败: {e}"))
+            .and_then(|core| {
+                core.cast::<ICoreWebView2_6>()
+                    .map_err(|e| format!("当前 WebView2 版本不支持任务管理器: {e}"))
+            })
+            .and_then(|webview| {
+                webview
+                    .OpenTaskManagerWindow()
+                    .map_err(|e| format!("打开任务管理器失败: {e}"))
+            })
+    }
+}
 
 #[tauri::command]
 pub fn open_task_manager(app: AppHandle) -> Result<(), String> {
@@ -25,19 +48,7 @@ pub fn open_task_manager(app: AppHandle) -> Result<(), String> {
         window
             .with_webview(move |platform| {
                 let controller = platform.controller();
-                let result = unsafe {
-                    controller
-                        .CoreWebView2()
-                        .map_err(|e| format!("获取核心 WebView2 失败: {e}"))
-                        .and_then(|core| {
-                            core.cast::<ICoreWebView2_6>()
-                                .map_err(|e| format!("当前 WebView2 版本不支持任务管理器: {e}"))
-                        })
-                        .and_then(|w6| {
-                            w6.OpenTaskManagerWindow()
-                                .map_err(|e| format!("打开任务管理器失败: {e}"))
-                        })
-                };
+                let result = open_webview_task_manager(controller);
                 let _ = tx.send(result);
             })
             .map_err(|e| {

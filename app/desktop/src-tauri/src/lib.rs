@@ -49,7 +49,14 @@ pub fn run() -> tauri::Result<()> {
             // 后台同步已启用的 MCP 服务器工具 (失败仅记日志, 不阻塞启动)
             let mcp_sync_app = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                crate::mcp::runtime::sync_all(&mcp_sync_app).await;
+                if let Err(error) = crate::mcp::runtime::sync_all(&mcp_sync_app).await {
+                    let _ = crate::log::write(
+                        &mcp_sync_app,
+                        &crate::log::LogSource::Backend,
+                        "error",
+                        &format!("[mcp] 启动同步失败: {error}"),
+                    );
+                }
             });
             // 初始化定时任务调度线程 (后台持续检查, 到点 emit 事件)
             task::scheduler::init(app_handle.clone())?;

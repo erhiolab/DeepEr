@@ -13,7 +13,7 @@ pub struct ParsedToolCall {
 }
 
 /// 解析文本里的所有 <tool_call> 标签
-pub fn parse_tool_calls(text: &str) -> Vec<ParsedToolCall> {
+pub fn parse_tool_calls(text: &str) -> Result<Vec<ParsedToolCall>, String> {
 	let mut calls = Vec::new();
 	let mut from = 0usize;
 	let tag_start_marker = "<tool_call";
@@ -29,16 +29,41 @@ pub fn parse_tool_calls(text: &str) -> Vec<ParsedToolCall> {
 		}
 		let Some(gt) = tail.find('>') else { break };
 		let tag = &tail[..=gt];
-		let name = extract_attr(tag, "name").map(|s| s.trim().to_string()).unwrap_or_default();
-		if !name.is_empty() {
-			let args = extract_attr(tag, "args")
-				.and_then(|raw| serde_json::from_str(raw.trim()).ok())
-				.unwrap_or_else(|| json!({}));
-			calls.push(ParsedToolCall { name, args });
-		}
+		let Some(name) = extract_attr(tag, "name")
+			.map(|s| s.trim().to_string())
+			.filter(|name| !name.is_empty())
+		else {
+			from = start + gt + 1;
+			continue;
+		};
+		let args = match extract_attr(tag, "args") {
+			Some(raw) => serde_json::from_str(raw.trim())
+				.map_err(|error| format!("工具「{name}」参数不是合法 JSON: {error}"))?,
+			None => json!({}),
+		};
+		calls.push(ParsedToolCall { name, args });
 		from = start + gt + 1;
 	}
-	calls
+	Ok(calls)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::parse_tool_calls;
+
+	#[test]
+	fn rejects_invalid_tool_arguments() {
+		let error = parse_tool_calls(r#"<tool_call name="demo" args='{bad}'></tool_call>"#)
+			.expect_err("invalid JSON must not be silently replaced");
+		assert!(error.contains("参数不是合法 JSON"));
+	}
+
+	#[test]
+	fn defaults_only_when_arguments_are_absent() {
+		let calls = parse_tool_calls(r#"<tool_call name="demo"></tool_call>"#).unwrap();
+		assert_eq!(calls.len(), 1);
+		assert_eq!(calls[0].args, serde_json::json!({}));
+	}
 }
 
 /// 从标签里提取 `key="..."` 或 `key='...'` 的属性值 (支持 key = "x" 空格)

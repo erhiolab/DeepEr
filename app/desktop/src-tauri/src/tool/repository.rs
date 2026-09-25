@@ -5,7 +5,7 @@
 //! 内置工具幂等 upsert (定义以代码为准, 每次启动刷新); 用户注册写入留给后续插件系统.
 //! 旧库结构变更统一走 upgrade.rs (此处只维护种子与查询).
 
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, params_from_iter, types::Type, Connection, Row};
 use serde_json::{json, Value};
 
 use crate::tool::model::ToolDefinition;
@@ -22,10 +22,13 @@ fn now() -> i64 {
 		.unwrap_or(0)
 }
 
-/// 解析 JSON 列 (损坏时回退空对象)
-fn parse_json(raw: Option<String>) -> Value {
-	raw.and_then(|s| serde_json::from_str(&s).ok())
-		.unwrap_or_else(|| json!({}))
+/// 解析 JSON 列；损坏时向上返回错误
+fn parse_json(column: usize, raw: Option<String>) -> rusqlite::Result<Value> {
+	match raw {
+		Some(raw) => serde_json::from_str(&raw)
+			.map_err(|error| rusqlite::Error::FromSqlConversionFailure(column, Type::Text, Box::new(error))),
+		None => Ok(json!({})),
+	}
 }
 
 /// 解析搜索别名列: 按换行 / 逗号 / 顿号分隔, 去重去空
@@ -59,8 +62,8 @@ fn row_to_definition(row: &Row<'_>) -> rusqlite::Result<ToolDefinition> {
 		keywords: parse_keywords(row.get(4)?),
 		provider: row.get(5)?,
 		executor: row.get(6)?,
-		input_schema: parse_json(row.get(7)?),
-		config: parse_json(row.get(8)?),
+		input_schema: parse_json(7, row.get(7)?)?,
+		config: parse_json(8, row.get(8)?)?,
 		enabled: row.get::<_, i64>(9)? != 0,
 		builtin: row.get::<_, i64>(10)? != 0,
 		version: row.get(11)?,
@@ -389,6 +392,52 @@ fn has_cjk(text: &str) -> bool {
 	})
 }
 
+const SEARCH_CANDIDATE_LIMIT: usize = 2_000;
+
+fn search_candidate_terms(tokens: &[String]) -> Vec<String> {
+	let mut terms = Vec::new();
+	for token in tokens {
+		if !terms.contains(token) {
+			terms.push(token.clone());
+		}
+		if has_cjk(token) {
+			let chars: Vec<char> = token.chars().collect();
+			for pair in chars.windows(2) {
+				let bigram: String = pair.iter().collect();
+				if !terms.contains(&bigram) {
+					terms.push(bigram);
+				}
+			}
+		}
+	}
+	terms
+}
+
+fn search_candidates(conn: &Connection, tokens: &[String]) -> Result<Vec<ToolDefinition>, String> {
+	let terms = search_candidate_terms(tokens);
+	if terms.is_empty() {
+		return Ok(Vec::new());
+	}
+	let predicates = (1..=terms.len())
+		.map(|index| {
+			format!(
+				"(instr(lower(name), ?{index}) > 0 OR instr(lower(label), ?{index}) > 0 OR instr(lower(description), ?{index}) > 0 OR instr(lower(keywords), ?{index}) > 0)"
+			)
+		})
+		.collect::<Vec<_>>()
+		.join(" OR ");
+	let sql = format!(
+		"SELECT {TOOL_COLUMNS} FROM tools WHERE {predicates} ORDER BY name ASC LIMIT {SEARCH_CANDIDATE_LIMIT}"
+	);
+	let mut stmt = conn.prepare(&sql).map_err(|e| format!("搜索工具失败: {e}"))?;
+	let rows = stmt
+		.query_map(params_from_iter(terms.iter()), row_to_definition)
+		.map_err(|e| format!("搜索工具失败: {e}"))?;
+	rows
+		.collect::<Result<Vec<_>, _>>()
+		.map_err(|e| format!("解析工具失败: {e}"))
+}
+
 /// 单 token 在某字段的最佳匹配分 (0 = 无匹配)
 fn token_field_score(token: &str, name: &str, label: &str, description: &str, keywords: &[String]) -> i64 {
 	let mut best = 0i64;
@@ -443,9 +492,9 @@ pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<ToolDe
 	if tokens.is_empty() {
 		return Ok(Vec::new());
 	}
-	let all = query_all(conn, &format!("SELECT {TOOL_COLUMNS} FROM tools ORDER BY name ASC"))?;
+	let candidates = search_candidates(conn, &tokens)?;
 	let mut scored: Vec<(i64, ToolDefinition)> = Vec::new();
-	for tool in all {
+	for tool in candidates {
 		let name = tool.name.to_lowercase();
 		let label = tool.label.to_lowercase();
 		let description = tool.description.to_lowercase();
@@ -467,6 +516,65 @@ pub fn search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<ToolDe
 	scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.cmp(&b.1.name)));
 	scored.truncate(limit);
 	Ok(scored.into_iter().map(|(_, tool)| tool).collect())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{search, TOOL_COLUMNS};
+	use rusqlite::{params, Connection};
+
+	fn test_db() -> Connection {
+		let conn = Connection::open_in_memory().unwrap();
+		conn.execute_batch(
+			"CREATE TABLE tools (
+				id INTEGER PRIMARY KEY,
+				name TEXT NOT NULL,
+				label TEXT NOT NULL,
+				description TEXT NOT NULL,
+				keywords TEXT NOT NULL DEFAULT '',
+				provider TEXT NOT NULL,
+				executor TEXT NOT NULL,
+				input_schema TEXT NOT NULL,
+				config TEXT NOT NULL,
+				enabled INTEGER NOT NULL,
+				builtin INTEGER NOT NULL,
+				version TEXT NOT NULL,
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			);",
+		)
+		.unwrap();
+		conn
+	}
+
+	fn insert_tool(conn: &Connection, name: &str, description: &str, config: &str) {
+		let sql = format!(
+			"INSERT INTO tools ({TOOL_COLUMNS}) VALUES (NULL, ?1, ?1, ?2, '', 'internal', ?1, '{{}}', ?3, 1, 1, '1', 0, 0)"
+		);
+		conn.execute(&sql, params![name, description, config]).unwrap();
+	}
+
+	#[test]
+	fn search_filters_candidates_in_sql() {
+		let conn = test_db();
+		for index in 0..2_500 {
+			insert_tool(&conn, &format!("unrelated-{index:04}"), "ordinary utility", "{}");
+		}
+		insert_tool(&conn, "target-tool", "unique-needle capability", "{}");
+
+		let results = search(&conn, "unique-needle", 10).unwrap();
+		assert_eq!(results.len(), 1);
+		assert_eq!(results[0].name, "target-tool");
+	}
+
+	#[test]
+	fn corrupt_json_is_reported_instead_of_defaulted() {
+		let conn = test_db();
+		insert_tool(&conn, "broken", "broken config", "{bad}");
+
+		let error = search(&conn, "broken", 10).expect_err("corrupt JSON must be visible");
+		assert!(error.contains("解析工具失败"));
+	}
 }
 
 /// 按调用名查工具

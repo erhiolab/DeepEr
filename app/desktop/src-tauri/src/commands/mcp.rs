@@ -38,6 +38,14 @@ fn normalize(input: &McpServerInput) -> Result<McpServerInput, String> {
 	if transport == "stdio" && input.command.trim().is_empty() {
 		return Err("stdio 传输需要填写启动命令".to_string());
 	}
+	if transport == "stdio" {
+		crate::mcp::runtime::validate_stdio_command(input.command.trim())?;
+		if let Some(env) = input.env.as_object() {
+			for key in env.keys() {
+				crate::mcp::runtime::validate_stdio_env_key(key)?;
+			}
+		}
+	}
 	if (transport == "sse" || transport == "http") && input.url.trim().is_empty() {
 		return Err("sse/http 传输需要填写服务器地址".to_string());
 	}
@@ -189,5 +197,5 @@ pub fn mcp_set_enabled(
 /// invoke("mcp_sync")
 #[tauri::command]
 pub async fn mcp_sync(app: AppHandle) -> Result<Vec<crate::mcp::runtime::SyncSummary>, String> {
-	Ok(crate::mcp::runtime::sync_all(&app).await)
+	crate::mcp::runtime::sync_all(&app).await
 }

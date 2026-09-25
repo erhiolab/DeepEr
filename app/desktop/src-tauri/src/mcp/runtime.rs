@@ -17,7 +17,7 @@ use futures_util::StreamExt;
 use futures_util::TryFutureExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, CONTENT_TYPE};
 use rmcp::model::{
-	CallToolRequestParams, CallToolResult, ClientJsonRpcMessage, Content, RawContent,
+	CallToolRequestParams, CallToolResult, ClientJsonRpcMessage, ContentBlock,
 	ResourceContents, ServerJsonRpcMessage, Tool as McpTool,
 };
 use rmcp::service::RunningService;
@@ -43,6 +43,58 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 const LIST_TIMEOUT: Duration = Duration::from_secs(20);
 /// 单次工具调用超时
 const CALL_TIMEOUT: Duration = Duration::from_secs(90);
+
+const ALLOWED_STDIO_COMMANDS: &[&str] = &[
+	"npx", "uvx", "docker", "node", "python", "python3", "bunx", "deno",
+];
+
+const BLOCKED_STDIO_ENV_KEYS: &[&str] = &[
+	"PATH",
+	"PATHEXT",
+	"COMSPEC",
+	"SHELL",
+	"LD_PRELOAD",
+	"LD_LIBRARY_PATH",
+	"DYLD_INSERT_LIBRARIES",
+	"DYLD_LIBRARY_PATH",
+	"NODE_OPTIONS",
+	"PYTHONHOME",
+	"PYTHONPATH",
+	"BASH_ENV",
+	"ENV",
+];
+
+pub(crate) fn validate_stdio_command(command: &str) -> Result<(), String> {
+	let command = command.trim();
+	if command.contains(['/', '\\', ':']) {
+		return Err("MCP stdio 命令必须使用允许的运行器名称，不能使用路径".to_string());
+	}
+	let normalized = command
+		.to_ascii_lowercase()
+		.trim_end_matches(".exe")
+		.trim_end_matches(".cmd")
+		.trim_end_matches(".bat")
+		.to_string();
+	if ALLOWED_STDIO_COMMANDS.contains(&normalized.as_str()) {
+		Ok(())
+	} else {
+		Err(format!(
+			"MCP stdio 命令不在白名单中；允许: {}",
+			ALLOWED_STDIO_COMMANDS.join(", ")
+		))
+	}
+}
+
+pub(crate) fn validate_stdio_env_key(key: &str) -> Result<(), String> {
+	if BLOCKED_STDIO_ENV_KEYS
+		.iter()
+		.any(|blocked| key.eq_ignore_ascii_case(blocked))
+	{
+		Err(format!("MCP stdio 环境变量「{key}」可能改变可执行代码来源，禁止覆盖"))
+	} else {
+		Ok(())
+	}
+}
 
 // ---------------------------------------------------------------------------
 // 传输层
@@ -87,7 +139,7 @@ impl From<serde_json::Error> for McpError {
 /// 统一三种传输的枚举 (serve_client 需要具体类型)
 enum McpTransport {
 	Stdio(TokioChildProcess),
-	Http(StreamableHttpClientTransport<reqwest_mcp::Client>),
+	Http(StreamableHttpClientTransport<reqwest::Client>),
 	Sse(SseTransport),
 }
 
@@ -128,6 +180,7 @@ fn build_stdio_transport(server: &McpServerRecord) -> Result<TokioChildProcess, 
 	if command.is_empty() {
 		return Err("stdio 传输缺少启动命令".to_string());
 	}
+	validate_stdio_command(command)?;
 	let mut cmd = tokio::process::Command::new(command);
 	if let Some(args) = server.args.as_array() {
 		for arg in args {
@@ -136,9 +189,29 @@ fn build_stdio_transport(server: &McpServerRecord) -> Result<TokioChildProcess, 
 			}
 		}
 	}
+	// 不把宿主进程中的 API key 等环境变量整体泄露给第三方 MCP 子进程。
+	// 仅保留进程启动所需变量，其余变量必须由用户在服务器配置中显式提供。
+	cmd.env_clear();
+	for key in [
+		"PATH",
+		"PATHEXT",
+		"SYSTEMROOT",
+		"WINDIR",
+		"TEMP",
+		"TMP",
+		"HOME",
+		"USERPROFILE",
+		"LOCALAPPDATA",
+		"APPDATA",
+	] {
+		if let Some(value) = std::env::var_os(key) {
+			cmd.env(key, value);
+		}
+	}
 	if let Some(env) = server.env.as_object() {
 		for (key, value) in env {
 			if let Some(v) = value.as_str() {
+				validate_stdio_env_key(key)?;
 				cmd.env(key, v);
 			}
 		}
@@ -176,7 +249,7 @@ fn parse_headers(value: &Value) -> Result<(Option<String>, HashMap<HeaderName, H
 }
 
 /// 构造 Streamable HTTP 传输
-fn build_http_transport(server: &McpServerRecord) -> Result<StreamableHttpClientTransport<reqwest_mcp::Client>, String> {
+fn build_http_transport(server: &McpServerRecord) -> Result<StreamableHttpClientTransport<reqwest::Client>, String> {
 	let url = server.url.trim();
 	if url.is_empty() {
 		return Err("http 传输缺少服务器地址".to_string());
@@ -190,7 +263,7 @@ fn build_http_transport(server: &McpServerRecord) -> Result<StreamableHttpClient
 		config = config.custom_headers(headers);
 	}
 	Ok(StreamableHttpClientTransport::with_client(
-		reqwest_mcp::Client::new(),
+		reqwest::Client::new(),
 		config,
 	))
 }
@@ -456,29 +529,31 @@ fn format_tool_result(result: CallToolResult) -> Result<Value, String> {
 	Ok(json!({ "ok": true }))
 }
 
-fn content_to_text(content: &[Content]) -> String {
+fn content_to_text(content: &[ContentBlock]) -> String {
 	let mut parts: Vec<String> = Vec::new();
 	for item in content {
-		match &item.raw {
-			RawContent::Text(text) => parts.push(text.text.clone()),
-			RawContent::Image(image) => parts.push(format!(
+		match item {
+			ContentBlock::Text(text) => parts.push(text.text.clone()),
+			ContentBlock::Image(image) => parts.push(format!(
 				"[image: {} 数据 {} 字节]",
 				image.mime_type,
 				image.data.len()
 			)),
-			RawContent::Resource(resource) => {
+			ContentBlock::Resource(resource) => {
 				let uri = match &resource.resource {
 					ResourceContents::TextResourceContents { uri, .. } => uri.clone(),
 					ResourceContents::BlobResourceContents { uri, .. } => uri.clone(),
+					_ => "unsupported".to_string(),
 				};
 				parts.push(format!("[resource: {uri}]"));
 			}
-			RawContent::Audio(audio) => {
+			ContentBlock::Audio(audio) => {
 				parts.push(format!("[audio: {} 数据 {} 字节]", audio.mime_type, audio.data.len()));
 			}
-			RawContent::ResourceLink(link) => {
+			ContentBlock::ResourceLink(link) => {
 				parts.push(format!("[resource link: {}]", link.uri));
 			}
+			_ => parts.push("[unsupported MCP content]".to_string()),
 		}
 	}
 	parts.join("\n")
@@ -525,13 +600,11 @@ pub async fn execute_tool(app: &AppHandle, tool_name: &str, args: Value) -> Resu
 /// 向指定服务器调用 MCP 工具
 async fn call_tool(server: &McpServerRecord, mcp_tool: &str, args: Value) -> Result<Value, String> {
 	let connection = McpRuntime::global().get_connection(server).await?;
-	let args_obj = args.as_object().cloned().unwrap_or_default();
-	let params = CallToolRequestParams {
-		meta: None,
-		name: mcp_tool.to_string().into(),
-		arguments: Some(args_obj),
-		task: None,
-	};
+	let args_obj = args
+		.as_object()
+		.cloned()
+		.ok_or_else(|| format!("MCP 工具「{mcp_tool}」参数必须是 JSON 对象"))?;
+	let params = CallToolRequestParams::new(mcp_tool.to_string()).with_arguments(args_obj);
 	let result = tokio::time::timeout(CALL_TIMEOUT, connection.peer.call_tool(params))
 		.await
 		.map_err(|_| format!("调用 MCP 工具超时: {mcp_tool}"))?
@@ -728,17 +801,16 @@ pub async fn sync_server_by_id(app: &AppHandle, id: i64) -> Result<SyncSummary, 
 }
 
 /// 同步全部已启用服务器 (启动时 / 手动触发), 禁用的服务器清理工具并断开
-pub async fn sync_all(app: &AppHandle) -> Vec<SyncSummary> {
-	let state = match app.try_state::<db::Db>() {
-		Some(state) => state,
-		None => return Vec::new(),
-	};
+pub async fn sync_all(app: &AppHandle) -> Result<Vec<SyncSummary>, String> {
+	let state = app
+		.try_state::<db::Db>()
+		.ok_or_else(|| "数据库未就绪".to_string())?;
 	let servers = {
-		let conn = match state.0.lock() {
-			Ok(conn) => conn,
-			Err(_) => return Vec::new(),
-		};
-		mcp_repository::list(&conn).unwrap_or_default()
+		let conn = state
+			.0
+			.lock()
+			.map_err(|e| format!("获取数据库连接失败: {e}"))?;
+		mcp_repository::list(&conn)?
 	};
 	let mut results = Vec::new();
 	for server in servers {
@@ -766,7 +838,7 @@ pub async fn sync_all(app: &AppHandle) -> Vec<SyncSummary> {
 			disable_server(app, server.id).await;
 		}
 	}
-	results
+	Ok(results)
 }
 
 /// 清理某服务器的工具并断开缓存连接 (禁用/删除时调用)
@@ -788,4 +860,31 @@ pub fn is_mcp_provider(provider: &str) -> bool {
 fn _assert_connection_send_sync() {
 	fn assert_send_sync<T: Send + Sync>() {}
 	assert_send_sync::<McpConnection>();
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{validate_stdio_command, validate_stdio_env_key};
+
+	#[test]
+	fn stdio_command_allowlist_accepts_known_runners() {
+		for command in ["npx", "NPX.CMD", "uvx.exe", "docker", "python3"] {
+			assert!(validate_stdio_command(command).is_ok(), "{command}");
+		}
+	}
+
+	#[test]
+	fn stdio_command_allowlist_rejects_shells_and_paths() {
+		for command in ["cmd", "powershell", "bash", "./npx", "C:\\tools\\npx.exe"] {
+			assert!(validate_stdio_command(command).is_err(), "{command}");
+		}
+	}
+
+	#[test]
+	fn stdio_environment_rejects_code_loading_overrides() {
+		for key in ["PATH", "Path", "NODE_OPTIONS", "LD_PRELOAD", "PYTHONPATH"] {
+			assert!(validate_stdio_env_key(key).is_err(), "{key}");
+		}
+		assert!(validate_stdio_env_key("GITHUB_TOKEN").is_ok());
+	}
 }
