@@ -4,13 +4,26 @@ import {listen} from "@tauri-apps/api/event"
 import App from "./App.vue"
 import router from "./services/router"
 import useLanguage, {i18n} from "./services/i18n"
+import {logger} from "./services/logger"
 import "./assets/style/theme.less"
 import "./assets/style/forms.less"
 
 const APP = createApp(App)
 const PINIA = createPinia()
 
-await useLanguage.init()
+window.addEventListener("error", event => {
+	void logger.error(`未处理的前端错误: ${event.message}`, event.error)
+})
+
+window.addEventListener("unhandledrejection", event => {
+	void logger.error("未处理的前端Promise错误", event.reason)
+})
+
+try {
+	await useLanguage.init()
+} catch (error) {
+	await logger.error("未能初始化语言包", error)
+}
 
 APP.use(router)
 APP.use(i18n)
