@@ -128,24 +128,29 @@ jobs:
 
           $headers = @{
             Authorization = "token $env:GITEA_TOKEN"
-            "Content-Type" = "application/json"
           }
 
-          $releaseBody = Get-Content "release-body.md" -Raw
+          $releaseBody = [string](Get-Content "release-body.md" -Raw)
 
-          $payload = @{
-            tag_name   = $env:TAG
-            name       = $env:TAG
-            body       = $releaseBody
+          $payloadObject = [ordered]@{
+            tag_name   = [string]$env:TAG
+            name       = [string]$env:TAG
+            body       = [string]$releaseBody
             draft      = $false
             prerelease = $false
-          } | ConvertTo-Json
+          }
+
+          $payload = $payloadObject | ConvertTo-Json -Depth 10 -Compress
+
+          Write-Host "Creating release: $env:TAG"
+          Write-Host "Release body length: $($releaseBody.Length)"
 
           $release = Invoke-RestMethod `
             -Method Post `
             -Uri "$env:GITEA_URL/api/v1/repos/$env:REPO/releases" `
             -Headers $headers `
-            -Body $payload
+            -ContentType "application/json; charset=utf-8" `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes($payload))
 
           "RELEASE_ID=$($release.id)" | Out-File `
             -FilePath $env:GITEA_OUTPUT `
