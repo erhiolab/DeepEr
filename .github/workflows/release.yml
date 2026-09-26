@@ -17,7 +17,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # 需要完整标签历史来生成"上一版本至今"的更新内容.
           fetch-depth: 0
 
       - name: Setup Node.js

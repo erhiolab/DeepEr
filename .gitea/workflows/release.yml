@@ -1,0 +1,208 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  releases: write
+
+jobs:
+  release:
+    name: Windows release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Restore Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/desktop/src-tauri/target
+          key: release-windows-${{ hashFiles('app/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            release-windows-
+
+      - name: Install Windows C++ Build Tools
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install JS dependencies
+        working-directory: app/desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: app/desktop
+        run: pnpm build
+
+      - name: Prepare Tauri signing key
+        id: signing-key
+        shell: bash
+        env:
+          RAW_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$RAW_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+
+          printf '%s' "$RAW_KEY" \
+            | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+            > "$RUNNER_TEMP/deeper.key"
+
+          echo "KEY_PATH=$RUNNER_TEMP/deeper.key" >> "$GITEA_OUTPUT"
+
+      - name: Clean stale bundle artifacts
+        working-directory: app/desktop
+        shell: bash
+        run: |
+          rm -rf src-tauri/target/release/bundle
+
+      - name: Build Tauri release
+        working-directory: app/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ steps.signing-key.outputs.KEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CI: true
+        run: |
+          pnpm tauri:build
+
+      - name: Verify release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          find app/desktop/src-tauri/target/release/bundle -type f
+
+      - name: Generate release metadata
+        shell: bash
+        env:
+          BUNDLE: app/desktop/src-tauri/target/release/bundle
+          ANDROID_BUNDLE: app/android/app/build/outputs/apk/release
+          TAG: ${{ gitea.ref_name }}
+          REPO: ${{ gitea.repository }}
+        run: |
+          set -euo pipefail
+
+          node .gitea/scripts/generate-release-metadata.mjs
+
+          echo "=== release-body.md ==="
+          cat release-body.md
+
+          echo "=== latest.json ==="
+          cat latest.json
+
+      - name: Create Gitea release
+        id: create-release
+        shell: powershell
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          TAG: ${{ gitea.ref_name }}
+          REPO: ${{ gitea.repository }}
+          GITEA_URL: ${{ gitea.server_url }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $headers = @{
+            Authorization = "token $env:GITEA_TOKEN"
+            "Content-Type" = "application/json"
+          }
+
+          $releaseBody = Get-Content "release-body.md" -Raw
+
+          $payload = @{
+            tag_name   = $env:TAG
+            name       = $env:TAG
+            body       = $releaseBody
+            draft      = $false
+            prerelease = $false
+          } | ConvertTo-Json
+
+          $release = Invoke-RestMethod `
+            -Method Post `
+            -Uri "$env:GITEA_URL/api/v1/repos/$env:REPO/releases" `
+            -Headers $headers `
+            -Body $payload
+
+          "RELEASE_ID=$($release.id)" | Out-File `
+            -FilePath $env:GITEA_OUTPUT `
+            -Encoding utf8 `
+            -Append
+
+          Write-Host "Created Gitea release ID: $($release.id)"
+
+      - name: Upload release assets
+        shell: powershell
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          REPO: ${{ gitea.repository }}
+          GITEA_URL: ${{ gitea.server_url }}
+          RELEASE_ID: ${{ steps.create-release.outputs.RELEASE_ID }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $headers = @{
+            Authorization = "token $env:GITEA_TOKEN"
+          }
+
+          $patterns = @(
+            "app/desktop/src-tauri/target/release/bundle/**/*.exe",
+            "app/desktop/src-tauri/target/release/bundle/**/*.msi",
+            "app/desktop/src-tauri/target/release/bundle/**/*.zip",
+            "app/desktop/src-tauri/target/release/bundle/**/*.sig",
+            "app/android/app/build/outputs/apk/release/**/*.apk",
+            "latest.json"
+          )
+
+          $files = @()
+
+          foreach ($pattern in $patterns) {
+            $matched = Get-ChildItem -Path $pattern -File -Recurse -ErrorAction SilentlyContinue
+
+            if ($matched) {
+              $files += $matched
+            }
+          }
+
+          $files = $files | Sort-Object FullName -Unique
+
+          if (-not $files) {
+            throw "No release assets found"
+          }
+
+          foreach ($file in $files) {
+            Write-Host "Uploading $($file.FullName)"
+
+            $uploadUrl = "$env:GITEA_URL/api/v1/repos/$env:REPO/releases/$env:RELEASE_ID/assets?name=$([uri]::EscapeDataString($file.Name))"
+
+            Invoke-RestMethod `
+              -Method Post `
+              -Uri $uploadUrl `
+              -Headers $headers `
+              -Form @{
+                attachment = Get-Item $file.FullName
+              }
+          }
