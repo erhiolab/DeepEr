@@ -169,10 +169,6 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $headers = @{
-            Authorization = "token $env:GITEA_TOKEN"
-          }
-
           $patterns = @(
             "app/desktop/src-tauri/target/release/bundle/**/*.exe",
             "app/desktop/src-tauri/target/release/bundle/**/*.msi",
@@ -185,7 +181,11 @@ jobs:
           $files = @()
 
           foreach ($pattern in $patterns) {
-            $matched = Get-ChildItem -Path $pattern -File -Recurse -ErrorAction SilentlyContinue
+            $matched = Get-ChildItem `
+              -Path $pattern `
+              -File `
+              -Recurse `
+              -ErrorAction SilentlyContinue
 
             if ($matched) {
               $files += $matched
@@ -198,16 +198,31 @@ jobs:
             throw "No release assets found"
           }
 
+          Write-Host "Found $($files.Count) release asset(s)"
+
           foreach ($file in $files) {
-            Write-Host "Uploading $($file.FullName)"
+            Write-Host ""
+            Write-Host "Uploading: $($file.Name)"
+            Write-Host "Path: $($file.FullName)"
+            Write-Host "Size: $($file.Length) bytes"
 
-            $uploadUrl = "$env:GITEA_URL/api/v1/repos/$env:REPO/releases/$env:RELEASE_ID/assets?name=$([uri]::EscapeDataString($file.Name))"
+            $escapedName = [uri]::EscapeDataString($file.Name)
 
-            Invoke-RestMethod `
-              -Method Post `
-              -Uri $uploadUrl `
-              -Headers $headers `
-              -Form @{
-                attachment = Get-Item $file.FullName
-              }
+            $uploadUrl = "$env:GITEA_URL/api/v1/repos/$env:REPO/releases/$env:RELEASE_ID/assets?name=$escapedName"
+
+            & curl.exe `
+              --fail-with-body `
+              --silent `
+              --show-error `
+              --request POST `
+              --header "Authorization: token $env:GITEA_TOKEN" `
+              --form "attachment=@$($file.FullName)" `
+              "$uploadUrl"
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to upload asset: $($file.Name)"
+            }
+
+            Write-Host ""
+            Write-Host "Uploaded: $($file.Name)"
           }
