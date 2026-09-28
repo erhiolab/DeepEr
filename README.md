@@ -7,11 +7,11 @@
 基于 **Tauri 2 + Vue 3 + Rust** 的现代桌面宠物应用, 内置完整 AI Agent: Live2D 模型、LLM 对话、工具调用、定时任务与长期记忆。
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v0.2.0-teal)](#下载安装)
+[![Version](https://img.shields.io/badge/version-v0.3.9-teal)](#-下载安装)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0-teal)](https://tauri.app)
 [![Vue](https://img.shields.io/badge/Vue-3.5-brightgreen)](https://vuejs.org)
 [![Rust](https://img.shields.io/badge/Rust-1.77+-orange)](https://rust-lang.org)
-[![Platforms](https://img.shields.io/badge/Windows-x64-blue)](#下载安装)
+[![Platforms](https://img.shields.io/badge/Windows-x64-blue)](#-下载安装)
 
 </div>
 

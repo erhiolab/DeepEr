@@ -26,6 +26,7 @@ const FILES = {
 	cargoToml: path.join(ROOT, "app", "desktop", "src-tauri", "Cargo.toml"),
 	tauriConf: path.join(ROOT, "app", "desktop", "src-tauri", "tauri.conf.json"),
 	cargoLock: path.join(ROOT, "app", "desktop", "src-tauri", "Cargo.lock"),
+	readme: path.join(ROOT, "README.md"),
 }
 
 const args = process.argv.slice(2)
@@ -106,6 +107,18 @@ function bumpCargoLock(file) {
 }
 
 // 在改动版本号之前, 记录当前"非版本文件"的未提交改动 (本次发布不会提交它们)
+/** Update the version badge shown at the top of README.md. */
+function bumpReadme(file) {
+	const raw = readFileSync(file, "utf8")
+	const badge = /(https:\/\/img\.shields\.io\/badge\/version-v)(\d+\.\d+\.\d+)(-teal)/.exec(raw)
+	if (!badge) {
+		console.error("README.md version badge was not found")
+		process.exit(1)
+	}
+	writeFileSync(file, raw.replace(badge[0], badge[1] + version + badge[3]))
+	return badge[2]
+}
+
 const otherChanges = []
 if (isRelease) {
 	const status0 = execSync("git status --porcelain", { cwd: ROOT, encoding: "utf8" }).trim()
@@ -121,6 +134,7 @@ const oldPkg = bumpJson(FILES.packageJson)
 const oldTauri = bumpJson(FILES.tauriConf)
 const oldCargo = bumpCargoToml(FILES.cargoToml)
 bumpCargoLock(FILES.cargoLock)
+const oldReadme = bumpReadme(FILES.readme)
 
 console.log(`✓ 版本号 ${oldPkg} → ${version}`)
 console.log(`  - ${rel(FILES.packageJson)}  ${oldPkg} → ${version}`)
@@ -129,10 +143,13 @@ console.log(`  - ${rel(FILES.cargoToml)}    ${oldCargo} → ${version}`)
 console.log(`  - ${rel(FILES.cargoLock)}  (deeper 包) 已同步`)
 
 // 校验一致性
+console.log("  - " + rel(FILES.readme) + "  " + oldReadme + " -> " + version)
+
 const checkJson = (file) => JSON.parse(readFileSync(file, "utf8")).version === version
 const checkToml = (file) => new RegExp(`^version = "${version}"`, "m").test(readFileSync(file, "utf8"))
 const checkLock = (file) => new RegExp(`^name = "deeper"\\r?\\nversion = "${version}"`, "m").test(readFileSync(file, "utf8"))
-const ok = checkJson(FILES.packageJson) && checkJson(FILES.tauriConf) && checkToml(FILES.cargoToml) && checkLock(FILES.cargoLock)
+const checkReadme = (file) => new RegExp("https://img\\.shields\\.io/badge/version-v" + version.replace(/\./g, "\\.") + "-teal").test(readFileSync(file, "utf8"))
+const ok = checkJson(FILES.packageJson) && checkJson(FILES.tauriConf) && checkToml(FILES.cargoToml) && checkLock(FILES.cargoLock) && checkReadme(FILES.readme)
 if (!ok) {
 	console.error("✗ 校验失败: 版本号未同步一致, 请检查后重试")
 	process.exit(1)
