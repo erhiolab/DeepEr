@@ -6,6 +6,8 @@
 
 基于 **Tauri 2 + Vue 3 + Rust** 的现代桌面宠物应用, 内置完整 AI Agent: Live2D 模型、LLM 对话、工具调用、定时任务与长期记忆。
 
+> 停更状态...可以看看MF老大的 [同类项目](https://github.com/MF-Dust/Nori.Desktop)
+
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-v0.3.10-teal)](#-下载安装)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0-teal)](https://tauri.app)
